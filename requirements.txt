@@ -1,0 +1,17 @@
+# Application web
+streamlit==1.61.0
+starlette==0.52.1  # pin explicite : une version plus récente casse le middleware gzip de streamlit
+
+# Données de marché
+yfinance==0.2.66
+requests==2.34.2   # appels directs à l'API publique Kraken (crypto)
+pandas==3.0.5
+plotly==6.3.1
+
+# Base de données (PostgreSQL / Supabase)
+sqlalchemy==2.0.43
+psycopg[binary]==3.3.4
+python-dotenv==1.1.1  # lecture de DATABASE_URL depuis .env en local
+
+# Authentification
+bcrypt==4.2.1

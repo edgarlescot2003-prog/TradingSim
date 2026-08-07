@@ -1,0 +1,83 @@
+"""Calcul de la valeur d'un portefeuille et du P&L de ses positions à partir
+des prix courants du marché. Centralisé ici pour être réutilisé à la fois par
+l'affichage (onglet Portefeuille) et par l'enregistrement de la courbe de
+valeur (record_value_snapshot).
+"""
+
+from datetime import datetime
+
+from . import market_data as md
+
+
+def position_snapshot(position) -> dict:
+    """Calcule les indicateurs courants d'une position : prix actuel, P&L en
+    €/%, levier effectif, contribution à l'équity du portefeuille.
+
+    La contribution à l'équity est `marge engagée + P&L latent` (et non le
+    notionnel complet) : avec du levier, seule la marge a réellement été
+    prélevée sur le cash (voir le modèle détaillé dans portfolio.py).
+
+    En cas d'échec de récupération du prix (API indisponible, ticker
+    retiré...), retombe sur le prix d'achat et le signale via "error".
+    """
+    cost_basis = position.quantity * position.avg_price_eur
+
+    try:
+        quote = md.get_quote(position.ticker)
+        current_price_eur = md.convert_to_eur(quote["price"], quote["currency"])
+        error = None
+    except md.MarketDataError as e:
+        current_price_eur = position.avg_price_eur
+        error = str(e)
+
+    current_exposure_eur = position.quantity * current_price_eur
+    if position.side == "long":
+        pnl_eur = current_exposure_eur - cost_basis
+    else:
+        pnl_eur = cost_basis - current_exposure_eur
+
+    # Retour sur la marge réellement engagée (c'est elle que le levier
+    # amplifie) ; repli sur le notionnel pour les positions héritées de la
+    # Phase 2 dont la marge enregistrée est nulle (short sans levier).
+    pnl_base = position.margin_eur if position.margin_eur > 1e-9 else cost_basis
+    pnl_pct = (pnl_eur / pnl_base * 100) if pnl_base else 0.0
+    leverage = (cost_basis / position.margin_eur) if position.margin_eur > 1e-9 else None
+
+    return {
+        "position": position,
+        "current_price_eur": current_price_eur,
+        "current_exposure_eur": current_exposure_eur,
+        "pnl_eur": pnl_eur,
+        "pnl_pct": pnl_pct,
+        "pnl_base_eur": pnl_base,  # dénominateur utilisé pour pnl_pct, réutilisable pour un % agrégé
+        "leverage": leverage,
+        "equity_contribution_eur": position.margin_eur + pnl_eur,
+        "error": error,
+    }
+
+
+def total_value(portfolio) -> tuple[float, list[dict]]:
+    """Retourne (valeur totale du portefeuille, snapshots enrichis de chaque
+    position). La valeur totale est cash + somme des contributions à l'équity.
+    """
+    snapshots = [position_snapshot(pos) for pos in portfolio.positions.values()]
+    total = portfolio.cash + sum(s["equity_contribution_eur"] for s in snapshots)
+    return total, snapshots
+
+
+def daily_pnl(portfolio, total_value_eur: float) -> tuple[float, float]:
+    """P&L depuis le dernier point de value_history antérieur à aujourd'hui.
+
+    À défaut (portefeuille créé aujourd'hui, sans historique antérieur), se
+    rabat sur le capital de départ comme référence.
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    baseline = portfolio.initial_capital
+    for point in reversed(portfolio.value_history):
+        if point["date"][:10] != today:
+            baseline = point["value_eur"]
+            break
+
+    pnl_eur = total_value_eur - baseline
+    pnl_pct = (pnl_eur / baseline * 100) if baseline else 0.0
+    return pnl_eur, pnl_pct
