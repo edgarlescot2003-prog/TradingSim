@@ -349,7 +349,10 @@ def go_to_trading(ticker: str, name: str | None = None) -> None:
     st.rerun()
 
 
-DEFAULT_TABS = [("portefeuille", "Portefeuille"), ("trading", "Trading"), ("cours", "Cours")]
+DEFAULT_TABS = [
+    ("portefeuille", "Portefeuille"), ("trading", "Trading"),
+    ("cours", "Cours"), ("classement", "Classement"),
+]
 
 
 def render_tab_bar(active_tab: str, tabs: list[tuple[str, str]] | None = None) -> None:

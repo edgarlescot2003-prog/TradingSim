@@ -4,7 +4,7 @@ import streamlit as st
 
 from src import (
     auth, course_storage, db, order_engine, storage, theme,
-    ui_admin, ui_auth, ui_courses, ui_portfolio, ui_trading, valuation,
+    ui_admin, ui_auth, ui_courses, ui_leaderboard, ui_portfolio, ui_trading, valuation,
 )
 from src.portfolio import Portfolio
 
@@ -132,6 +132,8 @@ if st.session_state.active_tab == "trading":
     ui_trading.render(portfolio)
 elif st.session_state.active_tab == "cours":
     ui_courses.render(courses, role, user_id)
+elif st.session_state.active_tab == "classement":
+    ui_leaderboard.render(user_id)
 elif st.session_state.active_tab == "administration" and auth.is_admin(role):
     ui_admin.render(user_id)
 else:
