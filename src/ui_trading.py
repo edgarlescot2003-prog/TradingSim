@@ -112,6 +112,83 @@ def _fetch_chart_history(ticker: str, quote_type: str, period_key: str):
     return hist, effective, "Yahoo Finance"
 
 
+@st.fragment(run_every=30)
+def _render_price_and_chart(ticker: str, quote_type: str) -> None:
+    """Prix + graphique de `ticker`, isolés dans leur propre fragment : se
+    rafraîchissent seuls toutes les 30 secondes (run_every), sans recharger
+    le reste de la page (portefeuille, autres onglets, formulaire d'ordre
+    ci-dessous). Comme un fragment ne peut pas faire vivre une valeur "live"
+    en dehors de lui, le prix converti est déposé dans st.session_state pour
+    que le formulaire d'ordre (hors fragment) puisse s'en servir.
+    """
+    try:
+        quote = md.get_quote(ticker)
+    except md.MarketDataError as e:
+        st.error(str(e))
+        st.session_state.trading_price_eur = None
+        return
+
+    price_native, currency = quote["price"], quote["currency"]
+    try:
+        price_eur = md.convert_to_eur(price_native, currency)
+    except md.MarketDataError as e:
+        st.error(f"Conversion en euros impossible : {e}")
+        st.session_state.trading_price_eur = None
+        return
+
+    st.session_state.trading_price_eur = price_eur
+    st.session_state.trading_currency = currency
+
+    col1, col2 = st.columns(2)
+    col1.metric(f"Prix actuel ({currency})", f"{price_native:,.2f}")
+    col2.metric("Prix actuel (€)", f"{price_eur:,.2f}")
+    st.caption(
+        "Prix légèrement différé (source : Yahoo Finance) · actualisation automatique toutes les 30 secondes "
+        f"· dernière actualisation : {datetime.now().strftime('%H:%M:%S')}"
+    )
+
+    col_a, col_b = st.columns([3, 1])
+    period_key = col_a.radio(
+        "Période", list(PERIOD_INTERVAL.keys()), horizontal=True, index=4, key="chart_period_radio",
+    )
+    chart_type = col_b.radio("Type", ["Courbe", "Chandeliers"], key="chart_type_radio")
+
+    try:
+        hist, effective_interval, source = _fetch_chart_history(ticker, quote_type, period_key)
+    except md.MarketDataError as e:
+        st.error(str(e))
+        return
+
+    fig = go.Figure()
+    if chart_type == "Courbe":
+        fig.add_trace(go.Scatter(x=hist.index, y=hist["Close"], mode="lines", name=ticker))
+    else:
+        fig.add_trace(go.Candlestick(
+            x=hist.index, open=hist["Open"], high=hist["High"],
+            low=hist["Low"], close=hist["Close"], name=ticker,
+        ))
+    fig.update_layout(
+        height=450, margin=dict(l=10, r=10, t=30, b=10), xaxis_rangeslider_visible=False,
+        paper_bgcolor=theme.PANEL, plot_bgcolor=theme.PANEL,
+        font=dict(family=theme.FONT_SANS, color=theme.TEXT),
+        xaxis=dict(gridcolor=theme.BORDER, linecolor=theme.BORDER),
+        yaxis=dict(gridcolor=theme.BORDER, linecolor=theme.BORDER),
+    )
+    if chart_type == "Courbe":
+        fig.update_traces(line=dict(color=theme.GREEN, width=2))
+    else:
+        fig.update_traces(
+            increasing_line_color=theme.GREEN, increasing_fillcolor=theme.GREEN,
+            decreasing_line_color=theme.RED, decreasing_fillcolor=theme.RED,
+        )
+    st.plotly_chart(fig, use_container_width=True)
+
+    fallback_note = "" if effective_interval == PERIOD_INTERVAL[period_key] else " (repli, plage trop longue)"
+    st.caption(
+        f"{len(hist)} bougies chargées · intervalle {effective_interval}{fallback_note} · source {source}"
+    )
+
+
 def render(portfolio) -> None:
     st.subheader("Rechercher un actif")
     query = st.text_input("Nom ou ticker (ex : Apple, AAPL, Sanofi, BTC-USD)", key="search_query")
@@ -137,61 +214,15 @@ def render(portfolio) -> None:
         )
         return
 
-    try:
-        quote = md.get_quote(ticker)
-    except md.MarketDataError as e:
-        st.error(str(e))
-        return
+    _render_price_and_chart(ticker, quote_type)
 
-    price_native, currency = quote["price"], quote["currency"]
-    try:
-        price_eur = md.convert_to_eur(price_native, currency)
-    except md.MarketDataError as e:
-        st.error(f"Conversion en euros impossible : {e}")
-        return
-
-    col1, col2 = st.columns(2)
-    col1.metric(f"Prix actuel ({currency})", f"{price_native:,.2f}")
-    col2.metric("Prix actuel (€)", f"{price_eur:,.2f}")
-    st.caption("Prix légèrement différé (source : Yahoo Finance).")
-
-    col_a, col_b = st.columns([3, 1])
-    period_key = col_a.radio("Période", list(PERIOD_INTERVAL.keys()), horizontal=True, index=4)
-    chart_type = col_b.radio("Type", ["Courbe", "Chandeliers"])
-
-    try:
-        hist, effective_interval, source = _fetch_chart_history(ticker, quote_type, period_key)
-    except md.MarketDataError as e:
-        st.error(str(e))
-    else:
-        fig = go.Figure()
-        if chart_type == "Courbe":
-            fig.add_trace(go.Scatter(x=hist.index, y=hist["Close"], mode="lines", name=ticker))
-        else:
-            fig.add_trace(go.Candlestick(
-                x=hist.index, open=hist["Open"], high=hist["High"],
-                low=hist["Low"], close=hist["Close"], name=ticker,
-            ))
-        fig.update_layout(
-            height=450, margin=dict(l=10, r=10, t=30, b=10), xaxis_rangeslider_visible=False,
-            paper_bgcolor=theme.PANEL, plot_bgcolor=theme.PANEL,
-            font=dict(family=theme.FONT_SANS, color=theme.TEXT),
-            xaxis=dict(gridcolor=theme.BORDER, linecolor=theme.BORDER),
-            yaxis=dict(gridcolor=theme.BORDER, linecolor=theme.BORDER),
-        )
-        if chart_type == "Courbe":
-            fig.update_traces(line=dict(color=theme.GREEN, width=2))
-        else:
-            fig.update_traces(
-                increasing_line_color=theme.GREEN, increasing_fillcolor=theme.GREEN,
-                decreasing_line_color=theme.RED, decreasing_fillcolor=theme.RED,
-            )
-        st.plotly_chart(fig, use_container_width=True)
-
-        fallback_note = "" if effective_interval == PERIOD_INTERVAL[period_key] else " (repli, plage trop longue)"
-        st.caption(
-            f"{len(hist)} bougies chargées · intervalle {effective_interval}{fallback_note} · source {source}"
-        )
+    # Déposé en session par le fragment ci-dessus (voir sa docstring) : il a
+    # déjà tourné une fois de façon synchrone à ce stade du script, cette
+    # valeur est donc à jour pour ce rerun.
+    price_eur = st.session_state.get("trading_price_eur")
+    currency = st.session_state.get("trading_currency")
+    if price_eur is None:
+        return  # l'erreur a déjà été affichée par le fragment
 
     st.subheader("Passer un ordre")
 
