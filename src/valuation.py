@@ -9,7 +9,7 @@ from datetime import datetime
 from . import market_data as md
 
 
-def position_snapshot(position) -> dict:
+def position_snapshot(position, price_cache: dict[str, float] | None = None) -> dict:
     """Calcule les indicateurs courants d'une position : prix actuel, P&L en
     €/%, levier effectif, contribution à l'équity du portefeuille.
 
@@ -19,16 +19,27 @@ def position_snapshot(position) -> dict:
 
     En cas d'échec de récupération du prix (API indisponible, ticker
     retiré...), retombe sur le prix d'achat et le signale via "error".
+
+    `price_cache` (optionnel) : dict partagé entre plusieurs appels, pour
+    éviter de refaire le même appel API si le même ticker apparaît dans
+    plusieurs portefeuilles (voir leaderboard.py, qui revalue tout le monde
+    en direct à chaque consultation du classement).
     """
     cost_basis = position.quantity * position.avg_price_eur
 
-    try:
-        quote = md.get_quote(position.ticker)
-        current_price_eur = md.convert_to_eur(quote["price"], quote["currency"])
+    if price_cache is not None and position.ticker in price_cache:
+        current_price_eur = price_cache[position.ticker]
         error = None
-    except md.MarketDataError as e:
-        current_price_eur = position.avg_price_eur
-        error = str(e)
+    else:
+        try:
+            quote = md.get_quote(position.ticker)
+            current_price_eur = md.convert_to_eur(quote["price"], quote["currency"])
+            error = None
+        except md.MarketDataError as e:
+            current_price_eur = position.avg_price_eur
+            error = str(e)
+        if price_cache is not None and error is None:
+            price_cache[position.ticker] = current_price_eur
 
     current_exposure_eur = position.quantity * current_price_eur
     if position.side == "long":
@@ -56,11 +67,11 @@ def position_snapshot(position) -> dict:
     }
 
 
-def total_value(portfolio) -> tuple[float, list[dict]]:
+def total_value(portfolio, price_cache: dict[str, float] | None = None) -> tuple[float, list[dict]]:
     """Retourne (valeur totale du portefeuille, snapshots enrichis de chaque
     position). La valeur totale est cash + somme des contributions à l'équity.
     """
-    snapshots = [position_snapshot(pos) for pos in portfolio.positions.values()]
+    snapshots = [position_snapshot(pos, price_cache) for pos in portfolio.positions.values()]
     total = portfolio.cash + sum(s["equity_contribution_eur"] for s in snapshots)
     return total, snapshots
 

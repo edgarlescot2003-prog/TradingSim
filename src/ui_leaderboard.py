@@ -19,13 +19,10 @@ COLUMNS = [
 
 def render(current_user_id: str) -> None:
     st.subheader("Classement")
-    st.caption(
-        "Basé sur la dernière valeur connue du/des portefeuille(s) de chacun, mise à jour "
-        "à chaque fois que son propriétaire ouvre l'application — pas en temps réel pour "
-        "tout le monde à chaque consultation de ce classement."
-    )
+    st.caption("Tous les portefeuilles sont revalorisés en direct à chaque consultation de cette page.")
 
-    rankings = leaderboard.compute_rankings()
+    with st.spinner("Calcul des positions de tous les portefeuilles en direct..."):
+        rankings = leaderboard.compute_rankings()
     if not rankings:
         st.info("Aucun portefeuille pour l'instant.")
         return
