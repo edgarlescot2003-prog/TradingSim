@@ -12,6 +12,7 @@ causait la déconnexion à chaque clic avant ce correctif.
 """
 
 import html as html_lib
+import re
 
 import streamlit as st
 
@@ -25,6 +26,43 @@ RED = "#F65B5B"
 
 FONT_SANS = "'Inter', -apple-system, sans-serif"
 FONT_MONO = "'JetBrains Mono', 'Courier New', monospace"
+
+# -- Thème clair, façon Google Finance ---------------------------------------
+# Scopé exclusivement à l'intérieur de .st-key-ts_light (voir inject_light() /
+# render_table_light() plus bas) : n'affecte jamais le thème sombre global ni
+# les onglets Cours/Classement. Palette validée (contraste + daltonisme) par
+# la skill dataviz du projet.
+LIGHT_PAGE = "#f9f9f7"
+LIGHT_SURFACE = "#fcfcfb"
+LIGHT_BORDER = "rgba(11,11,11,0.10)"
+LIGHT_GRIDLINE = "#e1e0d9"
+LIGHT_TEXT = "#0b0b0b"
+LIGHT_MUTED = "#52514e"
+LIGHT_FAINT = "#898781"
+LIGHT_BLUE = "#2a78d6"
+LIGHT_GREEN = "#006300"
+LIGHT_RED = "#d03b3b"
+
+CATEGORY_COLORS = {
+    "Actions": "#2a78d6",
+    "Crypto": "#eb6834",
+    "Indices/ETF": "#1baf7a",
+    "Autres": LIGHT_FAINT,
+}
+
+# Couleurs de badge par ticker (identité visuelle façon "chip" Google
+# Finance) : vert/rouge volontairement exclus pour ne jamais entrer en
+# conflit visuel avec le code couleur gain/perte utilisé ailleurs sur la page.
+_BADGE_PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa7"]
+_BADGE_DARK_TEXT = {"#eda100", "#e87ba4"}  # contraste insuffisant en texte blanc
+
+
+def badge_color(ticker: str) -> tuple[str, str]:
+    """Couleur de fond + couleur de texte lisible pour le badge d'un ticker,
+    déterministe (même ticker -> même couleur à chaque rendu)."""
+    bg = _BADGE_PALETTE[sum(ord(c) for c in ticker) % len(_BADGE_PALETTE)]
+    fg = LIGHT_TEXT if bg in _BADGE_DARK_TEXT else "#ffffff"
+    return bg, fg
 
 _CSS = f"""
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
@@ -54,9 +92,13 @@ h1, h2, h3, h4, h5, h6,
     letter-spacing: -0.01em;
 }}
 
-/* Densité : marges et espacements réduits */
+/* Densité : marges et espacements réduits. padding-top minime : la barre de
+   valeur (.ts-topbar) est en flux normal (position: sticky, pas fixed), donc
+   n'a plus besoin d'espace réservé au-dessus d'elle — juste de quoi ne pas
+   coller sous la barre d'outils native de Streamlit (stToolbar, en haut à
+   droite). */
 .block-container {{
-    padding-top: 4.5rem !important;
+    padding-top: 1rem !important;
     padding-bottom: 2rem !important;
     max-width: 100% !important;
 }}
@@ -70,16 +112,20 @@ h1, h2, h3, h4, h5, h6,
 }}
 [data-testid="stToolbar"] {{ top: 0.4rem !important; }}
 
-/* Barre de valeur fixe */
+/* Barre de valeur : `position: sticky` (pas `fixed`) et confinée au volet de
+   contenu principal (elle est injectée à l'intérieur de stMain, à droite du
+   panneau latéral dans la mise en page de Streamlit) plutôt qu'ancrée au
+   viewport entier. Avec `fixed`, la barre s'étend sur toute la largeur et
+   entre en conflit de superposition avec le panneau latéral : soit elle le
+   recouvre (bouton pour le replier inutilisable), soit elle passe dessous et
+   c'est le panneau (opaque) qui la recouvre à son tour (logo/nom de
+   portefeuille invisibles quand le panneau est ouvert). `sticky` reste
+   épinglée en haut au défilement sans jamais se superposer géométriquement
+   au panneau, donc plus besoin de bataille de z-index avec lui. */
 .ts-topbar {{
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    /* Sous le z-index du panneau latéral (section[data-testid="stSidebar"],
-       ~999991 par défaut chez Streamlit) : sinon la barre recouvre aussi bien
-       le bouton pour replier le panneau que la flèche pour le rouvrir, quel
-       que soit leur propre z-index (un enfant ne peut jamais dépasser le
-       rang d'empilement de son parent). */
-    z-index: 999980;
+    position: sticky;
+    top: 0;
+    z-index: 100;
     background: var(--ts-panel);
     border-bottom: 1px solid var(--ts-border);
     padding: 0.65rem 1.75rem;
@@ -319,6 +365,249 @@ def inject() -> None:
     st.markdown(f"<style>{_CSS}</style>", unsafe_allow_html=True)
 
 
+_LIGHT_CSS = f"""
+.st-key-ts_light {{
+    background: {LIGHT_PAGE} !important;
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem 1.75rem !important;
+    margin: -0.5rem -0.25rem 0 !important;
+}}
+.st-key-ts_light,
+.st-key-ts_light p, .st-key-ts_light span, .st-key-ts_light div,
+.st-key-ts_light label, .st-key-ts_light li {{
+    color: {LIGHT_TEXT};
+}}
+/* font-family PAS sur les <span> : ça écraserait la police à glyphes des
+   icônes Material de Streamlit (data-testid="stIconMaterial" est un span),
+   qui s'afficheraient alors en texte brut ("expand_less" au lieu du chevron). */
+.st-key-ts_light, .st-key-ts_light p, .st-key-ts_light div,
+.st-key-ts_light label, .st-key-ts_light li {{
+    font-family: {FONT_SANS};
+}}
+.st-key-ts_light h1, .st-key-ts_light h2, .st-key-ts_light h3,
+.st-key-ts_light h4, .st-key-ts_light h5,
+.st-key-ts_light [data-testid="stMarkdownContainer"] h1,
+.st-key-ts_light [data-testid="stMarkdownContainer"] h2,
+.st-key-ts_light [data-testid="stMarkdownContainer"] h3,
+.st-key-ts_light [data-testid="stMarkdownContainer"] h4,
+.st-key-ts_light [data-testid="stMarkdownContainer"] h5 {{
+    color: {LIGHT_TEXT} !important;
+    font-weight: 600 !important;
+}}
+.st-key-ts_light [data-testid="stCaptionContainer"] {{
+    color: {LIGHT_FAINT} !important;
+}}
+.st-key-ts_light hr {{ border-color: {LIGHT_GRIDLINE} !important; }}
+
+/* Cartes (points clés, tableaux, graphique) : de vrais st.container(key=...),
+   jamais un <div> ouvert/fermé à cheval sur plusieurs st.markdown (les
+   widgets natifs intercalés ne se retrouveraient pas dedans). */
+.st-key-ts_highlights, .st-key-ts_positions, .st-key-ts_performance {{
+    background: {LIGHT_SURFACE};
+    border: 1px solid {LIGHT_BORDER};
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}}
+
+/* Boutons (pastilles portefeuille, pastilles de période...) */
+.st-key-ts_light .stButton > button,
+.st-key-ts_light .stFormSubmitButton > button {{
+    font-family: {FONT_SANS} !important;
+    font-weight: 500 !important;
+    border-radius: 999px !important;
+    border: 1px solid {LIGHT_BORDER} !important;
+    background: {LIGHT_SURFACE} !important;
+    color: {LIGHT_MUTED} !important;
+}}
+.st-key-ts_light .stButton > button:hover,
+.st-key-ts_light .stFormSubmitButton > button:hover {{
+    border-color: {LIGHT_BLUE} !important;
+    color: {LIGHT_BLUE} !important;
+}}
+.st-key-ts_light .stButton > button[kind="primary"],
+.st-key-ts_light .stFormSubmitButton > button[kind="primary"] {{
+    background: {LIGHT_BLUE} !important;
+    border-color: {LIGHT_BLUE} !important;
+    color: #ffffff !important;
+}}
+.st-key-ts_portfolio_pills, .st-key-ts_period_pills {{
+    gap: 0.5rem !important;
+    align-items: center !important;
+    flex-wrap: wrap;
+    margin-bottom: 0.85rem !important;
+}}
+.ts-light-pill-active {{
+    display: inline-flex;
+    align-items: center;
+    padding: 0.4rem 1rem;
+    border-radius: 999px;
+    background: {LIGHT_BLUE};
+    color: #ffffff !important;
+    font-weight: 600;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}}
+.st-key-ts_period_pills .stButton > button {{
+    padding: 0.2rem 0.7rem !important;
+    font-size: 0.78rem !important;
+    min-height: 0 !important;
+}}
+.ts-period-active {{
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.7rem;
+    border-radius: 999px;
+    background: {LIGHT_BLUE};
+    color: #ffffff !important;
+    font-weight: 600;
+    font-size: 0.78rem;
+}}
+
+/* Popover (création de portefeuille) : le déclencheur reste dans le scope
+   (donc stylable normalement), mais son contenu ouvert (stPopoverBody) est
+   téléporté par Streamlit en dehors de .st-key-ts_light (portail au niveau
+   du document) — les règles ci-dessous ne l'atteignent donc jamais ; il
+   garde le style clair par défaut de Streamlit, déjà lisible en pratique. */
+.st-key-ts_light [data-testid="stPopoverButton"] {{
+    font-family: {FONT_SANS} !important;
+    font-weight: 500 !important;
+    border-radius: 999px !important;
+    border: 1px solid {LIGHT_BORDER} !important;
+    background: {LIGHT_SURFACE} !important;
+    color: {LIGHT_MUTED} !important;
+}}
+.st-key-ts_light [data-testid="stPopoverButton"]:hover {{
+    border-color: {LIGHT_BLUE} !important;
+    color: {LIGHT_BLUE} !important;
+}}
+.st-key-ts_light [data-testid="stPopoverBody"] {{
+    background: {LIGHT_SURFACE} !important;
+    border: 1px solid {LIGHT_BORDER} !important;
+}}
+.st-key-ts_light [data-testid="stTextInput"] input,
+.st-key-ts_light [data-testid="stNumberInput"] input,
+.st-key-ts_light [data-baseweb="select"] * {{
+    font-family: {FONT_SANS} !important;
+    color: {LIGHT_TEXT} !important;
+}}
+.st-key-ts_light [data-testid="stTextInput"] > div,
+.st-key-ts_light [data-testid="stNumberInput"] > div,
+.st-key-ts_light [data-baseweb="select"] > div {{
+    background: {LIGHT_SURFACE} !important;
+    border-color: {LIGHT_BORDER} !important;
+    border-radius: 6px !important;
+}}
+
+/* Métriques (points clés) */
+.st-key-ts_light [data-testid="stMetricValue"] {{
+    color: {LIGHT_TEXT} !important;
+    font-family: {FONT_MONO} !important;
+}}
+.st-key-ts_light [data-testid="stMetricLabel"] {{
+    color: {LIGHT_FAINT} !important;
+}}
+
+/* Répartition par catégorie (points clés) */
+.ts-cat-row {{ display: flex; align-items: center; gap: 0.45rem; margin-top: 0.5rem; }}
+.ts-cat-dot {{ width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }}
+.ts-cat-label {{ font-size: 0.8rem; color: {LIGHT_MUTED}; flex: 1; }}
+.ts-cat-pct {{
+    font-family: {FONT_MONO}; font-variant-numeric: tabular-nums;
+    font-size: 0.8rem; font-weight: 600; color: {LIGHT_TEXT};
+}}
+.ts-cat-bar-track {{
+    height: 5px; border-radius: 3px; background: {LIGHT_GRIDLINE};
+    margin: 0.25rem 0 0 0; overflow: hidden;
+}}
+.ts-cat-bar-fill {{ height: 100%; border-radius: 3px; }}
+
+/* Tableau (positions / historique) : mêmes principes que le tableau sombre
+   (de vrais st.columns par ligne pour de vrais boutons de navigation). */
+.st-key-ts_light [class*="st-key-tslight_table_"] {{
+    border: 1px solid {LIGHT_BORDER};
+    border-radius: 10px;
+    padding: 0.3rem 0.9rem;
+    background: {LIGHT_SURFACE};
+    margin-bottom: 1rem;
+}}
+.st-key-ts_light [class*="st-key-tslight_table_"] [data-testid="stHorizontalBlock"] {{
+    border-bottom: 1px solid {LIGHT_GRIDLINE};
+    padding-bottom: 0.4rem;
+    margin-bottom: 0.4rem;
+    align-items: center;
+}}
+.st-key-ts_light [class*="st-key-tslight_table_"] [data-testid="stHorizontalBlock"]:last-child {{
+    border-bottom: none; margin-bottom: 0;
+}}
+.st-key-ts_light [class*="st-key-tslight_table_"] [data-testid="stHorizontalBlock"]:hover {{
+    background: rgba(11,11,11,0.025);
+}}
+.ts-light-col-label {{
+    color: {LIGHT_FAINT};
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.68rem;
+    font-weight: 600;
+}}
+.ts-light-cell {{
+    font-size: 0.83rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}}
+.ts-light-num {{
+    font-family: {FONT_MONO} !important;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}}
+.st-key-ts_light [class*="st-key-tslight_ticker_"] button {{
+    border-radius: 999px !important;
+    border: none !important;
+    font-family: {FONT_MONO} !important;
+    font-weight: 700 !important;
+    font-size: 0.72rem !important;
+    padding: 0.15rem 0.65rem !important;
+    width: auto !important;
+    min-height: 0 !important;
+}}
+.st-key-ts_light [class*="st-key-tslight_name_"] button {{
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    color: {LIGHT_TEXT} !important;
+    font-weight: 400 !important;
+    width: auto !important;
+}}
+.st-key-ts_light [class*="st-key-tslight_name_"] button:hover {{
+    color: {LIGHT_BLUE} !important;
+    text-decoration: underline;
+}}
+
+/* Expanders (historique, réinitialisation) et alertes */
+.st-key-ts_light [data-testid="stExpander"] {{
+    background: {LIGHT_SURFACE} !important;
+    border: 1px solid {LIGHT_BORDER} !important;
+    border-radius: 10px !important;
+}}
+.st-key-ts_light [data-testid="stAlert"] {{
+    background: {LIGHT_SURFACE} !important;
+    border: 1px solid {LIGHT_BORDER} !important;
+    border-radius: 8px !important;
+    color: {LIGHT_TEXT} !important;
+}}
+"""
+
+
+def inject_light() -> None:
+    """Injecte le CSS du thème clair, entièrement scopé sous .st-key-ts_light
+    (voir le commentaire en tête de _LIGHT_CSS). N'a aucun effet tant que le
+    contenu n'est pas rendu à l'intérieur de `with st.container(key="ts_light")`.
+    Sans effet sur le thème sombre global ni les autres onglets."""
+    st.markdown(f"<style>{_LIGHT_CSS}</style>", unsafe_allow_html=True)
+
+
 def render_topbar(portfolio_name: str, total_value: float, pnl_eur: float, pnl_pct: float) -> None:
     color = GREEN if pnl_eur >= 0 else RED
     sign = "+" if pnl_eur >= 0 else ""
@@ -468,3 +757,111 @@ def render_table(rows: list[dict], columns: list[dict], row_key: str = "id", tab
                     f'<div class="ts-row-cell" style="text-align:{align}">{_cell_content(col, value)}</div>',
                     unsafe_allow_html=True,
                 )
+
+
+def _light_cell_content(col: dict, value) -> str:
+    """Équivalent de _cell_content pour le thème clair (vert/rouge adaptés au
+    contraste sur fond blanc)."""
+    kind = col.get("kind", "text")
+    decimals = col.get("decimals", 2)
+
+    if value is None:
+        return "—"
+    if kind == "text":
+        return html_lib.escape(str(value))
+    if kind == "num":
+        return f'<span class="ts-light-num">{value:,.{decimals}f}</span>'
+    if kind == "eur":
+        return f'<span class="ts-light-num">{value:,.{decimals}f} €</span>'
+    if kind == "signed_eur":
+        color = LIGHT_GREEN if value >= 0 else LIGHT_RED
+        sign = "+" if value >= 0 else ""
+        return f'<span class="ts-light-num" style="color:{color}">{sign}{value:,.{decimals}f} €</span>'
+    if kind == "pct":
+        return f'<span class="ts-light-num">{value:,.{decimals}f}%</span>'
+    if kind == "signed_pct":
+        color = LIGHT_GREEN if value >= 0 else LIGHT_RED
+        sign = "+" if value >= 0 else ""
+        return f'<span class="ts-light-num" style="color:{color}">{sign}{value:,.{decimals}f}%</span>'
+    return html_lib.escape(str(value))
+
+
+def _safe_key_part(value: str) -> str:
+    """Rend `value` sûr à utiliser à la fois comme `key=` de widget Streamlit
+    et dans le sélecteur CSS `.st-key-<key>` construit pour ce même widget.
+
+    Streamlit assainit lui-même les caractères spéciaux d'un `key=` pour
+    fabriquer sa classe CSS (ex : ":"/"." -> "-"), mais notre CSS est généré
+    à partir de la valeur BRUTE de `key` : avec un `row_key` contenant un
+    timestamp ISO (ex : "0_2026-09-04T19:03:30.760392" pour l'historique des
+    trades), le sélecteur injecté ne correspondait plus à la classe réelle
+    du bouton (":"/"." ne sont pas des caractères valides tels quels dans un
+    sélecteur de classe) et la couleur du badge ne s'appliquait jamais. En
+    pré-assainissant nous-mêmes (alphanumérique/tiret/underscore uniquement),
+    la valeur passée à `key=` est déjà propre et Streamlit n'a plus rien à
+    changer : les deux côtés restent garantis identiques.
+    """
+    return re.sub(r"[^a-zA-Z0-9_-]", "_", str(value))
+
+
+def render_table_light(rows: list[dict], columns: list[dict], row_key: str = "id", table_key: str = "table") -> None:
+    """Équivalent de render_table pour le thème clair (onglet Portefeuille) :
+    même technique (de vrais st.columns par ligne, de vrais st.button pour la
+    navigation), avec en plus un type de colonne "ticker_badge" qui rend le
+    ticker comme une pastille colorée cliquable (couleur déterministe par
+    ticker, voir badge_color) plutôt qu'un simple lien texte.
+    """
+    numeric_kinds = {"num", "eur", "signed_eur", "pct", "signed_pct"}
+    widths = [1.3 if col.get("kind") in numeric_kinds else 1.0 for col in columns]
+
+    badge_rules = []
+    with st.container(key=f"tslight_table_{table_key}"):
+        header_cols = st.columns(widths)
+        for col, hcol in zip(columns, header_cols):
+            align = "right" if col.get("kind") in numeric_kinds else "left"
+            hcol.markdown(
+                f'<div class="ts-light-col-label" style="text-align:{align}">{html_lib.escape(col["label"])}</div>',
+                unsafe_allow_html=True,
+            )
+
+        for row in rows:
+            rid = _safe_key_part(row.get(row_key, row.get("ticker", "")))
+            row_cols = st.columns(widths)
+            for col, cell in zip(columns, row_cols):
+                kind = col.get("kind", "text")
+                value = row.get(col["key"])
+
+                if kind == "ticker_badge":
+                    ticker = row.get("ticker", "")
+                    name = row.get("name", ticker)
+                    label = "—" if value is None else str(value)
+                    key = f"tslight_ticker_{table_key}_{rid}"
+                    bg, fg = badge_color(ticker)
+                    # Sélecteur à 3 classes (ts_light + la clé de ce badge + .stButton) pour
+                    # dépasser la spécificité de la règle générique .st-key-ts_light .stButton
+                    # > button (2 classes) : à égalité de !important, la spécificité la plus
+                    # haute gagne quel que soit l'ordre d'apparition dans la feuille de style.
+                    badge_rules.append(
+                        f'.st-key-ts_light .st-key-{key}.stElementContainer .stButton > button '
+                        f'{{ background:{bg} !important; color:{fg} !important; }}'
+                    )
+                    if cell.button(label, key=key):
+                        go_to_trading(ticker, name)
+                    continue
+
+                if kind == "link":
+                    ticker = row.get("ticker", "")
+                    name = row.get("name", ticker)
+                    label = "—" if value is None else str(value)
+                    if cell.button(label, key=f"tslight_name_{table_key}_{rid}"):
+                        go_to_trading(ticker, name)
+                    continue
+
+                align = "right" if kind in numeric_kinds else "left"
+                cell.markdown(
+                    f'<div class="ts-light-cell" style="text-align:{align}">{_light_cell_content(col, value)}</div>',
+                    unsafe_allow_html=True,
+                )
+
+    if badge_rules:
+        st.markdown(f"<style>{''.join(badge_rules)}</style>", unsafe_allow_html=True)

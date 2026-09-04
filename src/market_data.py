@@ -48,17 +48,30 @@ def search_assets(query: str, max_results: int = 8) -> list[dict]:
 
 
 def get_quote(ticker: str) -> dict:
-    """Retourne {price, currency} pour le ticker donné, ou lève MarketDataError."""
+    """Retourne {price, currency, previous_close, quote_type} pour le ticker
+    donné, ou lève MarketDataError. `previous_close` (peut être None si
+    indisponible) sert au calcul du gain du jour ; `quote_type` (EQUITY/ETF/
+    INDEX/CRYPTOCURRENCY/...) à la catégorisation par classe d'actif. Les deux
+    viennent du même appel fast_info que le prix, donc sans coût réseau
+    supplémentaire.
+    """
     try:
         info = yf.Ticker(ticker).fast_info
         price = info.get("last_price") or info.get("lastPrice")
         currency = info.get("currency")
+        previous_close = info.get("previous_close") or info.get("previousClose")
+        quote_type = info.get("quote_type") or info.get("quoteType") or ""
     except Exception as e:
         raise MarketDataError(f"Ticker '{ticker}' introuvable ou API indisponible ({e}).") from e
 
     if price is None or currency is None:
         raise MarketDataError(f"Aucune donnée de prix disponible pour '{ticker}'.")
-    return {"price": float(price), "currency": currency}
+    return {
+        "price": float(price),
+        "currency": currency,
+        "previous_close": float(previous_close) if previous_close is not None else None,
+        "quote_type": quote_type,
+    }
 
 
 def get_history(ticker: str, period: str = "6mo", interval: str = "1d", start=None):
