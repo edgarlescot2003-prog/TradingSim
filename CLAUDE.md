@@ -55,9 +55,15 @@ temps réel pour tous les utilisateurs à chaque consultation — vérifie
 l'état actuel du code avant de repartir dessus.
 
 ### Esthétique
-Thème sombre inspiré d'Hyperliquid (terminal de trading pro) : fond
-quasi-noir, police monospace pour tous les chiffres, vert/rouge pour
-gains/pertes, densité forte, coins carrés.
+Thème clair partout (plus de thème sombre — la démarcation entre un onglet
+clair et le reste en sombre était trop dérangeante) : fond quasi-blanc,
+police monospace pour tous les chiffres, bleu discret pour les éléments
+interactifs (boutons, liens, onglet actif), vert/rouge réservés aux
+gains/pertes. Palette pilotée par les constantes de `src/theme.py`
+(BG/PANEL/BORDER/TEXT/MUTED/GREEN/RED/ACCENT) et par `.streamlit/config.toml`
+(`[theme]`, nécessaire en plus du CSS injecté pour que les composants
+internes de Streamlit/BaseWeb — menus déroulants, popovers — suivent aussi
+le thème clair).
 
 ### Comptes et rôles (2 niveaux)
 - Admin (moi) : tous les droits, gestion des comptes, seul à pouvoir

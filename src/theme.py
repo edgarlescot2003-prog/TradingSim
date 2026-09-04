@@ -16,22 +16,28 @@ import re
 
 import streamlit as st
 
-BG = "#0A0B0D"
-PANEL = "#131417"
-BORDER = "#23262B"
-TEXT = "#E8E9ED"
-MUTED = "#7C8187"
-GREEN = "#3DDC97"
-RED = "#F65B5B"
+# Palette globale de l'appli : claire partout (plus de thème sombre séparé —
+# la démarcation entre un onglet Portefeuille clair et le reste en sombre
+# était jugée trop dérangeante). Les noms de variables (BG/PANEL/...) restent
+# génériques : ce sont "les couleurs du thème actuel", pas littéralement
+# "sombre" — inutile de les renommer. Valeurs reprises de la palette claire
+# validée (contraste + daltonisme) par la skill dataviz du projet.
+BG = "#f9f9f7"
+PANEL = "#fcfcfb"
+BORDER = "rgba(11,11,11,0.10)"
+TEXT = "#0b0b0b"
+MUTED = "#52514e"
+GREEN = "#006300"
+RED = "#d03b3b"
+ACCENT = "#2a78d6"  # bleu discret : boutons, liens, onglet actif — jamais le gain/perte (vert/rouge)
 
 FONT_SANS = "'Inter', -apple-system, sans-serif"
 FONT_MONO = "'JetBrains Mono', 'Courier New', monospace"
 
-# -- Thème clair, façon Google Finance ---------------------------------------
-# Scopé exclusivement à l'intérieur de .st-key-ts_light (voir inject_light() /
-# render_table_light() plus bas) : n'affecte jamais le thème sombre global ni
-# les onglets Cours/Classement. Palette validée (contraste + daltonisme) par
-# la skill dataviz du projet.
+# -- Alias pour l'onglet Portefeuille (theme.inject_light() / render_table_light()) --
+# Historiquement une palette séparée le temps que le reste de l'appli restait
+# sombre ; désormais identique à la palette globale ci-dessus, gardée comme
+# alias pour ne pas devoir toucher ui_portfolio.py.
 LIGHT_PAGE = "#f9f9f7"
 LIGHT_SURFACE = "#fcfcfb"
 LIGHT_BORDER = "rgba(11,11,11,0.10)"
@@ -75,9 +81,17 @@ _CSS = f"""
     --ts-muted: {MUTED};
     --ts-green: {GREEN};
     --ts-red: {RED};
+    --ts-accent: {ACCENT};
 }}
 
 html, body, .stApp {{
+    /* Sans ça, Streamlit/BaseWeb laisse le navigateur en color-scheme: dark
+       (hérité de son thème par défaut) : les <input> natifs se peignent alors
+       avec le fond sombre propre au navigateur (scrollbars, cases à cocher...
+       idem) MÊME SI leur background-color CSS est transparent — ça ne dépend
+       pas de nos propres règles de couleur, d'où les champs de connexion
+       restés noirs malgré une palette entièrement repassée en clair. */
+    color-scheme: light !important;
     background-color: var(--ts-bg) !important;
     color: var(--ts-text) !important;
     font-family: {FONT_SANS} !important;
@@ -182,17 +196,17 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     color: var(--ts-text) !important;
 }}
 .stButton > button:hover, .stFormSubmitButton > button:hover {{
-    border-color: var(--ts-green) !important;
-    color: var(--ts-green) !important;
+    border-color: var(--ts-accent) !important;
+    color: var(--ts-accent) !important;
 }}
 .stButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"] {{
-    background: var(--ts-green) !important;
-    border-color: var(--ts-green) !important;
-    color: #06110C !important;
+    background: var(--ts-accent) !important;
+    border-color: var(--ts-accent) !important;
+    color: #ffffff !important;
 }}
 .stButton > button[kind="primary"]:hover, .stFormSubmitButton > button[kind="primary"]:hover {{
-    filter: brightness(1.08);
-    color: #06110C !important;
+    filter: brightness(1.1);
+    color: #ffffff !important;
 }}
 
 /* Champs de saisie */
@@ -203,9 +217,36 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     font-family: {FONT_SANS} !important;
     border-radius: 3px !important;
 }}
+/* background/color posés directement sur l'<input>/<textarea>, pas seulement
+   sur son div englobant (voir color-scheme plus haut — certains navigateurs
+   peignent un fond natif propre à l'input qui ignore le fond d'un ancêtre
+   transparent). Pas sur [data-baseweb="select"] * (trop large : peindrait
+   aussi l'icône et le texte sélectionné comme des pastilles séparées). */
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stTextArea"] textarea {{
+    background-color: var(--ts-panel) !important;
+    color: var(--ts-text) !important;
+}}
 [data-testid="stNumberInput"] input {{
     font-family: {FONT_MONO} !important;
     font-variant-numeric: tabular-nums;
+}}
+/* Bouton "afficher le mot de passe" (l'œil) : un <button> natif de BaseWeb,
+   pas un .stButton, donc pas couvert par la règle de bouton générique. Son
+   fond à lui est transparent, mais il vit dans stTextInputRootElement, un
+   wrapper interne à Streamlit avec SON PROPRE fond sombre codé en dur
+   (#131417, ni dérivé de --ts-panel ni touché par la règle `> div`
+   ci-dessous, qui ne cible que le premier niveau d'enfant) : sans cette
+   règle, le contour du champ + l'icône œil restaient sombres malgré tout le
+   reste de la palette repassé en clair. */
+[data-testid*="RootElement"] {{
+    background: var(--ts-panel) !important;
+}}
+[data-testid="stTextInput"] button[aria-label="Show password"],
+[data-testid="stTextInput"] button[aria-label="Hide password"] {{
+    background: transparent !important;
+    color: var(--ts-muted) !important;
 }}
 [data-testid="stTextInput"] > div,
 [data-testid="stNumberInput"] > div,
@@ -244,7 +285,7 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     color: var(--ts-muted) !important;
 }}
 [data-testid="stTabs"] button[aria-selected="true"] {{
-    color: var(--ts-green) !important;
+    color: var(--ts-accent) !important;
 }}
 
 /* Barre d'onglets custom (de vrais st.button pilotés par session_state,
@@ -260,9 +301,9 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     font-weight: 600;
     font-size: 0.85rem;
     letter-spacing: 0.02em;
-    color: var(--ts-green);
+    color: var(--ts-accent);
     padding: 0.55rem 0.05rem;
-    border-bottom: 2px solid var(--ts-green);
+    border-bottom: 2px solid var(--ts-accent);
 }}
 [class*="st-key-navtab_"] button {{
     background: transparent !important;
@@ -293,8 +334,8 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     width: auto !important;
 }}
 [class*="st-key-navcell_"] button:hover, [class*="st-key-navorder_"] button:hover {{
-    color: var(--ts-green) !important;
-    border-color: var(--ts-green) !important;
+    color: var(--ts-accent) !important;
+    border-color: var(--ts-accent) !important;
 }}
 [class*="st-key-navcell_ticker_"] button, [class*="st-key-navorder_"] button {{
     font-family: {FONT_MONO} !important;
@@ -336,7 +377,7 @@ hr {{ border-color: var(--ts-border) !important; }}
     align-items: center;
 }}
 [class*="st-key-tstable_"] [data-testid="stHorizontalBlock"]:hover {{
-    background: rgba(255,255,255,0.025);
+    background: rgba(11,11,11,0.025);
 }}
 .ts-col-label {{
     color: var(--ts-muted);
