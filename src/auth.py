@@ -23,7 +23,9 @@ import bcrypt
 from sqlalchemy import select
 
 from . import db
-from .db_models import CourseRow, PendingOrderRow, PortfolioRow, PositionRow, TradeRow, User, ValueHistoryRow
+from .db_models import (
+    CourseRow, PendingOrderRow, PortfolioRow, PositionRow, SearchHistoryRow, TradeRow, User, ValueHistoryRow,
+)
 
 ROLE_ADMIN = "admin"
 ROLE_STANDARD = "standard"
@@ -114,8 +116,9 @@ def promote_to_admin(user_id: str) -> None:
 
 def delete_user(user_id: str) -> None:
     """Supprime le compte et toutes ses données (portefeuilles, positions,
-    trades, ordres, courbe de valeur). Les cours qu'il a rédigés sont
-    conservés (contenu partagé) mais détachés de son compte.
+    trades, ordres, courbe de valeur, historique de recherche Trading). Les
+    cours qu'il a rédigés sont conservés (contenu partagé) mais détachés de
+    son compte.
 
     Pas de contrainte ON DELETE CASCADE en base (les tables existaient déjà
     avant l'introduction des comptes) : la suppression en cascade est donc
@@ -139,6 +142,7 @@ def delete_user(user_id: str) -> None:
                 synchronize_session=False
             )
         session.query(PortfolioRow).filter_by(user_id=user_id).delete(synchronize_session=False)
+        session.query(SearchHistoryRow).filter_by(user_id=user_id).delete(synchronize_session=False)
         session.query(CourseRow).filter_by(user_id=user_id).update(
             {"user_id": None}, synchronize_session=False
         )

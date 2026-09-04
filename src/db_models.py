@@ -130,6 +130,22 @@ class ValueHistoryRow(Base):
     value_eur = Column(Float, nullable=False)
 
 
+class SearchHistoryRow(Base):
+    """Derniers actifs consultés par utilisateur, dans l'onglet Trading (barre
+    de recherche vide -> historique récent). Une ligne par (utilisateur,
+    ticker) : revoir un actif déjà vu renouvelle juste `searched_at` au lieu
+    d'empiler des doublons."""
+    __tablename__ = "search_history"
+    __table_args__ = (UniqueConstraint("user_id", "ticker", name="uq_search_history_user_ticker"),)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_new_uuid)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False, index=True)
+    ticker = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    quote_type = Column(String, nullable=False, default="")
+    searched_at = Column(String, nullable=False, default=_now_iso)
+
+
 class CourseRow(Base):
     """Contenu partagé (lu par tous, écrit par Admin/Contributeur) : `user_id`
     identifie l'auteur/dernier éditeur, ce n'est pas une clé d'isolation

@@ -440,10 +440,13 @@ _LIGHT_CSS = f"""
 }}
 .st-key-ts_light hr {{ border-color: {LIGHT_GRIDLINE} !important; }}
 
-/* Cartes (points clés, tableaux, graphique) : de vrais st.container(key=...),
-   jamais un <div> ouvert/fermé à cheval sur plusieurs st.markdown (les
-   widgets natifs intercalés ne se retrouveraient pas dedans). */
-.st-key-ts_highlights, .st-key-ts_positions, .st-key-ts_performance {{
+/* Cartes (points clés, tableaux, graphique, encadrés d'actifs...) : de vrais
+   st.container(key="ts_card_xxx"), jamais un <div> ouvert/fermé à cheval sur
+   plusieurs st.markdown (les widgets natifs intercalés ne se retrouveraient
+   pas dedans). Convention de clé partagée par tout l'onglet Portefeuille ET
+   Trading : préfixer un nouveau container par "ts_card_" lui donne
+   automatiquement ce style, sans toucher à ce fichier. */
+[class*="st-key-ts_card_"] {{
     background: {LIGHT_SURFACE};
     border: 1px solid {LIGHT_BORDER};
     border-radius: 10px;
@@ -681,11 +684,20 @@ def render_topbar(portfolio_name: str, total_value: float, pnl_eur: float, pnl_p
 def go_to_trading(ticker: str, name: str | None = None) -> None:
     """Bascule vers l'onglet Trading avec `ticker` pré-sélectionné, entièrement
     via st.session_state + st.rerun (pas de navigation navigateur, donc la
-    session — et l'authentification — n'est jamais perdue)."""
+    session — et l'authentification — n'est jamais perdue).
+
+    La remise à zéro de la recherche est différée (drapeau `_clear_search_query`,
+    consommé par ui_trading.render() avant de recréer le widget) plutôt
+    qu'assignée ici directement : cette fonction est aussi appelée depuis
+    l'intérieur même de l'onglet Trading (clic sur un actif d'un encadré ou
+    d'un résultat de recherche), où le widget `search_query` a déjà été
+    instancié plus tôt dans CE MÊME run — Streamlit refuse d'écrire dans
+    st.session_state["search_query"] après coup et lève une exception.
+    """
     st.session_state.selected_ticker = ticker
     st.session_state.selected_name = name or ticker
     st.session_state.selected_quote_type = ""
-    st.session_state.search_query = ""
+    st.session_state["_clear_search_query"] = True
     st.session_state.active_tab = "trading"
     st.rerun()
 
@@ -845,20 +857,31 @@ def _safe_key_part(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "_", str(value))
 
 
-def render_table_light(rows: list[dict], columns: list[dict], row_key: str = "id", table_key: str = "table") -> None:
+def render_table_light(
+    rows: list[dict], columns: list[dict], row_key: str = "id", table_key: str = "table",
+    show_header: bool = True,
+) -> None:
     """Équivalent de render_table pour le thème clair (onglet Portefeuille) :
     même technique (de vrais st.columns par ligne, de vrais st.button pour la
     navigation), avec en plus un type de colonne "ticker_badge" qui rend le
     ticker comme une pastille colorée cliquable (couleur déterministe par
     ticker, voir badge_color) plutôt qu'un simple lien texte.
+
+    `show_header=False` masque la ligne d'en-têtes (listes compactes façon
+    encadré d'actifs, où les libellés de colonne n'apportent rien).
     """
     numeric_kinds = {"num", "eur", "signed_eur", "pct", "signed_pct"}
-    widths = [1.3 if col.get("kind") in numeric_kinds else 1.0 for col in columns]
+    widths = [
+        col["width"] if "width" in col else (1.3 if col.get("kind") in numeric_kinds else 1.0)
+        for col in columns
+    ]
 
     badge_rules = []
     with st.container(key=f"tslight_table_{table_key}"):
-        header_cols = st.columns(widths)
+        header_cols = st.columns(widths) if show_header else [None] * len(columns)
         for col, hcol in zip(columns, header_cols):
+            if hcol is None:
+                continue
             align = "right" if col.get("kind") in numeric_kinds else "left"
             hcol.markdown(
                 f'<div class="ts-light-col-label" style="text-align:{align}">{html_lib.escape(col["label"])}</div>',
@@ -874,7 +897,11 @@ def render_table_light(rows: list[dict], columns: list[dict], row_key: str = "id
 
                 if kind == "ticker_badge":
                     ticker = row.get("ticker", "")
-                    name = row.get("name", ticker)
+                    # nav_name (si présent) prime sur name : une colonne peut afficher
+                    # un libellé enrichi (ex : "Tesla, Inc. · NMS") sans que cette
+                    # bourse/suffixe finisse stocké comme nom de l'actif à la
+                    # navigation (positions, historique des trades...).
+                    name = row.get("nav_name", row.get("name", ticker))
                     label = "—" if value is None else str(value)
                     key = f"tslight_ticker_{table_key}_{rid}"
                     bg, fg = badge_color(ticker)
@@ -892,7 +919,7 @@ def render_table_light(rows: list[dict], columns: list[dict], row_key: str = "id
 
                 if kind == "link":
                     ticker = row.get("ticker", "")
-                    name = row.get("name", ticker)
+                    name = row.get("nav_name", row.get("name", ticker))
                     label = "—" if value is None else str(value)
                     if cell.button(label, key=f"tslight_name_{table_key}_{rid}"):
                         go_to_trading(ticker, name)

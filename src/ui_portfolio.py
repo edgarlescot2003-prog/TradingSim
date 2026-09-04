@@ -91,7 +91,7 @@ def _render_highlights(portfolio, total_value: float, snapshots: list[dict]) -> 
     total_pnl_base = sum(s["pnl_base_eur"] for s in snapshots)
     total_pnl_pct = (total_pnl_eur / total_pnl_base * 100) if total_pnl_base else 0.0
 
-    with st.container(key="ts_highlights"):
+    with st.container(key="ts_card_highlights"):
         st.markdown("##### Points clés du portefeuille")
         c1, c2, c3 = st.columns([1, 1, 1.4])
         c1.metric("Gain du jour", f"{day_pnl_eur:+,.2f} €", delta=f"{day_pnl_pct:+.2f} %")
@@ -131,7 +131,7 @@ def _render_highlights(portfolio, total_value: float, snapshots: list[dict]) -> 
 
 
 def _render_positions_table(snapshots: list[dict]) -> None:
-    with st.container(key="ts_positions"):
+    with st.container(key="ts_card_positions"):
         st.markdown("##### Positions")
 
         for s in snapshots:
@@ -210,7 +210,7 @@ def _filter_value_history(value_history: list[dict], period_label: str) -> list[
 
 
 def _render_performance(portfolio) -> None:
-    with st.container(key="ts_performance"):
+    with st.container(key="ts_card_performance"):
         st.markdown("##### Évolution de la valeur du portefeuille")
 
         if len(portfolio.value_history) < 2:
