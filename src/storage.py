@@ -12,8 +12,11 @@ réécrite (JSON -> PostgreSQL), toute la logique métier qui manipule un
 Portfolio (achat/vente/levier/ordres...) reste inchangée.
 """
 
+import uuid
+
 import streamlit as st
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from . import db
 from .db_models import PendingOrderRow, PortfolioRow, PositionRow, TradeRow, User, ValueHistoryRow
@@ -104,10 +107,10 @@ def save_portfolio(portfolio: Portfolio) -> None:
             prow.cash = portfolio.cash
             prow.initial_capital = portfolio.initial_capital
 
-        session.query(PositionRow).filter_by(portfolio_id=portfolio.id).delete()
-        session.query(TradeRow).filter_by(portfolio_id=portfolio.id).delete()
-        session.query(PendingOrderRow).filter_by(portfolio_id=portfolio.id).delete()
-        session.query(ValueHistoryRow).filter_by(portfolio_id=portfolio.id).delete()
+        session.query(PositionRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
+        session.query(TradeRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
+        session.query(PendingOrderRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
+        session.query(ValueHistoryRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
 
         for pos in portfolio.positions.values():
             session.add(PositionRow(
@@ -128,10 +131,34 @@ def save_portfolio(portfolio: Portfolio) -> None:
                 currency=o.currency, leverage=o.leverage, created_at=o.created_at,
                 last_checked_at=o.last_checked_at,
             ))
-        for v in portfolio.value_history:
-            session.add(ValueHistoryRow(
-                portfolio_id=portfolio.id, user_id=user_id, date=v["date"], value_eur=v["value_eur"],
-            ))
+        # dédoublonne par date avant insertion : la contrainte unique porte sur
+        # (portfolio_id, date) exact, et le value_history en mémoire peut
+        # contenir deux fois la même date (voir plus bas).
+        deduped_history = {v["date"]: v["value_eur"] for v in portfolio.value_history}
+        if deduped_history:
+            # INSERT ... ON CONFLICT DO UPDATE plutôt qu'un simple insert :
+            # deux requêtes quasi simultanées sur le même portefeuille (deux
+            # onglets ouverts, ou un double rerun réseau) peuvent chacune
+            # recalculer un point du jour avec un timestamp identique si
+            # l'horloge du conteneur n'a pas encore avancé entre les deux
+            # appels — la 2ᵉ tentait alors un INSERT en double juste après
+            # avoir supprimé les lignes existantes, ce qui violait la
+            # contrainte unique et faisait échouer TOUTE la sauvegarde
+            # (positions/trades compris), pas seulement la courbe de valeur.
+            # Avec upsert, la 2ᵉ requête écrase simplement la valeur au lieu
+            # d'échouer.
+            stmt = pg_insert(ValueHistoryRow).values([
+                {
+                    "id": str(uuid.uuid4()), "portfolio_id": portfolio.id, "user_id": user_id,
+                    "date": date, "value_eur": value_eur,
+                }
+                for date, value_eur in deduped_history.items()
+            ])
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_value_history_portfolio_date",
+                set_={"value_eur": stmt.excluded.value_eur},
+            )
+            session.execute(stmt)
 
         session.commit()
 
