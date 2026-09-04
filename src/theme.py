@@ -74,7 +74,12 @@ h1, h2, h3, h4, h5, h6,
 .ts-topbar {{
     position: fixed;
     top: 0; left: 0; right: 0;
-    z-index: 999999;
+    /* Sous le z-index du panneau latéral (section[data-testid="stSidebar"],
+       ~999991 par défaut chez Streamlit) : sinon la barre recouvre aussi bien
+       le bouton pour replier le panneau que la flèche pour le rouvrir, quel
+       que soit leur propre z-index (un enfant ne peut jamais dépasser le
+       rang d'empilement de son parent). */
+    z-index: 999980;
     background: var(--ts-panel);
     border-bottom: 1px solid var(--ts-border);
     padding: 0.65rem 1.75rem;
@@ -85,6 +90,12 @@ h1, h2, h3, h4, h5, h6,
     row-gap: 0.35rem;
 }}
 .ts-topbar-left {{ display: flex; align-items: center; gap: 0.6rem; }}
+/* Quand le panneau latéral est replié, Streamlit affiche un bouton pour le
+   rouvrir (stExpandSidebarButton) en haut à gauche, au même endroit que notre
+   logo : on décale le logo pour que le bouton reste visible et lisible. */
+body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
+    margin-left: 2.2rem;
+}}
 .ts-topbar-logo {{
     font-family: {FONT_SANS};
     font-weight: 700;
