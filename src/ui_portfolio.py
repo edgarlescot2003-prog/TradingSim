@@ -276,43 +276,48 @@ def _render_performance(portfolio) -> None:
         )
 
 
-def _render_reset(portfolio) -> None:
-    with st.expander("Réinitialiser ce portefeuille"):
-        st.warning(
-            "Cette action efface toutes les positions, l'historique des trades, les ordres "
-            "en attente et la courbe de valeur, puis remet le cash au capital de départ "
-            f"({portfolio.initial_capital:,.2f} €). Elle est irréversible."
-        )
-        confirmed = st.checkbox(
-            "Je confirme vouloir réinitialiser ce portefeuille", key=f"confirm_reset_{portfolio.id}"
-        )
-        if st.button("Réinitialiser", type="primary", disabled=not confirmed, key=f"reset_btn_{portfolio.id}"):
-            portfolio.reset()
-            storage.save_portfolio(portfolio)
-            st.success("Portefeuille réinitialisé.")
-            st.rerun()
+def _render_portfolio_actions(portfolio) -> None:
+    """Réinitialiser / supprimer ce portefeuille : deux boutons simples, pas
+    de menu déroulant. Chaque bouton demande une confirmation en un second
+    clic (son propre libellé change) plutôt qu'une case à cocher séparée ou
+    un expander."""
+    reset_armed_key = f"confirm_reset_{portfolio.id}"
+    delete_armed_key = f"confirm_delete_{portfolio.id}"
 
+    col1, col2 = st.columns(2)
 
-def _render_delete(portfolio) -> None:
-    with st.expander("Supprimer ce portefeuille"):
-        st.warning(
-            f"Cette action supprime définitivement « {portfolio.name} » : positions, historique "
-            "des trades, ordres en attente et courbe de valeur. Elle est irréversible et "
-            "différente de la réinitialisation ci-dessus (qui garde le portefeuille, juste vidé)."
-        )
-        confirmed = st.checkbox(
-            "Je confirme vouloir supprimer ce portefeuille", key=f"confirm_delete_{portfolio.id}"
-        )
-        if st.button("Supprimer", type="primary", disabled=not confirmed, key=f"delete_btn_{portfolio.id}"):
-            storage.delete_portfolio(portfolio.id)
-            portfolios = st.session_state.portfolios
-            portfolios.pop(portfolio.id, None)
-            remaining_id = next(iter(portfolios), None)
-            st.session_state.active_id = remaining_id
-            if remaining_id is not None:
-                auth.set_active_portfolio(st.session_state.user_id, remaining_id)
-            st.success("Portefeuille supprimé.")
-            st.rerun()
+    with col1:
+        if st.session_state.get(reset_armed_key):
+            st.caption("Remet le cash au capital de départ et efface positions/historique.")
+            if st.button("Confirmer la réinitialisation", type="primary", key=f"reset_btn_{portfolio.id}"):
+                portfolio.reset()
+                storage.save_portfolio(portfolio)
+                st.session_state[reset_armed_key] = False
+                st.success("Portefeuille réinitialisé.")
+                st.rerun()
+        else:
+            if st.button("Réinitialiser ce portefeuille", key=f"reset_btn_{portfolio.id}"):
+                st.session_state[reset_armed_key] = True
+                st.rerun()
+
+    with col2:
+        if st.session_state.get(delete_armed_key):
+            st.caption(f"Supprime définitivement « {portfolio.name} » et toutes ses données.")
+            if st.button("Confirmer la suppression", type="primary", key=f"delete_btn_{portfolio.id}"):
+                storage.delete_portfolio(portfolio.id)
+                portfolios = st.session_state.portfolios
+                portfolios.pop(portfolio.id, None)
+                remaining_id = next(iter(portfolios), None)
+                st.session_state.active_id = remaining_id
+                if remaining_id is not None:
+                    auth.set_active_portfolio(st.session_state.user_id, remaining_id)
+                st.session_state[delete_armed_key] = False
+                st.success("Portefeuille supprimé.")
+                st.rerun()
+        else:
+            if st.button("Supprimer ce portefeuille", key=f"delete_btn_{portfolio.id}"):
+                st.session_state[delete_armed_key] = True
+                st.rerun()
 
 
 def render(portfolio, total_value: float, snapshots: list[dict]) -> None:
@@ -322,6 +327,5 @@ def render(portfolio, total_value: float, snapshots: list[dict]) -> None:
         _render_highlights(portfolio, total_value, snapshots)
         _render_positions_table(snapshots)
         _render_performance(portfolio)
+        _render_portfolio_actions(portfolio)
         _render_history(portfolio)
-        _render_reset(portfolio)
-        _render_delete(portfolio)
