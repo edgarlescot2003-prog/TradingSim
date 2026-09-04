@@ -16,7 +16,7 @@ import streamlit as st
 from sqlalchemy import select
 
 from . import db
-from .db_models import PendingOrderRow, PortfolioRow, PositionRow, TradeRow, ValueHistoryRow
+from .db_models import PendingOrderRow, PortfolioRow, PositionRow, TradeRow, User, ValueHistoryRow
 from .portfolio import PendingOrder, Portfolio, Position, Trade
 
 
@@ -133,4 +133,34 @@ def save_portfolio(portfolio: Portfolio) -> None:
                 portfolio_id=portfolio.id, user_id=user_id, date=v["date"], value_eur=v["value_eur"],
             ))
 
+        session.commit()
+
+
+def delete_portfolio(portfolio_id: str) -> None:
+    """Supprime définitivement un portefeuille et toutes ses données
+    (positions, historique des trades, ordres en attente, courbe de valeur).
+
+    Scopé à l'utilisateur courant (`_current_user_id()`), comme le reste de
+    ce module : un portefeuille qui n'appartient pas à l'utilisateur connecté
+    est silencieusement ignoré plutôt que supprimé, pour ne jamais permettre
+    à un compte de supprimer les données d'un autre.
+    """
+    user_id = _current_user_id()
+    with db.get_session() as session:
+        prow = session.get(PortfolioRow, portfolio_id)
+        if prow is None or prow.user_id != user_id:
+            return
+
+        # users.active_portfolio_id a une contrainte de clé étrangère vers
+        # portfolios.id : si ce portefeuille est l'actif enregistré, il faut
+        # la lever avant de supprimer, sinon la suppression échoue (violation
+        # de contrainte) — même précaution que dans auth.delete_user.
+        user = session.get(User, user_id)
+        if user is not None and user.active_portfolio_id == portfolio_id:
+            user.active_portfolio_id = None
+            session.flush()
+
+        for model in (PositionRow, TradeRow, PendingOrderRow, ValueHistoryRow):
+            session.query(model).filter_by(portfolio_id=portfolio_id).delete(synchronize_session=False)
+        session.delete(prow)
         session.commit()

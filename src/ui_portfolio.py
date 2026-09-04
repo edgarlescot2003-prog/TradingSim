@@ -293,6 +293,28 @@ def _render_reset(portfolio) -> None:
             st.rerun()
 
 
+def _render_delete(portfolio) -> None:
+    with st.expander("Supprimer ce portefeuille"):
+        st.warning(
+            f"Cette action supprime définitivement « {portfolio.name} » : positions, historique "
+            "des trades, ordres en attente et courbe de valeur. Elle est irréversible et "
+            "différente de la réinitialisation ci-dessus (qui garde le portefeuille, juste vidé)."
+        )
+        confirmed = st.checkbox(
+            "Je confirme vouloir supprimer ce portefeuille", key=f"confirm_delete_{portfolio.id}"
+        )
+        if st.button("Supprimer", type="primary", disabled=not confirmed, key=f"delete_btn_{portfolio.id}"):
+            storage.delete_portfolio(portfolio.id)
+            portfolios = st.session_state.portfolios
+            portfolios.pop(portfolio.id, None)
+            remaining_id = next(iter(portfolios), None)
+            st.session_state.active_id = remaining_id
+            if remaining_id is not None:
+                auth.set_active_portfolio(st.session_state.user_id, remaining_id)
+            st.success("Portefeuille supprimé.")
+            st.rerun()
+
+
 def render(portfolio, total_value: float, snapshots: list[dict]) -> None:
     theme.inject_light()
     with st.container(key="ts_light"):
@@ -302,3 +324,4 @@ def render(portfolio, total_value: float, snapshots: list[dict]) -> None:
         _render_performance(portfolio)
         _render_history(portfolio)
         _render_reset(portfolio)
+        _render_delete(portfolio)
