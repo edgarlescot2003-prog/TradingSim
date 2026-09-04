@@ -211,9 +211,10 @@ def _search_tradable_assets(query: str) -> list[dict]:
 
 def _render_search() -> None:
     with st.container(key="ts_card_search"):
+        st.markdown("##### 🔍 Rechercher un actif")
         query = st.text_input(
             "Rechercher un actif", key="search_query", label_visibility="collapsed",
-            placeholder="Rechercher une action, un indice ou une crypto (ex : Apple, AAPL, Bitcoin)",
+            placeholder="Nom ou ticker : Apple, AAPL, Bitcoin, CAC 40...",
         )
 
         if query:

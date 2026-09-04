@@ -542,6 +542,20 @@ _LIGHT_CSS = f"""
     border-color: {LIGHT_BORDER} !important;
     border-radius: 6px !important;
 }}
+/* Barre de recherche de l'onglet Trading : c'est l'action principale de la
+   page, elle doit se voir — plus grande que les champs de saisie habituels
+   du formulaire d'ordre. */
+.st-key-ts_card_search [data-testid="stTextInput"] input {{
+    font-size: 1.05rem !important;
+    padding-top: 0.7rem !important;
+    padding-bottom: 0.7rem !important;
+}}
+.st-key-ts_card_search [data-testid="stTextInput"] > div {{
+    border-width: 1.5px !important;
+}}
+.st-key-ts_card_search [data-testid="stTextInput"] > div:focus-within {{
+    border-color: {LIGHT_BLUE} !important;
+}}
 
 /* Métriques (points clés) */
 .st-key-ts_light [data-testid="stMetricValue"] {{
