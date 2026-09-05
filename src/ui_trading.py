@@ -48,6 +48,7 @@ ASSET_ROW_COLUMNS = [
     {"key": "name", "label": "Nom", "kind": "link", "width": 1.0},
     {"key": "price", "label": "Prix", "kind": "text", "width": 1.5},
     {"key": "change_pct", "label": "Var. jour", "kind": "signed_pct", "width": 1.0},
+    {"key": "change_30d_pct", "label": "Var. 30j", "kind": "signed_pct", "width": 1.0},
 ]
 SEARCH_RESULT_COLUMNS = [
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
@@ -127,6 +128,32 @@ def _fetch_quotes(tickers: tuple[str, ...]) -> dict[str, dict]:
     return out
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_30d_changes(tickers: tuple[str, ...]) -> dict[str, float | None]:
+    """Variation sur 30 jours glissants pour chaque ticker, mise en cache 1h :
+    contrairement au prix (fast_info, quasi gratuit), ce calcul nécessite de
+    récupérer tout un historique, plus coûteux ; et une tendance sur 30 jours
+    ne bouge de toute façon pas d'une minute à l'autre, un cache plus long
+    que celui du prix n'y perd donc rien en fraîcheur perçue."""
+    def fetch_one(ticker: str):
+        try:
+            hist = md.get_history(ticker, period="1mo", interval="1d")
+        except md.MarketDataError:
+            return ticker, None
+        closes = hist["Close"]
+        if len(closes) < 2 or not closes.iloc[0]:
+            return ticker, None
+        return ticker, float((closes.iloc[-1] - closes.iloc[0]) / closes.iloc[0] * 100)
+
+    out: dict[str, float | None] = {}
+    if not tickers:
+        return out
+    with ThreadPoolExecutor(max_workers=min(8, len(tickers))) as executor:
+        for ticker, change_pct in executor.map(fetch_one, tickers):
+            out[ticker] = change_pct
+    return out
+
+
 def _format_price(ticker: str, price: float, currency: str) -> str:
     if ticker.startswith("^"):
         return f"{price:,.2f} pts"
@@ -145,6 +172,7 @@ def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
                 "name": name,
                 "price": _format_price(ticker, q["price"], q["currency"]) if q else None,
                 "change_pct": q["change_pct"] if q else None,
+                "change_30d_pct": q.get("change_30d_pct") if q else None,
             })
         theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key=card_key, show_header=False)
         if not tradable:
@@ -175,13 +203,18 @@ def _render_trending_box(quotes: dict) -> None:
             "ticker": ticker, "name": name,
             "price": _format_price(ticker, q["price"], q["currency"]),
             "change_pct": q["change_pct"],
+            "change_30d_pct": q.get("change_30d_pct"),
         } for ticker, name, q in picked]
         theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key="home_trending", show_header=False)
 
 
 def _render_home_boxes() -> None:
     universe = INDICES + TOP_CAP + CRYPTO + FOREX_COMMODITIES
-    quotes = _fetch_quotes(tuple(t for t, _ in universe))
+    tickers = tuple(t for t, _ in universe)
+    quotes = _fetch_quotes(tickers)
+    changes_30d = _fetch_30d_changes(tickers)
+    for ticker, data in quotes.items():
+        data["change_30d_pct"] = changes_30d.get(ticker)
 
     row1 = st.columns(2)
     with row1[0]:
