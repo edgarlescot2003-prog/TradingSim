@@ -17,7 +17,7 @@ def load_news() -> list[NewsItem]:
         rows = session.execute(select(NewsRow).order_by(NewsRow.created_at.desc())).scalars().all()
         return [NewsItem(
             id=r.id, title=r.title, content=r.content, link=r.link,
-            created_at=r.created_at, author_id=r.user_id,
+            image_couverture=r.image_couverture, created_at=r.created_at, author_id=r.user_id,
         ) for r in rows]
 
 
@@ -25,7 +25,7 @@ def add_news(item: NewsItem, author_user_id: str) -> None:
     with db.get_session() as session:
         session.add(NewsRow(
             id=item.id, user_id=author_user_id, title=item.title, content=item.content,
-            link=item.link, created_at=item.created_at,
+            link=item.link, image_couverture=item.image_couverture, created_at=item.created_at,
         ))
         session.commit()
 

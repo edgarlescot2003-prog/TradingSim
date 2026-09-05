@@ -10,6 +10,10 @@ class NewsItem:
     title: str
     content: str
     link: str | None = None
+    # Couverture de la carte d'aperçu (grille onglet News) : URL d'image, le
+    # sentinel "__LINK__" (aperçu du lien externe), ou None (carte texte
+    # seule) — voir ui_news.py pour la résolution à la publication.
+    image_couverture: str | None = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     # Auteur d'origine. None si l'auteur a supprimé son compte (l'article
