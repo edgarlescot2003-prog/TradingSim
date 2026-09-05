@@ -3,14 +3,44 @@ chronologique public (Admin/Contributeur/Standard, lecture seule pour ce
 dernier), du plus récent au plus ancien. Suppression réservée à l'Admin —
 voir auth.can_write_news / can_delete_news.
 
+Un lien externe reconnu comme un tweet (twitter.com/x.com) est affiché en
+embed visuel complet (voir _render_tweet_embed) ; tout autre lien reste un
+simple lien cliquable (V2, voir la roadmap).
+
 Pas de modification en place (V1, voir la roadmap) : un article publié se
 supprime, il ne s'édite pas.
 """
 
+import re
+
 import streamlit as st
+import streamlit.components.v1 as components
 
 from . import auth, news_storage
 from .news import NewsItem
+
+# https://twitter.com/user/status/123... ou https://x.com/user/status/123...
+# (l'ancien domaine twitter.com reste accepté, largement encore partagé).
+_TWEET_URL_RE = re.compile(r"^https?://(?:www\.)?(?:twitter\.com|x\.com)/\w+/status/\d+")
+
+
+def _is_tweet_url(url: str) -> bool:
+    return bool(_TWEET_URL_RE.match(url.strip()))
+
+
+def _render_tweet_embed(url: str) -> None:
+    """Embed visuel d'un tweet via le script client officiel de X (widgets.js) :
+    aucune clé API/appel serveur nécessaire, le rendu se fait entièrement dans
+    le navigateur du visiteur. Hauteur fixe + scroll : la hauteur réelle d'un
+    tweet varie (texte, image, citation...) et n'est connue qu'une fois rendu
+    côté client, donc pas moyen de la calculer à l'avance côté serveur."""
+    components.html(
+        f"""
+        <blockquote class="twitter-tweet" data-dnt="true"><a href="{url}"></a></blockquote>
+        <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        """,
+        height=550, scrolling=True,
+    )
 
 
 def _render_form(user_id: str) -> None:
@@ -44,7 +74,10 @@ def _render_item(item: NewsItem, author_name: str, can_delete: bool) -> None:
         st.caption(f"{author_name} · {item.created_at[:16].replace('T', ' ')}")
         st.markdown(item.content)
         if item.link:
-            st.markdown(f"🔗 {item.link}")
+            if _is_tweet_url(item.link):
+                _render_tweet_embed(item.link)
+            else:
+                st.markdown(f"🔗 [{item.link}]({item.link})")
 
         if not can_delete:
             return
