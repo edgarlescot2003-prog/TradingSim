@@ -9,14 +9,17 @@ embed visuel complet dans la modal (voir _render_tweet_embed) ; tout autre
 lien reste un simple lien cliquable.
 
 Couverture de carte (`image_couverture`, voir news.py) : résolue à la
-publication parmi les visuels détectés dans l'article (image dans le
-contenu, et/ou le lien externe) — automatiquement s'il n'y en a qu'un,
-sinon l'auteur choisit explicitement (pas de choix arbitraire silencieux).
+publication parmi les visuels détectés dans l'article — image envoyée
+(upload, stockée en base64 dans la colonne, pas de stockage de fichiers
+dédié), image collée en markdown/URL brute dans le contenu, et/ou le lien
+externe — automatiquement s'il n'y en a qu'un, sinon l'auteur choisit
+explicitement (pas de choix arbitraire silencieux).
 
 Pas de modification en place (V1, voir la roadmap) : un article publié se
 supprime, il ne s'édite pas.
 """
 
+import base64
 import re
 from urllib.parse import urlparse
 
@@ -25,6 +28,11 @@ import streamlit.components.v1 as components
 
 from . import auth, news_storage
 from .news import NewsItem
+
+# Taille max d'une image envoyée : stockée telle quelle (encodée base64) dans
+# la colonne image_couverture, pas de stockage de fichiers dédié (Supabase
+# Storage) dans cette version — reste raisonnable pour une colonne texte.
+_MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 
 # https://twitter.com/user/status/123... ou https://x.com/user/status/123...
 # (l'ancien domaine twitter.com reste accepté, largement encore partagé).
@@ -107,6 +115,15 @@ def _render_link_cover(link: str) -> None:
 def _render_card_cover(item: NewsItem) -> None:
     if item.image_couverture == _LINK_COVER and item.link:
         _render_link_cover(item.link)
+    elif item.image_couverture and item.image_couverture.startswith("data:"):
+        # Image envoyée (upload) : encodée en base64 directement dans la
+        # colonne, pas une URL — st.image ne l'accepte pas telle quelle,
+        # d'où un <img> brut avec la data URI comme src.
+        st.markdown(
+            f'<img src="{item.image_couverture}" style="width:100%;border-radius:8px;'
+            f'display:block;object-fit:cover;max-height:220px;">',
+            unsafe_allow_html=True,
+        )
     elif item.image_couverture:
         st.image(item.image_couverture, use_container_width=True)
 
@@ -120,17 +137,39 @@ def _excerpt(content: str, limit: int = 280) -> str:
 
 # -- Publication ---------------------------------------------------------
 
+def _uploaded_image_data_uri(uploaded_file) -> str | None:
+    """Convertit le fichier envoyé en data URI (base64), ou None + message
+    d'erreur affiché si le fichier dépasse la taille max autorisée."""
+    data = uploaded_file.getvalue()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        st.error(f"Image trop lourde ({len(data) / 1_000_000:.1f} Mo, max {_MAX_UPLOAD_BYTES // 1_000_000} Mo).")
+        return None
+    mime = uploaded_file.type or "image/png"
+    return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+
+
 def _render_form(user_id: str) -> None:
     with st.expander("📝 Publier une news", expanded=False):
         title = st.text_input("Titre", key="news_form_title")
         content = st.text_area(
             "Contenu", height=200, key="news_form_content",
-            placeholder="Analyse, commentaire de marché, ou partage d'un tweet/article... "
-                        "(une image collée en markdown ![alt](url) peut servir de couverture)",
+            placeholder="Analyse, commentaire de marché, ou partage d'un tweet/article...",
         )
-        link = st.text_input("Lien externe (optionnel)", key="news_form_link", placeholder="https://...")
+        link_raw = st.text_input("Lien externe (optionnel)", key="news_form_link", placeholder="https://...")
+        link = link_raw.strip().split()[0] if link_raw.strip() else ""
+        if link_raw.strip() and " " in link_raw.strip():
+            st.caption("⚠️ Un seul lien à la fois : seul le premier a été retenu, le reste est ignoré.")
 
-        candidates = _cover_candidates(content, link.strip())
+        uploaded_file = st.file_uploader(
+            "Image (optionnelle)", type=["png", "jpg", "jpeg", "gif", "webp"], key="news_form_upload",
+            help="Clique pour parcourir, ou glisse-dépose un fichier image (2 Mo max).",
+        )
+        upload_uri = _uploaded_image_data_uri(uploaded_file) if uploaded_file is not None else None
+
+        candidates = _cover_candidates(content, link)
+        if upload_uri:
+            candidates = [(f"Image envoyée : {uploaded_file.name}", upload_uri)] + candidates
+
         cover_value = candidates[0][1] if len(candidates) == 1 else None
         if len(candidates) > 1:
             st.caption("Plusieurs visuels détectés : choisis celui à utiliser comme couverture de carte.")
@@ -146,15 +185,20 @@ def _render_form(user_id: str) -> None:
                 st.error("Le titre est obligatoire.")
             elif not content.strip():
                 st.error("Le contenu ne peut pas être vide.")
+            elif uploaded_file is not None and upload_uri is None:
+                st.error("Corrige ou retire l'image envoyée avant de publier.")
             else:
                 news_storage.add_news(
                     NewsItem(
-                        title=title.strip(), content=content.strip(), link=link.strip() or None,
+                        title=title.strip(), content=content.strip(), link=link or None,
                         image_couverture=cover_value,
                     ),
                     user_id,
                 )
-                for key in ("news_form_title", "news_form_content", "news_form_link", "news_form_cover_choice"):
+                for key in (
+                    "news_form_title", "news_form_content", "news_form_link",
+                    "news_form_upload", "news_form_cover_choice",
+                ):
                     st.session_state.pop(key, None)
                 st.success(f"News « {title.strip()} » publiée.")
                 st.rerun()

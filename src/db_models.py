@@ -174,11 +174,13 @@ class NewsRow(Base):
     title = Column(String, nullable=False)
     content = Column(Text, nullable=False)
     link = Column(String, nullable=True)
-    # URL de l'image de couverture pour la carte d'aperçu (grille de l'onglet
-    # News) : soit une image détectée dans `content`, soit le sentinel
-    # "__LINK__" (voir ui_news._LINK_COVER) quand la couverture doit reprendre
-    # l'aperçu du lien externe plutôt qu'une image. None = pas de couverture
-    # (carte texte seule). Choisie automatiquement s'il n'y a qu'un seul
-    # visuel candidat à la publication, sinon explicitement par l'auteur.
-    image_couverture = Column(String, nullable=True)
+    # Couverture pour la carte d'aperçu (grille de l'onglet News) : une URL
+    # d'image détectée dans `content`, une image envoyée par upload (stockée
+    # ici en data URI base64 — pas de stockage de fichiers dédié, d'où Text
+    # plutôt que String), ou le sentinel "__LINK__" (voir ui_news._LINK_COVER)
+    # quand la couverture doit reprendre l'aperçu du lien externe. None = pas
+    # de couverture (carte texte seule). Choisie automatiquement s'il n'y a
+    # qu'un seul visuel candidat à la publication, sinon explicitement par
+    # l'auteur.
+    image_couverture = Column(Text, nullable=True)
     created_at = Column(String, nullable=False, default=_now_iso)
