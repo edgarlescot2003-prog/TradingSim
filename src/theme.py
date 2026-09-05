@@ -124,7 +124,10 @@ h1, h2, h3, h4, h5, h6,
     background: transparent !important;
     height: 0 !important;
 }}
-[data-testid="stToolbar"] {{ top: 0.4rem !important; }}
+/* Repoussée sous la barre de valeur (.ts-topbar, ~3.75rem de haut) : sinon
+   cette barre d'outils flottante (Share/étoile/crayon...) reste ancrée en
+   haut du viewport et vient recouvrir le P&L, qui occupe le même coin. */
+[data-testid="stToolbar"] {{ top: 3.9rem !important; }}
 
 /* Barre de valeur : `position: sticky` (pas `fixed`) et confinée au volet de
    contenu principal (elle est injectée à l'intérieur de stMain, à droite du
@@ -142,7 +145,10 @@ h1, h2, h3, h4, h5, h6,
     z-index: 100;
     background: var(--ts-panel);
     border-bottom: 1px solid var(--ts-border);
-    padding: 0.65rem 1.75rem;
+    /* padding-right généreux : réserve la place de la barre d'outils native
+       Streamlit (stToolbar, Share/étoile/crayon...) qui flotte au-dessus en
+       haut à droite du viewport et recouvrait sinon le P&L. */
+    padding: 0.65rem 7.5rem 0.65rem 1.75rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
