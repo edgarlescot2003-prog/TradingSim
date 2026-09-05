@@ -23,6 +23,7 @@ from .portfolio import Portfolio
 LIGHT_POSITION_COLUMNS = [
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
     {"key": "name", "label": "Nom", "kind": "link"},
+    {"key": "side", "label": "Sens", "kind": "text"},
     {"key": "price", "label": "Prix", "kind": "eur"},
     {"key": "quantity", "label": "Quantité", "kind": "num", "decimals": 4},
     {"key": "day_pnl", "label": "Gain du jour", "kind": "signed_eur_pct", "width": 1.8},
@@ -152,6 +153,7 @@ def _render_positions_table(snapshots: list[dict]) -> None:
                 "ticker": pos.ticker,
                 "name": pos.name,
                 "category": s["category"],
+                "side": "Long" if pos.side == "long" else "Short",
                 "price": s["current_price_eur"],
                 "quantity": pos.quantity,
                 "day_pnl": (s["day_pnl_eur"], s["day_pnl_pct"]),
