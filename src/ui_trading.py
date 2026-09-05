@@ -174,7 +174,7 @@ def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
                 "change_pct": q["change_pct"] if q else None,
                 "change_30d_pct": q.get("change_30d_pct") if q else None,
             })
-        theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key=card_key, show_header=False)
+        theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key=card_key)
         if not tradable:
             st.caption("Cours en lecture seule : le trading sur ces actifs n'est pas encore disponible.")
 
@@ -205,7 +205,7 @@ def _render_trending_box(quotes: dict) -> None:
             "change_pct": q["change_pct"],
             "change_30d_pct": q.get("change_30d_pct"),
         } for ticker, name, q in picked]
-        theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key="home_trending", show_header=False)
+        theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key="home_trending")
 
 
 def _render_home_boxes() -> None:
