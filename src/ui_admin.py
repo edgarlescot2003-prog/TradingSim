@@ -1,6 +1,7 @@
 """Page d'administration (Admin uniquement — app.py ne l'affiche que pour ce
 rôle) : liste des comptes, activation/désactivation, suppression, promotion
-d'un compte standard en Admin (à sens unique, voir auth.py).
+d'un compte standard en Contributeur (droit de publier des news) ou en Admin
+(à sens unique, voir auth.py).
 """
 
 import streamlit as st
@@ -9,8 +10,8 @@ from . import auth, theme
 
 
 def _render_header() -> None:
-    cols = st.columns([2, 1.4, 1, 1.3, 1.3])
-    for col, label in zip(cols, ["IDENTIFIANT", "RÔLE", "STATUT", "", ""]):
+    cols = st.columns([2, 1.4, 1, 1.1, 1.3, 1.3])
+    for col, label in zip(cols, ["IDENTIFIANT", "RÔLE", "STATUT", "", "", ""]):
         col.markdown(
             f'<span style="font-size:0.68rem;font-weight:600;letter-spacing:0.04em;'
             f'color:{theme.MUTED};">{label}</span>',
@@ -19,9 +20,10 @@ def _render_header() -> None:
 
 
 def _render_row(user, current_user_id: str) -> None:
-    c1, c2, c3, c4, c5 = st.columns([2, 1.4, 1, 1.3, 1.3])
+    c1, c2, c3, c4, c5, c6 = st.columns([2, 1.4, 1, 1.1, 1.3, 1.3])
     is_self = user.id == current_user_id
     is_admin_row = user.role == auth.ROLE_ADMIN
+    is_standard_row = user.role == auth.ROLE_STANDARD
 
     c1.markdown(theme.mono(user.username), unsafe_allow_html=True)
     c2.write(auth.ROLE_LABELS[user.role])
@@ -34,14 +36,33 @@ def _render_row(user, current_user_id: str) -> None:
     if is_admin_row:
         c4.caption("—")
         c5.caption("—")
+        c6.caption("—")
     else:
         toggle_label = "Désactiver" if user.is_active else "Réactiver"
         if c4.button(toggle_label, key=f"toggle_{user.id}", disabled=is_self, use_container_width=True):
             auth.set_active(user.id, not user.is_active)
             st.rerun()
 
-        if c5.button("Promouvoir Admin", key=f"promote_{user.id}", use_container_width=True):
+        if is_standard_row:
+            if c5.button("Promouvoir contributeur", key=f"promote_contrib_{user.id}", use_container_width=True):
+                st.session_state[f"confirm_promote_contrib_{user.id}"] = True
+        else:
+            c5.caption("—")
+
+        if c6.button("Promouvoir Admin", key=f"promote_{user.id}", use_container_width=True):
             st.session_state[f"confirm_promote_{user.id}"] = True
+
+    if is_standard_row and st.session_state.get(f"confirm_promote_contrib_{user.id}"):
+        st.warning(f"Confirmer la promotion de « {user.username} » en Contributeur ? "
+                   "Ce compte pourra alors publier des news librement (sans validation).")
+        cc1, cc2, _ = st.columns([1, 1, 4])
+        if cc1.button("Oui, promouvoir", key=f"confirm_promote_contrib_yes_{user.id}", type="primary"):
+            auth.promote_to_contributor(user.id)
+            st.session_state[f"confirm_promote_contrib_{user.id}"] = False
+            st.rerun()
+        if cc2.button("Annuler", key=f"confirm_promote_contrib_no_{user.id}"):
+            st.session_state[f"confirm_promote_contrib_{user.id}"] = False
+            st.rerun()
 
     if not is_admin_row and st.session_state.get(f"confirm_promote_{user.id}"):
         st.warning(f"Confirmer la promotion de « {user.username} » en Admin ? "
@@ -62,7 +83,7 @@ def _render_row(user, current_user_id: str) -> None:
         if st.session_state.get(f"confirm_delete_user_{user.id}"):
             st.warning(
                 f"Confirmer la suppression définitive du compte « {user.username} » et de toutes ses "
-                "données (portefeuilles, positions, historique) ? Ses cours publiés sont conservés."
+                "données (portefeuilles, positions, historique) ? Ses cours et news publiés sont conservés."
             )
             cc1, cc2, _ = st.columns([1, 1, 4])
             if cc1.button("Oui, supprimer", key=f"confirm_del_yes_{user.id}", type="primary"):

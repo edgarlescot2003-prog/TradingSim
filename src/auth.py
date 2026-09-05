@@ -3,20 +3,27 @@
 Mots de passe hachés avec bcrypt (primitive standard, éprouvée — c'est
 d'ailleurs ce qu'utilise streamlit-authenticator en interne). Un compte créé
 par inscription publique est toujours "standard" ; le premier compte Admin
-se crée via scripts/create_admin.py. Un Admin peut ensuite promouvoir
-n'importe quel compte standard en Admin depuis la page d'administration
-(promotion à sens unique — pas de rétrogradation depuis l'UI, pour éviter
-de se retrouver sans plus aucun admin par erreur).
+se crée via scripts/create_admin.py. Un Admin peut ensuite promouvoir un
+compte standard en Contributeur ou en Admin depuis la page d'administration
+(promotions à sens unique — pas de rétrogradation depuis l'UI, pour éviter
+de se retrouver sans plus aucun admin par erreur, ou de perdre la trace de
+qui a le droit de publier des news).
 
-Rôles (2 seulement) :
-- admin    : accès total. Gère les comptes (activer/désactiver/supprimer/
-             promouvoir), peut écrire n'importe quel cours (y compris ceux
-             d'un autre auteur), seul à pouvoir écrire dans le futur News.
-- standard : rôle par défaut, y compris pour tout nouveau compte inscrit.
-             Son propre portefeuille, isolé. Peut ajouter des cours et
-             modifier ceux qu'il a écrits, mais ne peut en supprimer aucun
-             (ni les siens ni ceux des autres — réservé à l'Admin). Lecture
-             seule sur le futur onglet News.
+Rôles (3) :
+- admin       : accès total. Gère les comptes (activer/désactiver/
+                supprimer/promouvoir), peut écrire n'importe quel cours (y
+                compris ceux d'un autre auteur), et publier/supprimer
+                n'importe quelle news (y compris celles d'un contributeur).
+- contributor : peut publier des news librement (sans validation
+                préalable), mais ne peut en supprimer aucune (ni les
+                siennes ni celles des autres — réservé à l'Admin). Mêmes
+                droits que "standard" partout ailleurs (portefeuille,
+                cours).
+- standard    : rôle par défaut, y compris pour tout nouveau compte
+                inscrit. Son propre portefeuille, isolé. Peut ajouter des
+                cours et modifier ceux qu'il a écrits, mais ne peut en
+                supprimer aucun (ni les siens ni ceux des autres — réservé
+                à l'Admin). Lecture seule sur l'onglet News.
 """
 
 import bcrypt
@@ -24,14 +31,17 @@ from sqlalchemy import select
 
 from . import db
 from .db_models import (
-    CourseRow, PendingOrderRow, PortfolioRow, PositionRow, SearchHistoryRow, TradeRow, User, ValueHistoryRow,
+    CourseRow, NewsRow, PendingOrderRow, PortfolioRow, PositionRow, SearchHistoryRow, TradeRow, User,
+    ValueHistoryRow,
 )
 
 ROLE_ADMIN = "admin"
+ROLE_CONTRIBUTOR = "contributor"
 ROLE_STANDARD = "standard"
 
 ROLE_LABELS = {
     ROLE_ADMIN: "Admin",
+    ROLE_CONTRIBUTOR: "Contributeur",
     ROLE_STANDARD: "Utilisateur standard",
 }
 
@@ -104,8 +114,8 @@ def set_active(user_id: str, is_active: bool) -> None:
 
 
 def promote_to_admin(user_id: str) -> None:
-    """Promeut un compte standard en Admin. Pas de chemin inverse depuis
-    l'UI (voir le commentaire de module)."""
+    """Promeut un compte (standard ou contributeur) en Admin. Pas de chemin
+    inverse depuis l'UI (voir le commentaire de module)."""
     with db.get_session() as session:
         user = session.get(User, user_id)
         if user is None:
@@ -114,11 +124,23 @@ def promote_to_admin(user_id: str) -> None:
         session.commit()
 
 
+def promote_to_contributor(user_id: str) -> None:
+    """Promeut un compte standard en Contributeur (droit de publier des
+    news). Pas de chemin inverse depuis l'UI (voir le commentaire de
+    module)."""
+    with db.get_session() as session:
+        user = session.get(User, user_id)
+        if user is None:
+            raise ValueError("Compte introuvable.")
+        user.role = ROLE_CONTRIBUTOR
+        session.commit()
+
+
 def delete_user(user_id: str) -> None:
     """Supprime le compte et toutes ses données (portefeuilles, positions,
     trades, ordres, courbe de valeur, historique de recherche Trading). Les
-    cours qu'il a rédigés sont conservés (contenu partagé) mais détachés de
-    son compte.
+    cours et les news qu'il a rédigés sont conservés (contenu partagé) mais
+    détachés de son compte.
 
     Pas de contrainte ON DELETE CASCADE en base (les tables existaient déjà
     avant l'introduction des comptes) : la suppression en cascade est donc
@@ -146,6 +168,9 @@ def delete_user(user_id: str) -> None:
         session.query(CourseRow).filter_by(user_id=user_id).update(
             {"user_id": None}, synchronize_session=False
         )
+        session.query(NewsRow).filter_by(user_id=user_id).update(
+            {"user_id": None}, synchronize_session=False
+        )
         session.delete(user)
         session.commit()
 
@@ -166,9 +191,7 @@ def set_active_portfolio(user_id: str, portfolio_id: str) -> None:
 
 # -- Permissions ---------------------------------------------------------
 #
-# Point d'entrée unique pour toute vérification de droit dans l'UI. Un futur
-# onglet News réutilise can_write_news tel quel — aucune nouvelle logique de
-# permission à écrire.
+# Point d'entrée unique pour toute vérification de droit dans l'UI.
 
 def is_admin(role: str) -> bool:
     return role == ROLE_ADMIN
@@ -192,5 +215,12 @@ def can_delete_course(role: str) -> bool:
 
 
 def can_write_news(role: str) -> bool:
-    """Écriture du futur onglet News réservée à l'Admin."""
+    """Publication de news : Admin et Contributeur, librement (pas de
+    workflow de validation)."""
+    return role in (ROLE_ADMIN, ROLE_CONTRIBUTOR)
+
+
+def can_delete_news(role: str) -> bool:
+    """Suppression réservée à l'Admin, y compris pour les news d'un
+    contributeur."""
     return role == ROLE_ADMIN

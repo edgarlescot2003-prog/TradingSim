@@ -160,3 +160,18 @@ class CourseRow(Base):
     content = Column(Text, nullable=False)
     created_at = Column(String, nullable=False, default=_now_iso)
     updated_at = Column(String, nullable=False, default=_now_iso)
+
+
+class NewsRow(Base):
+    """Article du fil News (onglet News) : contenu partagé, lu par tous,
+    écrit par Admin/Contributeur. Même principe que CourseRow pour
+    `user_id` (auteur d'origine, nullable — détaché si le compte est
+    supprimé, l'article reste en place)."""
+    __tablename__ = "news"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_new_uuid)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True, index=True)
+    title = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    link = Column(String, nullable=True)
+    created_at = Column(String, nullable=False, default=_now_iso)

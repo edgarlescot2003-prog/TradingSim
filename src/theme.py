@@ -731,7 +731,7 @@ def go_to_trading(ticker: str, name: str | None = None) -> None:
 
 DEFAULT_TABS = [
     ("portefeuille", "Portefeuille"), ("trading", "Trading"),
-    ("cours", "Tutoriel"), ("classement", "Classement"),
+    ("cours", "Tutoriel"), ("classement", "Classement"), ("news", "News"),
 ]
 
 
