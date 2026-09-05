@@ -117,7 +117,7 @@ Le reste, c'est de la pratique. Lance-toi, explore, et n'hésite pas à revenir 
 
 
 def render() -> None:
-    st.title("Bienvenue sur TradingSim 👋")
+    st.title("Bienvenue sur TradingSim")
     st.markdown(INTRO)
     st.divider()
     for title, content in CHAPTERS:
