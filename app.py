@@ -3,8 +3,8 @@
 import streamlit as st
 
 from src import (
-    auth, course_storage, db, order_engine, storage, theme,
-    ui_admin, ui_auth, ui_courses, ui_leaderboard, ui_portfolio, ui_trading, valuation,
+    auth, db, order_engine, storage, theme,
+    ui_admin, ui_auth, ui_leaderboard, ui_portfolio, ui_trading, ui_tutorial, valuation,
 )
 from src.portfolio import Portfolio
 
@@ -26,7 +26,7 @@ if "auth_user" not in st.session_state:
 auth_user = st.session_state.auth_user
 user_id = auth_user["id"]
 role = auth_user["role"]
-# storage.py / course_storage.py lisent l'utilisateur courant depuis ici :
+# storage.py lit l'utilisateur courant depuis ici :
 # toute requête aux portefeuilles/positions/historique est donc filtrée par
 # ce user_id, qui ne provient que de l'authentification (jamais d'un
 # paramètre d'URL ou d'une valeur modifiable côté client).
@@ -37,7 +37,7 @@ with st.sidebar:
         f"**{auth_user['username']}** · {auth.ROLE_LABELS[role]}",
     )
     if st.button("Se déconnecter", use_container_width=True):
-        for key in ("auth_user", "user_id", "portfolios", "active_id", "courses"):
+        for key in ("auth_user", "user_id", "portfolios", "active_id"):
             st.session_state.pop(key, None)
         st.rerun()
     st.divider()
@@ -105,10 +105,6 @@ with st.sidebar:
 
 portfolio = portfolios[st.session_state.active_id]
 
-if "courses" not in st.session_state:
-    st.session_state.courses = course_storage.load_courses()
-courses = st.session_state.courses
-
 executed_messages = order_engine.process_pending_orders(portfolio)
 if executed_messages:
     storage.save_portfolio(portfolio)
@@ -131,7 +127,7 @@ theme.render_tab_bar(st.session_state.active_tab, tabs)
 if st.session_state.active_tab == "trading":
     ui_trading.render(portfolio)
 elif st.session_state.active_tab == "cours":
-    ui_courses.render(courses, role, user_id)
+    ui_tutorial.render()
 elif st.session_state.active_tab == "classement":
     ui_leaderboard.render(user_id)
 elif st.session_state.active_tab == "administration" and auth.is_admin(role):
