@@ -863,6 +863,15 @@ def _light_cell_content(col: dict, value) -> str:
         color = LIGHT_GREEN if value >= 0 else LIGHT_RED
         sign = "+" if value >= 0 else ""
         return f'<span class="ts-light-num" style="color:{color}">{sign}{value:,.{decimals}f}%</span>'
+    if kind == "signed_eur_pct":
+        eur_value, pct_value = value
+        color = LIGHT_GREEN if eur_value >= 0 else LIGHT_RED
+        eur_sign = "+" if eur_value >= 0 else ""
+        pct_sign = "+" if pct_value >= 0 else ""
+        return (
+            f'<span class="ts-light-num" style="color:{color}">'
+            f'{eur_sign}{eur_value:,.{decimals}f} € ({pct_sign}{pct_value:,.1f}%)</span>'
+        )
     return html_lib.escape(str(value))
 
 
@@ -897,7 +906,7 @@ def render_table_light(
     `show_header=False` masque la ligne d'en-têtes (listes compactes façon
     encadré d'actifs, où les libellés de colonne n'apportent rien).
     """
-    numeric_kinds = {"num", "eur", "signed_eur", "pct", "signed_pct"}
+    numeric_kinds = {"num", "eur", "signed_eur", "pct", "signed_pct", "signed_eur_pct"}
     widths = [
         col["width"] if "width" in col else (1.3 if col.get("kind") in numeric_kinds else 1.0)
         for col in columns

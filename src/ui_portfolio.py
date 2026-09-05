@@ -25,8 +25,8 @@ LIGHT_POSITION_COLUMNS = [
     {"key": "name", "label": "Nom", "kind": "link"},
     {"key": "price", "label": "Prix", "kind": "eur"},
     {"key": "quantity", "label": "Quantité", "kind": "num", "decimals": 4},
-    {"key": "day_pnl_eur", "label": "Gain du jour", "kind": "signed_eur"},
-    {"key": "day_pnl_pct", "label": "Gain du jour %", "kind": "signed_pct"},
+    {"key": "day_pnl", "label": "Gain du jour", "kind": "signed_eur_pct", "width": 1.8},
+    {"key": "total_pnl", "label": "Gain total", "kind": "signed_eur_pct", "width": 1.8},
     {"key": "value", "label": "Valeur", "kind": "eur"},
 ]
 
@@ -154,8 +154,8 @@ def _render_positions_table(snapshots: list[dict]) -> None:
                 "category": s["category"],
                 "price": s["current_price_eur"],
                 "quantity": pos.quantity,
-                "day_pnl_eur": s["day_pnl_eur"],
-                "day_pnl_pct": s["day_pnl_pct"],
+                "day_pnl": (s["day_pnl_eur"], s["day_pnl_pct"]),
+                "total_pnl": (s["pnl_eur"], s["pnl_pct"]),
                 "value": s["current_exposure_eur"],
             })
         rows.sort(key=lambda r: r["value"], reverse=True)
