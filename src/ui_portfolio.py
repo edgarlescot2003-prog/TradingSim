@@ -151,6 +151,7 @@ def _render_positions_table(snapshots: list[dict]) -> None:
             rows.append({
                 "ticker": pos.ticker,
                 "name": pos.name,
+                "category": s["category"],
                 "price": s["current_price_eur"],
                 "quantity": pos.quantity,
                 "day_pnl_eur": s["day_pnl_eur"],

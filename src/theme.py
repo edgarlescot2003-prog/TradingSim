@@ -63,9 +63,19 @@ _BADGE_PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa
 _BADGE_DARK_TEXT = {"#eda100", "#e87ba4"}  # contraste insuffisant en texte blanc
 
 
-def badge_color(ticker: str) -> tuple[str, str]:
-    """Couleur de fond + couleur de texte lisible pour le badge d'un ticker,
-    déterministe (même ticker -> même couleur à chaque rendu)."""
+def badge_color(ticker: str, category: str | None = None) -> tuple[str, str]:
+    """Couleur de fond + couleur de texte lisible pour le badge d'un ticker.
+
+    Si `category` est fournie (Actions/Crypto/Indices-ETF/Autres, voir
+    CATEGORY_COLORS), le badge reprend la couleur de la catégorie — deux
+    tickers de la même classe d'actif ont alors la même couleur, et NVIDIA
+    n'a plus de raison de partager sa couleur avec le Bitcoin. Sans catégorie
+    connue (tables où elle n'est pas disponible sans appel réseau
+    supplémentaire, ex. historique/ordres en attente), on retombe sur
+    l'ancien calcul déterministe à partir des lettres du ticker."""
+    if category is not None:
+        bg = CATEGORY_COLORS.get(category, LIGHT_FAINT)
+        return bg, "#ffffff"
     bg = _BADGE_PALETTE[sum(ord(c) for c in ticker) % len(_BADGE_PALETTE)]
     fg = LIGHT_TEXT if bg in _BADGE_DARK_TEXT else "#ffffff"
     return bg, fg
@@ -921,7 +931,7 @@ def render_table_light(
                     name = row.get("nav_name", row.get("name", ticker))
                     label = "—" if value is None else str(value)
                     key = f"tslight_ticker_{table_key}_{rid}"
-                    bg, fg = badge_color(ticker)
+                    bg, fg = badge_color(ticker, row.get("category"))
                     # Sélecteur à 3 classes (ts_light + la clé de ce badge + .stButton) pour
                     # dépasser la spécificité de la règle générique .st-key-ts_light .stButton
                     # > button (2 classes) : à égalité de !important, la spécificité la plus
