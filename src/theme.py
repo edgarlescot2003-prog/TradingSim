@@ -1179,7 +1179,7 @@ def render_table_light(
 
 def render_compact_list(
     rows: list[dict], table_key: str,
-    detail: callable | None = None,
+    detail: "Callable[[dict], None] | None" = None,
 ) -> None:
     """Liste compacte façon Kraken/TradingView, pour l'affichage mobile
     (voir le media query dans _LIGHT_CSS — masquée en desktop, où
