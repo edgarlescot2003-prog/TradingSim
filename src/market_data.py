@@ -18,6 +18,15 @@ class MarketDataError(Exception):
 _FX_CACHE: dict[str, tuple[float, float]] = {}
 _FX_CACHE_TTL_SECONDS = 300
 
+# Cache court sur le prix courant : la revalorisation du Portefeuille (et du
+# Classement) refait cet appel à chaque interaction, sans aucun cache
+# jusqu'ici — un enchaînement rapide de clics pouvait donc envoyer une rafale
+# de requêtes sur le même ticker et déclencher le rate-limit "Too Many
+# Requests" de l'API gratuite de Yahoo. 20s reste largement assez frais pour
+# un prix qui n'est de toute façon pas temps réel (voir get_quote).
+_QUOTE_CACHE: dict[str, tuple[dict, float]] = {}
+_QUOTE_CACHE_TTL_SECONDS = 20
+
 
 def search_assets(query: str, max_results: int = 8) -> list[dict]:
     """Recherche des actifs par nom ou ticker. Retourne une liste de dicts
@@ -54,7 +63,15 @@ def get_quote(ticker: str) -> dict:
     INDEX/CRYPTOCURRENCY/...) à la catégorisation par classe d'actif. Les deux
     viennent du même appel fast_info que le prix, donc sans coût réseau
     supplémentaire.
+
+    Résultat mis en cache _QUOTE_CACHE_TTL_SECONDS secondes (voir plus haut) :
+    un échec n'est jamais mis en cache, pour ne pas rester bloqué sur une
+    erreur passagère plus longtemps que nécessaire.
     """
+    cached = _QUOTE_CACHE.get(ticker)
+    if cached and (time.time() - cached[1]) < _QUOTE_CACHE_TTL_SECONDS:
+        return cached[0]
+
     try:
         info = yf.Ticker(ticker).fast_info
         price = info.get("last_price") or info.get("lastPrice")
@@ -66,12 +83,14 @@ def get_quote(ticker: str) -> dict:
 
     if price is None or currency is None:
         raise MarketDataError(f"Aucune donnée de prix disponible pour '{ticker}'.")
-    return {
+    quote = {
         "price": float(price),
         "currency": currency,
         "previous_close": float(previous_close) if previous_close is not None else None,
         "quote_type": quote_type,
     }
+    _QUOTE_CACHE[ticker] = (quote, time.time())
+    return quote
 
 
 def get_history(ticker: str, period: str = "6mo", interval: str = "1d", start=None):
