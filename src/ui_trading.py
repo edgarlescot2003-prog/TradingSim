@@ -189,17 +189,23 @@ def _render_home_boxes() -> None:
     for ticker, data in quotes.items():
         data["change_30d_pct"] = changes_30d.get(ticker)
 
-    row1 = st.columns(2)
-    with row1[0]:
-        _render_asset_box("home_indices", "Indices majeurs", INDICES, quotes)
-    with row1[1]:
-        _render_asset_box("home_topcap", "Top capitalisation", TOP_CAP, quotes)
+    # Conteneur dédié : sert d'ancrage CSS pour forcer le passage à 1 colonne
+    # sur mobile (voir le media query dans theme.py), sans dépendre du seul
+    # comportement natif de Streamlit.
+    with st.container(key="ts_home_grid"):
+        row1 = st.columns(2)
+        with row1[0]:
+            _render_asset_box("home_indices", "Indices majeurs", INDICES, quotes)
+        with row1[1]:
+            _render_asset_box("home_topcap", "Top capitalisation", TOP_CAP, quotes)
 
-    row2 = st.columns(2)
-    with row2[0]:
-        _render_asset_box("home_crypto", "Crypto les plus suivies", CRYPTO, quotes)
-    with row2[1]:
-        _render_asset_box("home_forex", "Forex & Matières premières", FOREX_COMMODITIES, quotes, tradable=False)
+        row2 = st.columns(2)
+        with row2[0]:
+            _render_asset_box("home_crypto", "Crypto les plus suivies", CRYPTO, quotes)
+        with row2[1]:
+            _render_asset_box(
+                "home_forex", "Forex & Matières premières", FOREX_COMMODITIES, quotes, tradable=False,
+            )
 
 
 # -- Recherche -----------------------------------------------------------------

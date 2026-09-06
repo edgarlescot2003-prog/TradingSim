@@ -269,10 +269,13 @@ def render(role: str, user_id: str) -> None:
     usernames = {u.id: u.username for u in auth.list_users()}
     can_delete = auth.can_delete_news(role)
 
-    columns = st.columns(3)
-    for i, item in enumerate(items):
-        with columns[i % 3]:
-            _render_card(item, usernames.get(item.author_id, "(compte supprimé)"), can_delete)
+    # Conteneur dédié : sert d'ancrage CSS pour forcer le passage à 1 colonne
+    # sur mobile (voir le media query dans theme.py).
+    with st.container(key="ts_news_grid"):
+        columns = st.columns(3)
+        for i, item in enumerate(items):
+            with columns[i % 3]:
+                _render_card(item, usernames.get(item.author_id, "(compte supprimé)"), can_delete)
 
     open_id = st.session_state.get("open_news_id")
     if open_id:

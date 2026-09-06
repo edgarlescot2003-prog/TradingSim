@@ -412,6 +412,72 @@ hr {{ border-color: var(--ts-border) !important; }}
     font-variant-numeric: tabular-nums;
     text-align: right;
 }}
+
+/* Libellé de colonne réinjecté dans chaque cellule (voir render_table /
+   render_table_light) : invisible en desktop (l'en-tête suffit), affiché
+   uniquement une fois la ligne empilée en carte sur petit écran, où
+   l'en-tête lui-même est masqué (voir le media query mobile plus bas). */
+.ts-cell-mobile-label {{ display: none; }}
+
+/* -- Mobile (écrans étroits) --------------------------------------------
+   Principe : les tableaux (de vrais st.columns par ligne, un par tableau)
+   passent de "1 ligne = 1 rangée horizontale" à "1 ligne = 1 carte
+   empilée verticalement", en réutilisant les mêmes éléments déjà rendus
+   (aucune donnée retirée, juste réorganisée) — voir la doc de
+   render_table/render_table_light. La barre d'onglets devient défilable
+   au doigt plutôt que de se tasser ou passer à la ligne. */
+@media (max-width: 640px) {{
+    [class*="st-key-tstable_header_"] {{ display: none; }}
+    [class*="st-key-tstable_"] [data-testid="stHorizontalBlock"] {{
+        flex-direction: column !important;
+        align-items: stretch !important;
+        border: 1px solid var(--ts-border);
+        border-radius: 6px;
+        padding: 0.6rem 0.75rem;
+        margin-bottom: 0.6rem;
+    }}
+    [class*="st-key-tstable_"] [data-testid="stHorizontalBlock"] [data-testid="stColumn"] {{
+        width: 100% !important;
+        flex: none !important;
+        min-width: 0 !important;
+    }}
+    .ts-row-cell, .ts-row-cell .ts-num {{ text-align: left !important; white-space: normal; }}
+    .ts-cell-mobile-label {{
+        display: block;
+        color: var(--ts-muted);
+        font-size: 0.62rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-weight: 600;
+        margin-top: 0.3rem;
+    }}
+
+    /* Barre d'onglets : défilement horizontal au doigt plutôt que des
+       libellés tassés ou coupés. */
+    .st-key-ts_tabbar {{
+        overflow-x: auto;
+        flex-wrap: nowrap !important;
+        gap: 1.1rem !important;
+        -webkit-overflow-scrolling: touch;
+    }}
+    .st-key-ts_tabbar > * {{ flex-shrink: 0; }}
+
+    /* Barre de valeur : la marge réservée à la barre d'outils Streamlit
+       (7.5rem, voir plus haut) est disproportionnée sur un écran étroit. */
+    .ts-topbar {{ padding-right: 3.5rem; }}
+    .ts-topbar-right {{ gap: 1.1rem; }}
+
+    /* Grille de cartes News (onglet News, hors thème clair scopé) : 1
+       colonne au lieu de 3, quel que soit le comportement natif exact de
+       Streamlit sur les st.columns (non garanti pour un nombre fixe). */
+    [class*="st-key-ts_news_grid"] [data-testid="stHorizontalBlock"] {{
+        flex-direction: column !important;
+    }}
+    [class*="st-key-ts_news_grid"] [data-testid="stColumn"] {{
+        width: 100% !important;
+        flex: none !important;
+    }}
+}}
 """
 
 
@@ -611,6 +677,16 @@ _LIGHT_CSS = f"""
 .st-key-ts_light [class*="st-key-tslight_table_"] [data-testid="stHorizontalBlock"]:last-child {{
     border-bottom: none; margin-bottom: 0;
 }}
+/* Correctif à la règle :last-child ci-dessus : l'en-tête vit maintenant dans
+   son propre conteneur isolé (tslight_header_, voir render_table_light) pour
+   pouvoir être masqué sur mobile — son unique stHorizontalBlock y est donc
+   TOUJOURS "dernier enfant" de son parent immédiat, peu importe le nombre de
+   lignes de données qui suivent par ailleurs. Sans ce correctif, l'en-tête
+   perdrait sa bordure du bas même quand des lignes le suivent. */
+.st-key-ts_light [class*="st-key-tslight_header_"] [data-testid="stHorizontalBlock"]:last-child {{
+    border-bottom: 1px solid {LIGHT_GRIDLINE} !important;
+    margin-bottom: 0.4rem !important;
+}}
 .st-key-ts_light [class*="st-key-tslight_table_"] [data-testid="stHorizontalBlock"]:hover {{
     background: rgba(11,11,11,0.025);
 }}
@@ -667,6 +743,39 @@ _LIGHT_CSS = f"""
     border: 1px solid {LIGHT_BORDER} !important;
     border-radius: 8px !important;
     color: {LIGHT_TEXT} !important;
+}}
+
+/* Mobile (écrans étroits) : même principe que le tableau sombre (voir la
+   fin de _CSS) — chaque ligne (Positions, Historique...) devient une
+   carte empilée verticalement plutôt qu'une rangée horizontale tassée. */
+@media (max-width: 640px) {{
+    .st-key-ts_light [class*="st-key-tslight_header_"] {{ display: none; }}
+    .st-key-ts_light [class*="st-key-tslight_table_"] [data-testid="stHorizontalBlock"] {{
+        flex-direction: column !important;
+        align-items: stretch !important;
+        border: 1px solid {LIGHT_BORDER};
+        border-radius: 8px;
+        padding: 0.7rem 0.9rem;
+        margin-bottom: 0.6rem;
+        background: {LIGHT_SURFACE};
+    }}
+    .st-key-ts_light [class*="st-key-tslight_table_"] [data-testid="stHorizontalBlock"] [data-testid="stColumn"] {{
+        width: 100% !important;
+        flex: none !important;
+        min-width: 0 !important;
+    }}
+    .ts-light-cell, .ts-light-cell .ts-light-num {{ text-align: left !important; white-space: normal; }}
+
+    /* Vitrine d'accueil Trading (Indices/Top cap/Crypto/Forex) : 1 colonne
+       au lieu de 2, quel que soit le comportement natif exact de Streamlit
+       sur les st.columns (non garanti pour un nombre fixe). */
+    .st-key-ts_light [class*="st-key-ts_home_grid"] [data-testid="stHorizontalBlock"] {{
+        flex-direction: column !important;
+    }}
+    .st-key-ts_light [class*="st-key-ts_home_grid"] [data-testid="stColumn"] {{
+        width: 100% !important;
+        flex: none !important;
+    }}
 }}
 """
 
@@ -808,13 +917,14 @@ def render_table(rows: list[dict], columns: list[dict], row_key: str = "id", tab
     widths = [1.3 if col.get("kind") in numeric_kinds else 1.0 for col in columns]
 
     with st.container(key=f"tstable_{table_key}"):
-        header_cols = st.columns(widths)
-        for col, hcol in zip(columns, header_cols):
-            align = "right" if col.get("kind") in numeric_kinds else "left"
-            hcol.markdown(
-                f'<div class="ts-col-label" style="text-align:{align}">{html_lib.escape(col["label"])}</div>',
-                unsafe_allow_html=True,
-            )
+        with st.container(key=f"tstable_header_{table_key}"):
+            header_cols = st.columns(widths)
+            for col, hcol in zip(columns, header_cols):
+                align = "right" if col.get("kind") in numeric_kinds else "left"
+                hcol.markdown(
+                    f'<div class="ts-col-label" style="text-align:{align}">{html_lib.escape(col["label"])}</div>',
+                    unsafe_allow_html=True,
+                )
 
         for row in rows:
             rid = row.get(row_key, row.get("ticker", ""))
@@ -832,9 +942,15 @@ def render_table(rows: list[dict], columns: list[dict], row_key: str = "id", tab
                         go_to_trading(ticker, name)
                     continue
 
+                # Le libellé mobile (voir _CSS, masqué en desktop) permet à
+                # chaque cellule de rester lisible une fois la ligne empilée
+                # verticalement en carte sur petit écran, l'en-tête de colonne
+                # étant alors masqué (voir tstable_header_ ci-dessus).
                 align = "right" if kind in numeric_kinds else "left"
                 cell.markdown(
-                    f'<div class="ts-row-cell" style="text-align:{align}">{_cell_content(col, value)}</div>',
+                    f'<div class="ts-row-cell" style="text-align:{align}">'
+                    f'<span class="ts-cell-mobile-label">{html_lib.escape(col["label"])}</span>'
+                    f'{_cell_content(col, value)}</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -914,15 +1030,16 @@ def render_table_light(
 
     badge_rules = []
     with st.container(key=f"tslight_table_{table_key}"):
-        header_cols = st.columns(widths) if show_header else [None] * len(columns)
-        for col, hcol in zip(columns, header_cols):
-            if hcol is None:
-                continue
-            align = "right" if col.get("kind") in numeric_kinds else "left"
-            hcol.markdown(
-                f'<div class="ts-light-col-label" style="text-align:{align}">{html_lib.escape(col["label"])}</div>',
-                unsafe_allow_html=True,
-            )
+        if show_header:
+            with st.container(key=f"tslight_header_{table_key}"):
+                header_cols = st.columns(widths)
+                for col, hcol in zip(columns, header_cols):
+                    align = "right" if col.get("kind") in numeric_kinds else "left"
+                    hcol.markdown(
+                        f'<div class="ts-light-col-label" style="text-align:{align}">'
+                        f'{html_lib.escape(col["label"])}</div>',
+                        unsafe_allow_html=True,
+                    )
 
         for row in rows:
             rid = _safe_key_part(row.get(row_key, row.get("ticker", "")))
@@ -961,9 +1078,14 @@ def render_table_light(
                         go_to_trading(ticker, name)
                     continue
 
+                # Libellé mobile (voir _CSS, masqué en desktop) : garde chaque
+                # cellule lisible une fois la ligne empilée en carte sur petit
+                # écran, l'en-tête de colonne étant alors masqué (tslight_header_).
                 align = "right" if kind in numeric_kinds else "left"
                 cell.markdown(
-                    f'<div class="ts-light-cell" style="text-align:{align}">{_light_cell_content(col, value)}</div>',
+                    f'<div class="ts-light-cell" style="text-align:{align}">'
+                    f'<span class="ts-cell-mobile-label">{html_lib.escape(col["label"])}</span>'
+                    f'{_light_cell_content(col, value)}</div>',
                     unsafe_allow_html=True,
                 )
 
