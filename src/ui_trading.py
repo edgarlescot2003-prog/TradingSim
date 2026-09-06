@@ -20,25 +20,27 @@ from . import storage
 from . import theme
 
 # -- Univers d'actifs "vitrine" de la page d'accueil -------------------------
+# 5 actifs par encadré (Indices/Top capitalisation) : FTSE 100 et Meta
+# retirés pour désencombrer la page (CAC 40 + DAX + Nikkei 225 gardent une
+# couverture Europe/Asie, S&P 500 + Nasdaq les US ; NVDA/AAPL/MSFT/GOOGL/AMZN
+# restent la sélection la plus large en styles de business).
 INDICES = [
     ("^FCHI", "CAC 40"), ("^GDAXI", "DAX"), ("^GSPC", "S&P 500"),
-    ("^IXIC", "Nasdaq"), ("^N225", "Nikkei 225"), ("^FTSE", "FTSE 100"),
+    ("^IXIC", "Nasdaq"), ("^N225", "Nikkei 225"),
 ]
 TOP_CAP = [
     ("AAPL", "Apple"), ("MSFT", "Microsoft"), ("NVDA", "Nvidia"),
-    ("GOOGL", "Alphabet"), ("AMZN", "Amazon"), ("META", "Meta"),
+    ("GOOGL", "Alphabet"), ("AMZN", "Amazon"),
 ]
-CRYPTO = [("BTC-USD", "Bitcoin"), ("ETH-USD", "Ethereum"), ("SOL-USD", "Solana")]
+CRYPTO = [
+    ("BTC-USD", "Bitcoin"), ("ETH-USD", "Ethereum"), ("SOL-USD", "Solana"), ("XRP-USD", "XRP"),
+]
 FOREX_COMMODITIES = [
     ("EURUSD=X", "EUR/USD"), ("EURGBP=X", "EUR/GBP"), ("GC=F", "Or"), ("CL=F", "Pétrole"),
 ]
 # Affichage seul : pas de bouton Trader, pas d'ouverture de position (chantier
 # séparé plus tard) — voir la vérification dans render().
 NON_TRADABLE_TICKERS = {t for t, _ in FOREX_COMMODITIES}
-# "Tendances du jour" classe cet univers par variation % — pas une liste figée
-# de gagnants/perdants, mais un calcul sur tout ce que la page couvre déjà
-# (hors forex/matières, classe à part avec sa propre logique d'affichage).
-TRENDING_UNIVERSE = INDICES + TOP_CAP + CRYPTO
 # Suggestions par défaut de la recherche quand l'utilisateur n'a pas encore
 # d'historique de recherche.
 DEFAULT_SUGGESTIONS = TOP_CAP[:4] + CRYPTO[:2]
@@ -179,35 +181,6 @@ def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
             st.caption("Cours en lecture seule : le trading sur ces actifs n'est pas encore disponible.")
 
 
-def _render_trending_box(quotes: dict) -> None:
-    with st.container(key="ts_card_home_trending"):
-        st.markdown("##### Tendances du jour")
-        ranked = [
-            (ticker, name, quotes[ticker]) for ticker, name in TRENDING_UNIVERSE
-            if quotes.get(ticker) and quotes[ticker]["change_pct"] is not None
-        ]
-        if not ranked:
-            st.caption("Données de variation indisponibles pour l'instant.")
-            return
-
-        ranked.sort(key=lambda r: r[2]["change_pct"], reverse=True)
-        top_n = 3
-        picked, seen = [], set()
-        for ticker, name, q in ranked[:top_n] + ranked[-top_n:]:
-            if ticker in seen:
-                continue
-            seen.add(ticker)
-            picked.append((ticker, name, q))
-
-        rows = [{
-            "ticker": ticker, "name": name,
-            "price": _format_price(ticker, q["price"], q["currency"]),
-            "change_pct": q["change_pct"],
-            "change_30d_pct": q.get("change_30d_pct"),
-        } for ticker, name, q in picked]
-        theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key="home_trending")
-
-
 def _render_home_boxes() -> None:
     universe = INDICES + TOP_CAP + CRYPTO + FOREX_COMMODITIES
     tickers = tuple(t for t, _ in universe)
@@ -224,11 +197,9 @@ def _render_home_boxes() -> None:
 
     row2 = st.columns(2)
     with row2[0]:
-        _render_trending_box(quotes)
-    with row2[1]:
         _render_asset_box("home_crypto", "Crypto les plus suivies", CRYPTO, quotes)
-
-    _render_asset_box("home_forex", "Forex & Matières premières", FOREX_COMMODITIES, quotes, tradable=False)
+    with row2[1]:
+        _render_asset_box("home_forex", "Forex & Matières premières", FOREX_COMMODITIES, quotes, tradable=False)
 
 
 # -- Recherche -----------------------------------------------------------------

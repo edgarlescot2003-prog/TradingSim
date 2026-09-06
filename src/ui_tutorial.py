@@ -52,7 +52,7 @@ Elle retrace l'évolution de ton portefeuille jour après jour (pas heure par he
 Chaque achat, vente, ouverture ou clôture de position est gardé en mémoire, avec le gain ou la perte réalisée à chaque fois. Pratique pour te relire et comprendre tes propres décisions.
 """),
     ("3. Trouver un actif à trader", """
-Direction l'onglet **Trading**. Sur la page d'accueil, tu trouveras des vitrines toutes prêtes : indices majeurs, plus grosses capitalisations, cryptos les plus suivies, et un encart "Tendances du jour" avec les plus fortes hausses et baisses.
+Direction l'onglet **Trading**. Sur la page d'accueil, tu trouveras des vitrines toutes prêtes : indices majeurs, plus grosses capitalisations, cryptos les plus suivies, et Forex/matières premières.
 
 Tu cherches un actif précis ? Utilise la barre de recherche : tape un nom ou un ticker (le "code" d'une action, par exemple `AAPL` pour Apple). Si rien ne sort et que tu connais le ticker exact, tu peux le taper directement.
 
