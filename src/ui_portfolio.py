@@ -131,6 +131,27 @@ def _render_highlights(portfolio, total_value: float, snapshots: list[dict]) -> 
                     )
 
 
+def _signed_eur_pct(eur_value: float, pct_value: float) -> str:
+    sign = "+" if eur_value >= 0 else ""
+    pct_sign = "+" if pct_value >= 0 else ""
+    return f"{sign}{eur_value:,.2f} € ({pct_sign}{pct_value:.1f}%)"
+
+
+def _render_position_detail(row: dict) -> None:
+    """Contenu de l'expander "Détails" sous une ligne compacte mobile (voir
+    theme.render_compact_list) : les champs qui n'ont pas leur place dans la
+    ligne compacte (Quantité, Gain total, Valeur)."""
+    total_color = theme.LIGHT_GREEN if row["total_pnl"][0] >= 0 else theme.LIGHT_RED
+    st.markdown(
+        f"Quantité : **{row['quantity']:g}**  \n"
+        f"Gain total : <span style='color:{total_color}'>{_signed_eur_pct(*row['total_pnl'])}</span>  \n"
+        f"Valeur : **{row['value']:,.2f} €**",
+        unsafe_allow_html=True,
+    )
+    if st.button("Voir sur Trading", key=f"mobile_goto_position_{row['ticker']}"):
+        theme.go_to_trading(row["ticker"], row["name"])
+
+
 def _render_positions_table(snapshots: list[dict]) -> None:
     with st.container(key="ts_card_positions"):
         st.markdown("##### Positions")
@@ -162,7 +183,16 @@ def _render_positions_table(snapshots: list[dict]) -> None:
             })
         rows.sort(key=lambda r: r["value"], reverse=True)
 
-        theme.render_table_light(rows, LIGHT_POSITION_COLUMNS, row_key="ticker", table_key="positions")
+        with st.container(key="tslight_desktop_wrap_positions"):
+            theme.render_table_light(rows, LIGHT_POSITION_COLUMNS, row_key="ticker", table_key="positions")
+
+        compact_rows = [{
+            **row,
+            "primary": f"{row['price']:,.2f} €",
+            "secondary": _signed_eur_pct(*row["day_pnl"]),
+            "secondary_color": theme.LIGHT_GREEN if row["day_pnl"][0] >= 0 else theme.LIGHT_RED,
+        } for row in rows]
+        theme.render_compact_list(compact_rows, table_key="positions", detail=_render_position_detail)
 
 
 def _render_history(portfolio) -> None:

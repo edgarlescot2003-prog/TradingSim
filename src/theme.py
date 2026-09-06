@@ -659,6 +659,85 @@ _LIGHT_CSS = f"""
 }}
 .ts-cat-bar-fill {{ height: 100%; border-radius: 3px; }}
 
+/* Liste compacte mobile façon Kraken/TradingView (voir render_compact_list) :
+   1 ligne HTML par élément, badge+nom à gauche, valeur principale/secondaire
+   empilées à droite. Masquée par défaut (desktop) — un rendu desktop
+   équivalent (render_table_light, dans un conteneur "tslight_desktop_wrap_")
+   coexiste dans le DOM, seule la CSS du media query plus bas décide laquelle
+   est visible : aucune donnée n'est dupliquée en dur, les deux viennent des
+   mêmes `rows`. */
+.st-key-ts_light [class*="st-key-tslight_mobile_"] {{ display: none; }}
+.ts-compact-row {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.55rem 0.1rem;
+    border-bottom: 1px solid {LIGHT_GRIDLINE};
+}}
+.ts-compact-row:last-child {{ border-bottom: none; }}
+.ts-compact-left {{
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+}}
+.ts-compact-badge {{
+    font-family: {FONT_MONO};
+    font-weight: 700;
+    font-size: 0.68rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}}
+.ts-compact-name {{
+    font-family: {FONT_SANS};
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: {LIGHT_TEXT};
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}}
+.ts-compact-sub {{
+    font-family: {FONT_SANS};
+    font-size: 0.72rem;
+    color: {LIGHT_FAINT};
+}}
+.ts-compact-side {{
+    font-family: {FONT_MONO};
+    font-weight: 700;
+    font-size: 0.68rem;
+    margin-left: 0.3rem;
+}}
+.ts-compact-right {{ text-align: right; flex-shrink: 0; }}
+.ts-compact-primary {{
+    font-family: {FONT_MONO};
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: {LIGHT_TEXT};
+    white-space: nowrap;
+}}
+.ts-compact-secondary {{
+    font-family: {FONT_MONO};
+    font-variant-numeric: tabular-nums;
+    font-size: 0.73rem;
+    white-space: nowrap;
+}}
+/* Détail replié sous chaque ligne (Quantité, Gain total, Valeur...) : un
+   expander natif Streamlit, allégé pour ne pas réintroduire un gros cadre. */
+.st-key-ts_light [class*="st-key-tslight_detail_"] [data-testid="stExpander"] {{
+    border: none !important;
+    background: transparent !important;
+}}
+.st-key-ts_light [class*="st-key-tslight_detail_"] [data-testid="stExpander"] summary {{
+    padding: 0.1rem 0 !important;
+    font-size: 0.75rem !important;
+    color: {LIGHT_FAINT} !important;
+}}
+
 /* Tableau (positions / historique) : mêmes principes que le tableau sombre
    (de vrais st.columns par ligne pour de vrais boutons de navigation). */
 .st-key-ts_light [class*="st-key-tslight_table_"] {{
@@ -749,6 +828,11 @@ _LIGHT_CSS = f"""
    fin de _CSS) — chaque ligne (Positions, Historique...) devient une
    carte empilée verticalement plutôt qu'une rangée horizontale tassée. */
 @media (max-width: 640px) {{
+    /* Positions (voir render_compact_list) : le rendu desktop cède la place
+       à la liste compacte, toutes deux calculées à partir des mêmes rows. */
+    .st-key-ts_light [class*="st-key-tslight_desktop_wrap_"] {{ display: none !important; }}
+    .st-key-ts_light [class*="st-key-tslight_mobile_"] {{ display: block; }}
+
     .st-key-ts_light [class*="st-key-tslight_header_"] {{ display: none; }}
     .st-key-ts_light [class*="st-key-tslight_table_"] [data-testid="stHorizontalBlock"] {{
         flex-direction: column !important;
@@ -1091,3 +1175,57 @@ def render_table_light(
 
     if badge_rules:
         st.markdown(f"<style>{''.join(badge_rules)}</style>", unsafe_allow_html=True)
+
+
+def render_compact_list(
+    rows: list[dict], table_key: str,
+    detail: callable | None = None,
+) -> None:
+    """Liste compacte façon Kraken/TradingView, pour l'affichage mobile
+    (voir le media query dans _LIGHT_CSS — masquée en desktop, où
+    render_table_light fait foi). Une ligne HTML par élément (badge coloré +
+    nom + sens à gauche, valeur principale/secondaire empilées à droite),
+    séparées par un simple trait plutôt qu'un cadre par ligne.
+
+    `rows` : liste de dicts {"ticker", "name", "category" (optionnel),
+    "side" (optionnel, "Long"/"Short"), "primary" (str déjà formaté, ex prix),
+    "secondary" (str déjà formaté avec sa couleur, ex gain du jour),
+    "secondary_color" (optionnel)}.
+    `detail` : callable(row) optionnel, appelé à l'intérieur d'un expander
+    replié sous chaque ligne — pour les champs secondaires (Quantité, Gain
+    total, Valeur...) qui n'ont pas leur place dans la ligne compacte.
+    """
+    with st.container(key=f"tslight_mobile_{table_key}"):
+        for row in rows:
+            bg, fg = badge_color(row["ticker"], row.get("category"))
+            side = row.get("side")
+            side_html = ""
+            if side:
+                side_color = LIGHT_GREEN if side == "Long" else LIGHT_RED
+                side_html = f'<span class="ts-compact-side" style="color:{side_color}">{side[0]}</span>'
+            secondary_color = row.get("secondary_color", LIGHT_TEXT)
+            st.markdown(
+                f"""
+                <div class="ts-compact-row">
+                    <div class="ts-compact-left">
+                        <span class="ts-compact-badge" style="background:{bg};color:{fg}">
+                            {html_lib.escape(row['ticker'])}
+                        </span>
+                        <div>
+                            <div class="ts-compact-name">{html_lib.escape(row['name'])}{side_html}</div>
+                        </div>
+                    </div>
+                    <div class="ts-compact-right">
+                        <div class="ts-compact-primary">{html_lib.escape(row.get('primary', ''))}</div>
+                        <div class="ts-compact-secondary" style="color:{secondary_color}">
+                            {html_lib.escape(str(row.get('secondary', '')))}
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if detail is not None:
+                with st.container(key=f"tslight_detail_{table_key}_{_safe_key_part(row['ticker'])}"):
+                    with st.expander("Détails"):
+                        detail(row)
