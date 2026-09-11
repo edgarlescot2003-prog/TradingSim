@@ -857,8 +857,17 @@ _LIGHT_CSS = f"""
     white-space: nowrap;
 }}
 /* Détail replié sous chaque ligne (Quantité, Gain total, Valeur...) : un
-   expander natif Streamlit, allégé pour ne pas réintroduire un gros cadre. */
+   expander natif Streamlit, allégé pour ne pas réintroduire un gros cadre.
+   La bordure visible ne vient pas de [data-testid="stExpander"] (déjà à
+   border:none ci-dessous) mais du <details> natif lui-même à l'intérieur,
+   non ciblé jusqu'ici -> une fois ouvert, ce cadre touchait presque le
+   texte de perf de la ligne juste au-dessus (repéré au test réel). */
 .st-key-ts_light [class*="st-key-tslight_detail_"] [data-testid="stExpander"] {{
+    border: none !important;
+    background: transparent !important;
+}}
+.st-key-ts_light [class*="st-key-tslight_detail_"] details,
+.st-key-ts_light [class*="st-key-tslight_detail_"] details > div {{
     border: none !important;
     background: transparent !important;
 }}
@@ -866,6 +875,12 @@ _LIGHT_CSS = f"""
     padding: 0.1rem 0 !important;
     font-size: 0.75rem !important;
     color: {LIGHT_FAINT} !important;
+}}
+/* Marge propre entre la ligne compacte (dont la perf, en dessous du prix,
+   est le dernier élément) et le "> Détails" qui suit, plutôt qu'un
+   espacement dépendant du seul gap générique entre blocs Streamlit. */
+.st-key-ts_light [class*="st-key-tslight_detail_"] {{
+    margin-top: 0.3rem;
 }}
 
 /* Tableau (positions / historique) : mêmes principes que le tableau sombre
