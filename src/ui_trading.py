@@ -359,7 +359,7 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
             low=hist["Low"], close=hist["Close"], name=ticker,
         ))
     fig.update_layout(
-        height=450, margin=dict(l=10, r=10, t=30, b=10), xaxis_rangeslider_visible=False,
+        height=450, margin=dict(l=10, r=10, t=20, b=10), xaxis_rangeslider_visible=False,
         paper_bgcolor=theme.LIGHT_SURFACE, plot_bgcolor=theme.LIGHT_SURFACE,
         font=dict(family=theme.FONT_SANS, color=theme.LIGHT_TEXT),
         xaxis=dict(gridcolor=theme.LIGHT_GRIDLINE, linecolor=theme.LIGHT_GRIDLINE),
@@ -374,7 +374,26 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
             increasing_line_color=theme.LIGHT_GREEN, increasing_fillcolor=theme.LIGHT_GREEN,
             decreasing_line_color=theme.LIGHT_RED, decreasing_fillcolor=theme.LIGHT_RED,
         )
-    st.plotly_chart(fig, use_container_width=True)
+
+    # Zoom par défaut à l'ouverture : les 3 derniers mois de données
+    # chargées (pas tout l'historique compressé façon "1A"/"5A"/"Tout"),
+    # façon Kraken/Binance. Les données complètes correspondant à la
+    # période choisie restent chargées : l'utilisateur peut dézoomer
+    # (glisser/pincer) pour les retrouver, seule la fenêtre affichée à
+    # l'ouverture change. Sans effet quand la période sélectionnée est déjà
+    # plus courte que 3 mois (1J/1S/1M) : la fenêtre se cale alors sur les
+    # données disponibles, jamais plus large que ce que l'utilisateur a
+    # explicitement demandé.
+    if len(hist.index) > 0:
+        data_end = hist.index.max()
+        default_start = max(hist.index.min(), data_end - timedelta(days=90))
+        # autorange=False explicite + dates en ISO (pas des Timestamp pandas
+        # bruts) : sans ça, le composant Plotly du navigateur recalculait son
+        # propre autorange au premier resize (déclenché par
+        # use_container_width) et ignorait la plage demandée ici.
+        fig.update_xaxes(range=[default_start.isoformat(), data_end.isoformat()], autorange=False)
+
+    st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True})
 
     fallback_note = "" if effective_interval == PERIOD_INTERVAL[period_key] else " (repli, plage trop longue)"
     st.caption(

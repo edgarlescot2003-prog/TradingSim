@@ -1046,6 +1046,32 @@ _LIGHT_CSS = f"""
         padding-top: 0.55rem !important;
         padding-bottom: 0.55rem !important;
     }}
+
+    /* Graphique de prix (Plotly) : masquer la toolbar (loupe/zoom/pan/
+       appareil photo — pensée desktop) qui grignotait une bonne partie de
+       la hauteur disponible sur un écran étroit. Zoom/pan restent
+       utilisables au doigt (pinch-to-zoom + glisser), gérés nativement par
+       Plotly indépendamment de cette toolbar (CSS uniquement : la config
+       Python st.plotly_chart reste la même sur desktop et mobile). */
+    .st-key-ts_light .js-plotly-plot .modebar {{ display: none !important; }}
+
+    /* Sélecteur de période (1J/1S/1M/3M/6M/YTD/1A/5A/Tout) : une seule
+       ligne défilable au doigt façon Kraken, plutôt que les pastilles
+       larges qui passaient sur plusieurs lignes et mangeaient une bonne
+       partie de la hauteur restante pour le graphique lui-même. */
+    .st-key-ts_light .st-key-chart_period_radio [role="radiogroup"] {{
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        gap: 0.35rem !important;
+    }}
+    .st-key-ts_light .st-key-chart_period_radio [role="radiogroup"] label {{
+        flex-shrink: 0 !important;
+        min-height: 32px !important;
+    }}
+    .st-key-ts_light .st-key-chart_period_radio [role="radiogroup"] label p {{
+        font-size: 0.72rem !important;
+    }}
 }}
 """
 
