@@ -427,6 +427,88 @@ hr {{ border-color: var(--ts-border) !important; }}
    render_table/render_table_light. La barre d'onglets devient défilable
    au doigt plutôt que de se tasser ou passer à la ligne. */
 @media (max-width: 640px) {{
+    /* -- Échelle globale mobile -------------------------------------------
+       Les deux passes précédentes ne faisaient que réorganiser (lignes ->
+       cartes, grilles -> 1 colonne) sans jamais réduire la taille des
+       polices/paddings/boutons, qui restaient à leur taille desktop sur un
+       écran de 375-414px -> débordements/superpositions (retour utilisateur
+       après test réel : "tout est trop grand", pas un souci d'organisation).
+       Réduire la police racine profite gratuitement à toute règle exprimée
+       en rem dans ce fichier ET dans le HTML injecté ailleurs (inline
+       style="font-size:0.95rem" compris, rem est toujours relatif à
+       <html> peu importe où la règle est déclarée) — c'est le levier qui
+       rend cette passe "globale et systématique" plutôt que zone par zone.
+       Le reste (composants natifs Streamlit non couverts par du rem, seuil
+       tactile des boutons) est ajusté explicitement ci-dessous. */
+    html {{ font-size: 14px !important; }}
+
+    .block-container {{
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+        padding-top: 0.6rem !important;
+        padding-bottom: 1.25rem !important;
+    }}
+    [data-testid="stVerticalBlock"] {{ gap: 0.4rem !important; }}
+    [data-testid="stHorizontalBlock"] {{ gap: 0.5rem !important; }}
+
+    h1, [data-testid="stMarkdownContainer"] h1 {{ font-size: 1.3rem !important; }}
+    h2, [data-testid="stMarkdownContainer"] h2 {{ font-size: 1.1rem !important; }}
+    h3, [data-testid="stMarkdownContainer"] h3 {{ font-size: 1rem !important; }}
+    h4, [data-testid="stMarkdownContainer"] h4,
+    h5, [data-testid="stMarkdownContainer"] h5,
+    h6, [data-testid="stMarkdownContainer"] h6 {{ font-size: 0.9rem !important; }}
+
+    /* Boutons : hauteur tactile garantie (~40px) même après la réduction de
+       police racine ci-dessus, qui ferait sinon passer la hauteur par
+       défaut de Streamlit sous ce seuil. */
+    .stButton > button, .stFormSubmitButton > button {{
+        min-height: 40px !important;
+        padding: 0.4rem 0.75rem !important;
+        font-size: 0.82rem !important;
+    }}
+
+    [data-testid="stTextInput"] input,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stTextArea"] textarea,
+    [data-baseweb="select"] * {{
+        font-size: 0.85rem !important;
+    }}
+    [data-testid="stRadio"] label p {{ font-size: 0.82rem !important; }}
+
+    [data-testid="stMetricValue"] {{ font-size: 1.25rem !important; }}
+    [data-testid="stMetricLabel"] {{ font-size: 0.6rem !important; }}
+    [data-testid="stMetricDelta"] {{ font-size: 0.75rem !important; }}
+
+    [data-testid="stExpander"] summary {{ font-size: 0.82rem !important; }}
+    [data-testid="stAlert"] {{ font-size: 0.82rem !important; padding: 0.6rem 0.8rem !important; }}
+
+    /* Tableau Admin (st.columns bruts, pas de composant tstable_/tslight_
+       existant) : même passe d'échelle + passage en carte empilée comme les
+       autres tableaux, voir les conteneurs ts_admin_* dans ui_admin.py. */
+    .st-key-ts_admin_header {{ display: none; }}
+    [class*="st-key-ts_admin_row_"] [data-testid="stHorizontalBlock"] {{
+        flex-direction: column !important;
+        align-items: stretch !important;
+        border: 1px solid var(--ts-border);
+        border-radius: 6px;
+        padding: 0.6rem 0.75rem;
+        margin-bottom: 0.5rem;
+        gap: 0.35rem !important;
+    }}
+    [class*="st-key-ts_admin_row_"] [data-testid="stColumn"] {{
+        width: 100% !important;
+        flex: none !important;
+        min-width: 0 !important;
+    }}
+    [class*="st-key-ts_admin_confirm_"] [data-testid="stHorizontalBlock"] {{
+        flex-direction: column !important;
+        gap: 0.4rem !important;
+    }}
+    [class*="st-key-ts_admin_confirm_"] [data-testid="stColumn"] {{
+        width: 100% !important;
+        flex: none !important;
+    }}
+
     [class*="st-key-tstable_header_"] {{ display: none; }}
     [class*="st-key-tstable_"] [data-testid="stHorizontalBlock"] {{
         flex-direction: column !important;
@@ -457,15 +539,35 @@ hr {{ border-color: var(--ts-border) !important; }}
     .st-key-ts_tabbar {{
         overflow-x: auto;
         flex-wrap: nowrap !important;
-        gap: 1.1rem !important;
+        gap: 1rem !important;
         -webkit-overflow-scrolling: touch;
     }}
     .st-key-ts_tabbar > * {{ flex-shrink: 0; }}
+    .ts-tab, [class*="st-key-navtab_"] button {{
+        font-size: 0.78rem !important;
+        padding: 0.4rem 0.05rem !important;
+    }}
 
     /* Barre de valeur : la marge réservée à la barre d'outils Streamlit
-       (7.5rem, voir plus haut) est disproportionnée sur un écran étroit. */
-    .ts-topbar {{ padding-right: 3.5rem; }}
-    .ts-topbar-right {{ gap: 1.1rem; }}
+       (7.5rem, voir plus haut) est disproportionnée sur un écran étroit, et
+       les libellés/valeurs gardaient leur taille desktop malgré le peu de
+       place disponible à côté du nom du portefeuille. */
+    .ts-topbar {{
+        padding: 0.5rem 3rem 0.5rem 0.9rem !important;
+        row-gap: 0.25rem;
+    }}
+    .ts-topbar-right {{ gap: 0.9rem; }}
+    .ts-topbar-logo {{ font-size: 0.65rem !important; }}
+    .ts-topbar-portfolio {{ font-size: 0.68rem !important; }}
+    .ts-topbar-label {{ font-size: 0.55rem !important; }}
+    .ts-topbar-value {{ font-size: 0.88rem !important; }}
+    body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{ margin-left: 1.8rem; }}
+    /* Titres de page hors barre de valeur (connexion, onboarding premier
+       portefeuille, accueil Tutoriel) : mêmes st.title en tout début de
+       page, qui se superposaient au bouton natif de réouverture du panneau
+       latéral (stExpandSidebarButton, flottant en haut à gauche) quand
+       celui-ci est replié — repéré au test réel à 390px. */
+    body:has([data-testid="stExpandSidebarButton"]) h1 {{ margin-left: 1.8rem !important; }}
 
     /* Grille de cartes News (onglet News, hors thème clair scopé) : 1
        colonne au lieu de 3, quel que soit le comportement natif exact de
@@ -859,6 +961,47 @@ _LIGHT_CSS = f"""
     .st-key-ts_light [class*="st-key-ts_home_grid"] [data-testid="stColumn"] {{
         width: 100% !important;
         flex: none !important;
+    }}
+
+    /* Échelle globale (voir le même principe, plus détaillé, dans le media
+       query de _CSS) : la réduction de police racine posée là-bas profite
+       déjà à tout ce qui est exprimé en rem ci-dessus (cartes, badges,
+       lignes compactes...) ; ce qui suit couvre ce qui doit encore être
+       resserré explicitement (paddings de carte, boutons pastille,
+       métriques) pour ne plus déborder sur un écran de 375-414px. */
+    .st-key-ts_light [class*="st-key-ts_card_"] {{
+        padding: 0.75rem 0.9rem !important;
+        border-radius: 8px !important;
+        margin-bottom: 0.75rem !important;
+    }}
+    .st-key-ts_light .stButton > button,
+    .st-key-ts_light .stFormSubmitButton > button {{
+        font-size: 0.78rem !important;
+        padding: 0.35rem 0.8rem !important;
+        min-height: 40px !important;
+    }}
+    .st-key-ts_light [data-testid="stMetricValue"] {{ font-size: 1.2rem !important; }}
+    .st-key-ts_light [data-testid="stMetricLabel"] {{ font-size: 0.6rem !important; }}
+
+    .st-key-ts_portfolio_pills, .st-key-ts_period_pills {{ gap: 0.4rem !important; }}
+    .ts-light-pill-active {{ padding: 0.32rem 0.8rem !important; font-size: 0.78rem !important; }}
+    .st-key-ts_period_pills .stButton > button {{ font-size: 0.72rem !important; padding: 0.18rem 0.6rem !important; }}
+    .ts-period-active {{ padding: 0.18rem 0.6rem !important; font-size: 0.72rem !important; }}
+
+    /* Liste compacte (Positions sur mobile, voir render_compact_list) */
+    .ts-compact-row {{ padding: 0.45rem 0.05rem !important; gap: 0.5rem !important; }}
+    .ts-compact-badge {{ font-size: 0.62rem !important; padding: 0.12rem 0.4rem !important; }}
+    .ts-compact-name {{ font-size: 0.8rem !important; }}
+    .ts-compact-sub {{ font-size: 0.68rem !important; }}
+    .ts-compact-primary {{ font-size: 0.8rem !important; }}
+    .ts-compact-secondary {{ font-size: 0.68rem !important; }}
+
+    /* Barre de recherche (onglet Trading) : reste bien visible mais sans
+       déborder à côté du bouton "afficher/masquer" natif de l'input. */
+    .st-key-ts_card_search [data-testid="stTextInput"] input {{
+        font-size: 0.92rem !important;
+        padding-top: 0.55rem !important;
+        padding-bottom: 0.55rem !important;
     }}
 }}
 """
