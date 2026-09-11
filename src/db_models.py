@@ -65,6 +65,14 @@ class PortfolioRow(Base):
     initial_capital = Column(Float, nullable=False)
     cash = Column(Float, nullable=False)
     created_at = Column(String, nullable=False, default=_now_iso)
+    # Un seul portefeuille officiel par utilisateur (celui qui compte pour le
+    # classement) : désigné automatiquement au tout premier portefeuille créé
+    # pour un nouveau compte (voir app.py), ou manuellement une fois par
+    # l'Admin pour un compte préexistant (voir auth.set_official_portfolio) —
+    # jamais modifiable ensuite depuis l'interface standard. `create_all` ne
+    # modifie pas les tables déjà existantes : voir la migration ALTER TABLE
+    # dans db.init_db() pour les bases créées avant l'ajout de cette colonne.
+    is_official = Column(Boolean, nullable=False, default=False)
 
 
 class PositionRow(Base):

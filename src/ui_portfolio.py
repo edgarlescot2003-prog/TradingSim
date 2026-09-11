@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from . import auth, benchmark, market_data as md, storage, theme, valuation
-from .portfolio import Portfolio
+from .portfolio import MAX_PORTFOLIOS_PER_USER, Portfolio
 
 LIGHT_POSITION_COLUMNS = [
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
@@ -52,6 +52,12 @@ PERIODS = [
 ]
 
 
+def _display_name(p) -> str:
+    """Nom d'un portefeuille pour affichage, avec le badge Officiel s'il y a
+    lieu (pastilles ici, sélecteur du panneau latéral dans app.py)."""
+    return p.name + (" ⭐ Officiel" if p.is_official else "")
+
+
 def _render_portfolio_pills(user_id: str) -> None:
     portfolios = st.session_state.portfolios
     active_id = st.session_state.active_id
@@ -60,30 +66,33 @@ def _render_portfolio_pills(user_id: str) -> None:
         for pid, p in portfolios.items():
             if pid == active_id:
                 st.markdown(
-                    f'<div class="ts-light-pill-active">{html_lib.escape(p.name)}</div>',
+                    f'<div class="ts-light-pill-active">{html_lib.escape(_display_name(p))}</div>',
                     unsafe_allow_html=True,
                 )
-            elif st.button(p.name, key=f"portfolio_pill_{pid}"):
+            elif st.button(_display_name(p), key=f"portfolio_pill_{pid}"):
                 st.session_state.active_id = pid
                 auth.set_active_portfolio(user_id, pid)
                 st.rerun()
 
         with st.popover("+ Nouveau portefeuille"):
-            with st.form("ts_new_portfolio_pill_form"):
-                new_name = st.text_input("Nom", value="Nouveau portefeuille")
-                new_capital = st.number_input(
-                    "Capital de départ (€)", min_value=1.0, value=10_000.0, step=100.0,
-                )
-                submitted = st.form_submit_button("Créer", type="primary")
-            if submitted:
-                new_portfolio = Portfolio(
-                    name=new_name or "Nouveau portefeuille", initial_capital=new_capital, cash=new_capital,
-                )
-                storage.save_portfolio(new_portfolio)
-                portfolios[new_portfolio.id] = new_portfolio
-                st.session_state.active_id = new_portfolio.id
-                auth.set_active_portfolio(user_id, new_portfolio.id)
-                st.rerun()
+            if len(portfolios) >= MAX_PORTFOLIOS_PER_USER:
+                st.caption(f"Limite de {MAX_PORTFOLIOS_PER_USER} portefeuilles par compte atteinte.")
+            else:
+                with st.form("ts_new_portfolio_pill_form"):
+                    new_name = st.text_input("Nom", value="Nouveau portefeuille")
+                    new_capital = st.number_input(
+                        "Capital de départ (€)", min_value=1.0, value=10_000.0, step=100.0,
+                    )
+                    submitted = st.form_submit_button("Créer", type="primary")
+                if submitted:
+                    new_portfolio = Portfolio(
+                        name=new_name or "Nouveau portefeuille", initial_capital=new_capital, cash=new_capital,
+                    )
+                    storage.save_portfolio(new_portfolio)
+                    portfolios[new_portfolio.id] = new_portfolio
+                    st.session_state.active_id = new_portfolio.id
+                    auth.set_active_portfolio(user_id, new_portfolio.id)
+                    st.rerun()
 
 
 def _render_highlights(portfolio, total_value: float, snapshots: list[dict]) -> None:
@@ -334,7 +343,11 @@ def _render_portfolio_actions(portfolio) -> None:
                 st.rerun()
 
     with col2:
-        if st.session_state.get(delete_armed_key):
+        if portfolio.is_official:
+            st.caption(
+                "Le portefeuille officiel ne peut pas être supprimé (il compte pour le classement)."
+            )
+        elif st.session_state.get(delete_armed_key):
             st.caption(f"Supprime définitivement « {portfolio.name} » et toutes ses données.")
             if st.button("Confirmer la suppression", type="primary", key=f"delete_btn_{portfolio.id}"):
                 storage.delete_portfolio(portfolio.id)

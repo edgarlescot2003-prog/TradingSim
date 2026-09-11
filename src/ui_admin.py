@@ -20,6 +20,37 @@ def _render_header() -> None:
             )
 
 
+def _render_official_portfolio_picker(user) -> None:
+    """Désignation ponctuelle du portefeuille officiel (compté pour le
+    classement) d'un compte préexistant à l'introduction de ce statut —
+    n'importe quel rôle, y compris Admin (mon propre compte a besoin de
+    cette même migration, voir le prompt d'origine). Ne s'affiche que si ce
+    compte a au moins un portefeuille et n'a pas encore de portefeuille
+    officiel : une fois désigné, ce choix est définitif (auth.set_official_
+    portfolio refuse tout second appel), inutile de laisser le contrôle
+    affiché indéfiniment ensuite.
+    """
+    portfolios = auth.list_portfolios_for_user(user.id)
+    if not portfolios or any(p.is_official for p in portfolios):
+        return
+
+    with st.container(key=f"ts_admin_official_{user.id}"):
+        with st.expander(f"Désigner le portefeuille officiel de « {user.username} »"):
+            st.caption(
+                "Le portefeuille officiel est le seul compté pour le classement. Ce choix est "
+                "définitif : impossible à modifier ensuite depuis l'interface."
+            )
+            options = {p.id: p.name for p in portfolios}
+            choice = st.selectbox(
+                "Portefeuille", options=list(options.keys()), format_func=lambda pid: options[pid],
+                key=f"official_pick_{user.id}",
+            )
+            if st.button("Désigner comme officiel", key=f"official_confirm_{user.id}", type="primary"):
+                auth.set_official_portfolio(user.id, choice)
+                st.success(f"« {options[choice]} » est maintenant le portefeuille officiel de {user.username}.")
+                st.rerun()
+
+
 def _render_row(user, current_user_id: str) -> None:
     is_self = user.id == current_user_id
     is_admin_row = user.role == auth.ROLE_ADMIN
@@ -54,6 +85,8 @@ def _render_row(user, current_user_id: str) -> None:
 
             if c6.button("Promouvoir Admin", key=f"promote_{user.id}", use_container_width=True):
                 st.session_state[f"confirm_promote_{user.id}"] = True
+
+    _render_official_portfolio_picker(user)
 
     if is_standard_row and st.session_state.get(f"confirm_promote_contrib_{user.id}"):
         st.warning(f"Confirmer la promotion de « {user.username} » en Contributeur ? "

@@ -67,8 +67,19 @@ def get_session() -> Session:
 
 def init_db() -> None:
     """Crée les tables manquantes (idempotent)."""
+    from sqlalchemy import text
+
     from . import db_models
     db_models.Base.metadata.create_all(get_engine())
+
+    # create_all ne modifie jamais une table déjà existante : une colonne
+    # ajoutée après coup (ex : is_official) doit être migrée explicitement
+    # ici. ADD COLUMN IF NOT EXISTS est idempotent (sans effet si la colonne
+    # existe déjà), donc sans risque à rappeler à chaque démarrage.
+    with get_engine().begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS is_official BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
 
 
 DEFAULT_USERNAME = "default"

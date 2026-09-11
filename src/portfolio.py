@@ -76,6 +76,11 @@ class Portfolio:
     # (voir record_value_snapshot) : sert à tracer la courbe d'évolution.
     value_history: list[dict] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    # Portefeuille compté pour le classement (un seul par utilisateur,
+    # définitif — voir auth.set_official_portfolio). Faux par défaut : seul
+    # le tout premier portefeuille d'un nouveau compte le passe à True à la
+    # création (app.py), les suivants restent "fun/test", hors classement.
+    is_official: bool = False
 
     # -- Position longue -----------------------------------------------------
 
@@ -342,3 +347,11 @@ class Portfolio:
             value_history=data.get("value_history", []),
             created_at=data.get("created_at", datetime.now().isoformat()),
         )
+
+
+# Nombre max de portefeuilles par utilisateur (1 officiel + quelques-uns pour
+# tester/s'amuser) : impact réseau/DB jugé négligeable à l'échelle de ce
+# projet (le cache de prix est partagé entre tickers, pas par portefeuille),
+# mais une limite raisonnable évite une dérive incontrôlée du nombre de
+# lignes en base.
+MAX_PORTFOLIOS_PER_USER = 3

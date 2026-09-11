@@ -39,6 +39,7 @@ def _portfolio_from_rows(prow, positions, trades, orders, value_history) -> Port
         initial_capital=prow.initial_capital,
         cash=prow.cash,
         created_at=prow.created_at,
+        is_official=prow.is_official,
         positions={p.ticker: Position(
             ticker=p.ticker, name=p.name, quantity=p.quantity, avg_price_eur=p.avg_price_eur,
             currency=p.currency, entry_date=p.entry_date, side=p.side, margin_eur=p.margin_eur,
@@ -100,12 +101,16 @@ def save_portfolio(portfolio: Portfolio) -> None:
             session.add(PortfolioRow(
                 id=portfolio.id, user_id=user_id, name=portfolio.name,
                 initial_capital=portfolio.initial_capital, cash=portfolio.cash,
-                created_at=portfolio.created_at,
+                created_at=portfolio.created_at, is_official=portfolio.is_official,
             ))
         else:
             prow.name = portfolio.name
             prow.cash = portfolio.cash
             prow.initial_capital = portfolio.initial_capital
+            # is_official n'est JAMAIS réécrit ici, volontairement : ce statut
+            # est définitif et ne doit pouvoir changer que via l'action dédiée
+            # (auth.set_official_portfolio), jamais en passant par une simple
+            # sauvegarde de portefeuille (achat, reset...).
 
         session.query(PositionRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
         session.query(TradeRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
@@ -177,6 +182,11 @@ def delete_portfolio(portfolio_id: str) -> None:
         prow = session.get(PortfolioRow, portfolio_id)
         if prow is None or prow.user_id != user_id:
             return
+        if prow.is_official:
+            # Filet de sécurité : l'UI bloque déjà ce bouton, mais le statut
+            # officiel doit rester non contournable même par un futur appel
+            # direct à cette fonction.
+            raise ValueError("Le portefeuille officiel ne peut pas être supprimé.")
 
         # users.active_portfolio_id a une contrainte de clé étrangère vers
         # portfolios.id : si ce portefeuille est l'actif enregistré, il faut

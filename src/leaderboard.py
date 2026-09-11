@@ -1,16 +1,20 @@
 """Classement multi-utilisateurs : qui a le meilleur P&L.
 
-Revalue TOUS les portefeuilles de TOUS les utilisateurs en direct (prix de
-marché courants) à chaque consultation — pas seulement celui de la personne
-connectée. Assumé correct pour un petit nombre de comptes ; un cache de prix
-partagé entre portefeuilles évite de refaire le même appel API si plusieurs
-personnes détiennent le même actif. À revoir (ex : repli sur la dernière
-valeur connue comme avant) si le nombre de comptes/positions grossit au
-point de rendre le chargement du classement trop lent.
+Revalue en direct (prix de marché courants) le portefeuille OFFICIEL de
+chaque utilisateur à chaque consultation — pas les autres. Depuis
+l'introduction du statut "portefeuille officiel" (un seul par utilisateur,
+désigné une fois pour toutes, voir auth.set_official_portfolio), un
+utilisateur peut avoir plusieurs portefeuilles "fun/test" en parallèle :
+seul celui marqué officiel compte pour le classement, les autres en sont
+totalement exclus (même actifs, même avec des gains). Un utilisateur sans
+portefeuille officiel désigné (compte pas encore migré) n'apparaît pas du
+tout dans le classement plutôt que d'y figurer sur un choix arbitraire.
 
-Un utilisateur avec plusieurs portefeuilles est classé sur la somme de tous
-(capital de départ total vs valeur totale actuelle) — plus juste qu'un seul
-de ses portefeuilles, qui pourrait masquer des pertes ailleurs.
+Un cache de prix partagé entre utilisateurs évite de refaire le même appel
+API si plusieurs personnes détiennent le même actif. Assumé correct pour un
+petit nombre de comptes ; à revoir (ex : repli sur la dernière valeur connue)
+si le nombre de comptes/positions grossit au point de rendre le chargement
+du classement trop lent.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -48,13 +52,16 @@ def _fetch_price_eur(ticker: str) -> tuple[str, float | None]:
 
 
 def compute_rankings() -> list[dict]:
-    """Un P&L par utilisateur (agrégé sur tous ses portefeuilles, valorisés
-    en direct), trié du meilleur au moins bon. Chaque entrée : user_id,
-    username, n_portfolios, initial_capital, current_value, pnl_eur, pnl_pct.
+    """Un P&L par utilisateur, calculé sur son seul portefeuille officiel
+    (valorisé en direct), trié du meilleur au moins bon. Chaque entrée :
+    user_id, username, initial_capital, current_value, pnl_eur, pnl_pct.
+    Un utilisateur sans portefeuille officiel désigné n'apparaît pas.
     """
     with db.get_session() as session:
         usernames = {u.id: u.username for u in session.execute(select(User)).scalars().all()}
-        portfolio_rows = session.execute(select(PortfolioRow)).scalars().all()
+        portfolio_rows = session.execute(
+            select(PortfolioRow).where(PortfolioRow.is_official.is_(True))
+        ).scalars().all()
         # Les positions sont chargées ici (session ouverte) ; la valorisation
         # en direct (appels réseau vers yfinance/Kraken) se fait après avoir
         # refermé la session, pour ne pas garder une connexion DB ouverte
@@ -73,24 +80,19 @@ def compute_rankings() -> list[dict]:
                 if price_eur is not None:
                     price_cache[ticker] = price_eur
 
-    totals: dict[str, dict] = {}
+    rankings = []
     for prow, portfolio in loaded:
         current_value, _ = valuation.total_value(portfolio, price_cache)
-        entry = totals.setdefault(prow.user_id, {
+        pnl_eur = current_value - prow.initial_capital
+        pnl_pct = (pnl_eur / prow.initial_capital * 100) if prow.initial_capital else 0.0
+        rankings.append({
+            "user_id": prow.user_id,
             "username": usernames.get(prow.user_id, "(compte supprimé)"),
-            "initial_capital": 0.0,
-            "current_value": 0.0,
-            "n_portfolios": 0,
+            "initial_capital": prow.initial_capital,
+            "current_value": current_value,
+            "pnl_eur": pnl_eur,
+            "pnl_pct": pnl_pct,
         })
-        entry["initial_capital"] += prow.initial_capital
-        entry["current_value"] += current_value
-        entry["n_portfolios"] += 1
-
-    rankings = []
-    for user_id, data in totals.items():
-        pnl_eur = data["current_value"] - data["initial_capital"]
-        pnl_pct = (pnl_eur / data["initial_capital"] * 100) if data["initial_capital"] else 0.0
-        rankings.append({"user_id": user_id, **data, "pnl_eur": pnl_eur, "pnl_pct": pnl_pct})
 
     rankings.sort(key=lambda r: r["pnl_eur"], reverse=True)
     return rankings

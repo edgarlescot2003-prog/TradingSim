@@ -175,6 +175,41 @@ def delete_user(user_id: str) -> None:
         session.commit()
 
 
+def list_portfolios_for_user(user_id: str) -> list[PortfolioRow]:
+    """Portefeuilles (id/nom/statut officiel) d'un utilisateur arbitraire —
+    pour l'Admin, contrairement à storage.load_all() qui ne lit que
+    l'utilisateur de la session en cours. Pas de positions/trades chargés :
+    inutile pour le seul besoin de désigner un portefeuille officiel."""
+    with db.get_session() as session:
+        rows = session.execute(
+            select(PortfolioRow).where(PortfolioRow.user_id == user_id).order_by(PortfolioRow.created_at)
+        ).scalars().all()
+        session.expunge_all()
+        return rows
+
+
+def set_official_portfolio(user_id: str, portfolio_id: str) -> None:
+    """Désigne `portfolio_id` comme portefeuille officiel (compté pour le
+    classement) de `user_id`. Action ponctuelle et définitive : refuse si cet
+    utilisateur a déjà un portefeuille officiel (jamais de changement depuis
+    l'interface, voir le prompt d'origine de cette fonctionnalité), ou si le
+    portefeuille visé n'existe pas / n'appartient pas à cet utilisateur.
+    """
+    with db.get_session() as session:
+        rows = session.execute(
+            select(PortfolioRow).where(PortfolioRow.user_id == user_id)
+        ).scalars().all()
+        if any(r.is_official for r in rows):
+            raise ValueError("Cet utilisateur a déjà un portefeuille officiel : ce choix est définitif.")
+
+        target = next((r for r in rows if r.id == portfolio_id), None)
+        if target is None:
+            raise ValueError("Portefeuille introuvable pour cet utilisateur.")
+
+        target.is_official = True
+        session.commit()
+
+
 def get_active_portfolio_id(user_id: str) -> str | None:
     with db.get_session() as session:
         user = session.get(User, user_id)

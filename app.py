@@ -8,7 +8,7 @@ from src import (
     auth, db, order_engine, storage, theme,
     ui_admin, ui_auth, ui_leaderboard, ui_news, ui_portfolio, ui_trading, ui_tutorial, valuation,
 )
-from src.portfolio import Portfolio
+from src.portfolio import MAX_PORTFOLIOS_PER_USER, Portfolio
 
 st.set_page_config(page_title="Trading Simulator", layout="wide")
 theme.inject()
@@ -69,7 +69,14 @@ if not portfolios:
         capital = st.number_input("Capital de départ (€)", min_value=1.0, value=10_000.0, step=100.0)
         submitted = st.form_submit_button("Créer mon portefeuille")
     if submitted:
-        new_portfolio = Portfolio(name=name or "Portefeuille principal", initial_capital=capital, cash=capital)
+        # Tout premier portefeuille d'un compte fraîchement créé -> devient
+        # automatiquement son portefeuille officiel (compté pour le
+        # classement), définitivement. Un compte préexistant à l'introduction
+        # de ce statut n'a lui aucun portefeuille officiel par défaut : voir
+        # auth.set_official_portfolio, action ponctuelle depuis l'Admin.
+        new_portfolio = Portfolio(
+            name=name or "Portefeuille principal", initial_capital=capital, cash=capital, is_official=True,
+        )
         storage.save_portfolio(new_portfolio)
         portfolios[new_portfolio.id] = new_portfolio
         st.session_state.active_id = new_portfolio.id
@@ -79,7 +86,9 @@ if not portfolios:
 
 with st.sidebar:
     st.subheader("Portefeuilles")
-    names_by_id = {pid: p.name for pid, p in portfolios.items()}
+    names_by_id = {
+        pid: p.name + (" ⭐ Officiel" if p.is_official else "") for pid, p in portfolios.items()
+    }
     ids = list(names_by_id.keys())
     current_index = ids.index(st.session_state.active_id) if st.session_state.active_id in ids else 0
     selected_id = st.selectbox(
@@ -91,19 +100,22 @@ with st.sidebar:
         st.rerun()
 
     with st.expander("Créer un nouveau portefeuille"):
-        with st.form("new_portfolio_form"):
-            new_name = st.text_input("Nom", value="Nouveau portefeuille")
-            new_capital = st.number_input("Capital de départ (€)", min_value=1.0, value=10_000.0, step=100.0)
-            create_submitted = st.form_submit_button("Créer")
-        if create_submitted:
-            new_portfolio = Portfolio(
-                name=new_name or "Nouveau portefeuille", initial_capital=new_capital, cash=new_capital,
-            )
-            storage.save_portfolio(new_portfolio)
-            portfolios[new_portfolio.id] = new_portfolio
-            st.session_state.active_id = new_portfolio.id
-            auth.set_active_portfolio(user_id, new_portfolio.id)
-            st.rerun()
+        if len(portfolios) >= MAX_PORTFOLIOS_PER_USER:
+            st.caption(f"Limite de {MAX_PORTFOLIOS_PER_USER} portefeuilles par compte atteinte.")
+        else:
+            with st.form("new_portfolio_form"):
+                new_name = st.text_input("Nom", value="Nouveau portefeuille")
+                new_capital = st.number_input("Capital de départ (€)", min_value=1.0, value=10_000.0, step=100.0)
+                create_submitted = st.form_submit_button("Créer")
+            if create_submitted:
+                new_portfolio = Portfolio(
+                    name=new_name or "Nouveau portefeuille", initial_capital=new_capital, cash=new_capital,
+                )
+                storage.save_portfolio(new_portfolio)
+                portfolios[new_portfolio.id] = new_portfolio
+                st.session_state.active_id = new_portfolio.id
+                auth.set_active_portfolio(user_id, new_portfolio.id)
+                st.rerun()
 
 portfolio = portfolios[st.session_state.active_id]
 
