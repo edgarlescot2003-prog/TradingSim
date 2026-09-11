@@ -1,5 +1,7 @@
 """Point d'entrée de l'application Trading Simulator."""
 
+import time
+
 import streamlit as st
 
 from src import (
@@ -105,24 +107,75 @@ with st.sidebar:
 
 portfolio = portfolios[st.session_state.active_id]
 
-executed_messages = order_engine.process_pending_orders(portfolio)
+# Onglet actif résolu et rendu AVANT tout calcul coûteux (vérif. des
+# ordres, revalorisation, sauvegarde), pas après. render_tab_bar déclenche
+# un st.rerun() immédiat au clic -- nécessaire : une fois les boutons de
+# la barre d'onglets dessinés avec l'ANCIEN onglet actif, Streamlit ne
+# permet pas de corriger après coup lequel apparaît surligné dans la même
+# exécution (les éléments déjà envoyés au navigateur ne peuvent pas être
+# réécrits a posteriori) -- seul un rerun complet règle correctement le
+# surlignage. Mais comme rien de coûteux n'a encore tourné à ce stade,
+# cette exécution "perdue" ne coûte presque rien (juste l'auth + le
+# panneau latéral, mesuré <0.3s) plutôt que de refaire aussi la vérif. des
+# ordres + la revalorisation + la sauvegarde Supabase une seconde fois
+# pour rien (c'était le cas avant : ces 3 étapes tournaient AVANT la barre
+# d'onglets, donc payées deux fois à chaque clic de navigation).
+# st.empty() réserve la position visuelle de la barre de valeur et des
+# messages de succès (qui doivent rester AU-DESSUS de la barre d'onglets)
+# tout en les remplissant seulement après coup, une fois les calculs faits.
+tabs = list(theme.DEFAULT_TABS)
+if auth.is_admin(role):
+    tabs.append(("administration", "Administration"))
+topbar_slot = st.empty()
+messages_slot = st.empty()
+theme.render_tab_bar(st.session_state.active_tab, tabs)
+
+# Vérification des ordres à cours limité : appel réseau non caché
+# (historique de prix) par ordre en attente. Throttlé à 1x/15s plutôt qu'à
+# chaque rerun -- un ordre n'a pas besoin d'être revérifié à la
+# milliseconde près, 15s reste largement sous le rythme de navigation
+# normal. Si le délai n'est pas écoulé, on garde simplement la fenêtre de
+# vérification non avancée (order.last_checked_at inchangé) : c'est déjà
+# le comportement existant en cas d'échec réseau (voir order_engine.py),
+# rien de nouveau à gérer côté fraîcheur.
+_ORDER_CHECK_THROTTLE_SECONDS = 15
+now_ts = time.time()
+last_order_check_ts = st.session_state.get("_last_order_check_ts", 0.0)
+if portfolio.pending_orders and (now_ts - last_order_check_ts) >= _ORDER_CHECK_THROTTLE_SECONDS:
+    executed_messages = order_engine.process_pending_orders(portfolio)
+    st.session_state["_last_order_check_ts"] = now_ts
+else:
+    executed_messages = []
 if executed_messages:
     storage.save_portfolio(portfolio)
 
 total_value, snapshots = valuation.total_value(portfolio)
 portfolio.record_value_snapshot(total_value)
-storage.save_portfolio(portfolio)
+
+# Sauvegarde Supabase : ne sert ici qu'à persister le point QUOTIDIEN de
+# la courbe de valeur (déjà dédupliqué à 1 point/jour en mémoire, voir
+# Portfolio.record_value_snapshot) -- tout achat/vente/clôture est de
+# toute façon déjà sauvegardé immédiatement à sa source (ui_trading.py,
+# ui_portfolio.py), donc aucune donnée de trade ne dépend de cet appel.
+# Throttlé à 1x/60s au lieu d'un aller-retour DB complet (delete+insert
+# positions/trades/ordres/historique) à chaque interaction, y compris sur
+# des onglets sans rapport avec le portefeuille (Cours/Classement/News/
+# Admin) -- invisible pour l'utilisateur vu la granularité quotidienne de
+# la courbe, mais toujours sauvegardé immédiatement si un ordre vient de
+# s'exécuter (executed_messages), pour ne jamais perdre cette exécution.
+_SAVE_THROTTLE_SECONDS = 60
+last_save_ts = st.session_state.get("_last_portfolio_save_ts", 0.0)
+if executed_messages or (now_ts - last_save_ts) >= _SAVE_THROTTLE_SECONDS:
+    storage.save_portfolio(portfolio)
+    st.session_state["_last_portfolio_save_ts"] = now_ts
 pnl_eur, pnl_pct = valuation.daily_pnl(portfolio, total_value)
 
-theme.render_topbar(portfolio.name, total_value, pnl_eur, pnl_pct)
+with topbar_slot.container():
+    theme.render_topbar(portfolio.name, total_value, pnl_eur, pnl_pct)
 
-for msg in executed_messages:
-    st.success(msg)
-
-tabs = list(theme.DEFAULT_TABS)
-if auth.is_admin(role):
-    tabs.append(("administration", "Administration"))
-theme.render_tab_bar(st.session_state.active_tab, tabs)
+with messages_slot.container():
+    for msg in executed_messages:
+        st.success(msg)
 
 if st.session_state.active_tab == "trading":
     ui_trading.render(portfolio)
