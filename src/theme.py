@@ -198,6 +198,12 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     font-weight: 600;
     color: var(--ts-text);
 }}
+/* Le montant et le pourcentage du P&L sont deux <span> distincts (voir
+   render_topbar) pour pouvoir les empiler sur mobile (voir le media query
+   plus bas) ; en desktop ils restent affichés côte à côte comme avant. */
+.ts-topbar-pnl-pct {{ margin-left: 0.35rem; }}
+.ts-topbar-pnl-pct::before {{ content: "("; }}
+.ts-topbar-pnl-pct::after {{ content: ")"; }}
 
 /* Boutons */
 .stButton > button, .stFormSubmitButton > button {{
@@ -549,18 +555,28 @@ hr {{ border-color: var(--ts-border) !important; }}
     }}
 
     /* Barre de valeur : la marge réservée à la barre d'outils Streamlit
-       (7.5rem, voir plus haut) est disproportionnée sur un écran étroit, et
-       les libellés/valeurs gardaient leur taille desktop malgré le peu de
-       place disponible à côté du nom du portefeuille. */
+       (7.5rem, voir plus haut) est disproportionnée sur un écran étroit.
+       Nom du portefeuille masqué (superflu, déjà visible dans le panneau
+       latéral) et P&L éclaté en deux lignes (montant, puis pourcentage
+       dessous, voir render_topbar) pour que le tout (logo + valeur totale +
+       P&L) tienne sur une seule ligne plutôt que de passer à la ligne. */
     .ts-topbar {{
         padding: 0.5rem 3rem 0.5rem 0.9rem !important;
-        row-gap: 0.25rem;
+        flex-wrap: nowrap !important;
     }}
-    .ts-topbar-right {{ gap: 0.9rem; }}
-    .ts-topbar-logo {{ font-size: 0.65rem !important; }}
-    .ts-topbar-portfolio {{ font-size: 0.68rem !important; }}
-    .ts-topbar-label {{ font-size: 0.55rem !important; }}
-    .ts-topbar-value {{ font-size: 0.88rem !important; }}
+    .ts-topbar-sep, .ts-topbar-portfolio {{ display: none; }}
+    .ts-topbar-right {{ gap: 0.75rem; }}
+    .ts-topbar-logo {{ font-size: 0.62rem !important; }}
+    .ts-topbar-label {{ font-size: 0.52rem !important; }}
+    .ts-topbar-value {{ font-size: 0.78rem !important; }}
+    .ts-topbar-pnl-amount {{ display: block; }}
+    .ts-topbar-pnl-pct {{
+        display: block;
+        margin-left: 0;
+        font-size: 0.62rem !important;
+        font-weight: 500;
+    }}
+    .ts-topbar-pnl-pct::before, .ts-topbar-pnl-pct::after {{ content: ""; }}
     body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{ margin-left: 1.8rem; }}
     /* Titres de page hors barre de valeur (connexion, onboarding premier
        portefeuille, accueil Tutoriel) : mêmes st.title en tout début de
@@ -783,6 +799,7 @@ _LIGHT_CSS = f"""
     align-items: center;
     gap: 0.55rem;
     min-width: 0;
+    flex: 1 1 auto;
 }}
 .ts-compact-badge {{
     font-family: {FONT_MONO};
@@ -792,6 +809,17 @@ _LIGHT_CSS = f"""
     border-radius: 999px;
     white-space: nowrap;
     flex-shrink: 0;
+}}
+/* Enveloppe du nom : sans min-width/overflow EXPLICITES ici, un <div> flex
+   enfant garde par défaut une largeur minimale basée sur son contenu (pas
+   sur celle, contrainte, de .ts-compact-name plus bas) et refuse donc de
+   rétrécir — le nom déborde alors de .ts-compact-left au lieu d'être
+   tronqué par l'ellipsis, et pousse/chevauche les valeurs de droite quand
+   le nom de l'actif est un peu long (repéré au test réel sur Positions). */
+.ts-compact-name-wrap {{
+    min-width: 0;
+    overflow: hidden;
+    flex: 1 1 auto;
 }}
 .ts-compact-name {{
     font-family: {FONT_SANS};
@@ -1034,7 +1062,8 @@ def render_topbar(portfolio_name: str, total_value: float, pnl_eur: float, pnl_p
                 <div class="ts-topbar-item">
                     <span class="ts-topbar-label">P&amp;L JOUR</span>
                     <span class="ts-topbar-value" style="color:{color}">
-                        {sign}{pnl_eur:,.2f} € ({sign}{pnl_pct:.2f}%)
+                        <span class="ts-topbar-pnl-amount">{sign}{pnl_eur:,.2f} €</span>
+                        <span class="ts-topbar-pnl-pct">{sign}{pnl_pct:.2f}%</span>
                     </span>
                 </div>
             </div>
@@ -1354,7 +1383,7 @@ def render_compact_list(
                         <span class="ts-compact-badge" style="background:{bg};color:{fg}">
                             {html_lib.escape(row['ticker'])}
                         </span>
-                        <div>
+                        <div class="ts-compact-name-wrap">
                             <div class="ts-compact-name">{html_lib.escape(row['name'])}{side_html}</div>
                         </div>
                     </div>
