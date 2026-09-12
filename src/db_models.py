@@ -108,6 +108,11 @@ class TradeRow(Base):
     currency = Column(String, nullable=False)
     leverage = Column(Float, nullable=False, default=1.0)
     realized_pnl_eur = Column(Float, nullable=True)
+    # Renseigné uniquement si ce trade a été déclenché automatiquement par un
+    # palier Take Profit / Stop Loss (voir TpSlOrderRow, tp_sl.py) plutôt que
+    # par un ordre manuel — sert à l'afficher distinctement dans l'historique
+    # (ui_portfolio.py, ui_history.py).
+    tp_sl_order_id = Column(UUID(as_uuid=False), ForeignKey("tp_sl_orders.id"), nullable=True)
 
 
 class PendingOrderRow(Base):
@@ -136,6 +141,52 @@ class ValueHistoryRow(Base):
     user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False, index=True)
     date = Column(String, nullable=False)
     value_eur = Column(Float, nullable=False)
+
+
+class TpSlOrderRow(Base):
+    """Palier Take Profit / Stop Loss sur une position : prix cible EXACT (en
+    euros, pas un pourcentage) et quantité exprimée en % de la position
+    INITIALE au moment de la création de CE palier — jamais recalculée sur la
+    quantité résiduelle si la position a déjà été partiellement réduite
+    depuis (par ce palier ou par un autre trade). La quantité absolue à
+    vendre au déclenchement est donc figée une fois pour toutes ici
+    (`trigger_quantity`), calculée à la création à partir de
+    `initial_quantity`/`quantity_pct` mais jamais recalculée ensuite — voir
+    scripts/check_tp_sl.py pour la logique d'exécution.
+
+    Plusieurs paliers peuvent coexister sur la même position (pas de
+    contrainte de somme à 100%) : la partie de la position sans palier reste
+    simplement une position normale.
+
+    `side` (long/short de la position au moment de la création) détermine
+    l'action à exécuter (vente vs rachat short) ; combiné à `kind`
+    (take_profit/stop_loss, affichage uniquement), il détermine le sens de
+    la comparaison au déclenchement (voir scripts/check_tp_sl.py).
+    """
+    __tablename__ = "tp_sl_orders"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_new_uuid)
+    portfolio_id = Column(UUID(as_uuid=False), ForeignKey("portfolios.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False, index=True)
+    ticker = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    currency = Column(String, nullable=False)
+    side = Column(String, nullable=False)  # "long" ou "short"
+    kind = Column(String, nullable=False)  # "take_profit" ou "stop_loss"
+    target_price_eur = Column(Float, nullable=False)
+    quantity_pct = Column(Float, nullable=False)  # pour affichage/audit
+    initial_quantity = Column(Float, nullable=False)  # pour affichage/audit
+    trigger_quantity = Column(Float, nullable=False)  # figé à la création, utilisé à l'exécution
+    # active : en attente de déclenchement
+    # executed : déclenché et exécuté avec succès
+    # cancelled : annulé par l'utilisateur, OU auto-annulé par le cron si la
+    #             position d'origine n'existe plus dans le même sens (fermée/
+    #             inversée entre-temps par un autre trade) — voir
+    #             scripts/check_tp_sl.py.
+    status = Column(String, nullable=False, default="active")
+    created_at = Column(String, nullable=False, default=_now_iso)
+    executed_at = Column(String, nullable=True)
+    executed_price_eur = Column(Float, nullable=True)
 
 
 class SearchHistoryRow(Base):

@@ -41,6 +41,10 @@ class Trade:
     currency: str
     leverage: float = 1.0
     realized_pnl_eur: float | None = None  # renseigné uniquement pour les clôtures
+    # Renseigné uniquement si ce trade a été déclenché automatiquement par un
+    # palier Take Profit / Stop Loss (voir tp_sl.py, scripts/check_tp_sl.py) :
+    # id du TpSlOrderRow d'origine, None pour un ordre manuel.
+    tp_sl_order_id: str | None = None
 
 
 @dataclass
@@ -130,8 +134,14 @@ class Portfolio:
         self._log_trade(ticker, name, "long", "achat", quantity, price_eur, currency, leverage,
                          trade_date=trade_dt)
 
-    def sell(self, ticker: str, quantity: float, price_eur: float, trade_date: datetime | None = None) -> float:
-        """Réduit ou clôture une position longue. Retourne le P&L réalisé (€)."""
+    def sell(self, ticker: str, quantity: float, price_eur: float, trade_date: datetime | None = None,
+             tp_sl_order_id: str | None = None) -> float:
+        """Réduit ou clôture une position longue. Retourne le P&L réalisé (€).
+
+        `tp_sl_order_id` : renseigné uniquement quand cette vente est
+        déclenchée automatiquement par un palier Take Profit / Stop Loss
+        (voir scripts/check_tp_sl.py), pour que le trade en garde la trace.
+        """
         existing = self.positions.get(ticker)
         if not existing or existing.side != "long":
             raise ValueError(f"Aucune position longue sur {ticker} à vendre.")
@@ -153,7 +163,8 @@ class Portfolio:
             del self.positions[ticker]
 
         self._log_trade(ticker, existing.name, "long", "vente", quantity, price_eur,
-                         existing.currency, 1.0, realized_pnl, trade_date=trade_date)
+                         existing.currency, 1.0, realized_pnl, trade_date=trade_date,
+                         tp_sl_order_id=tp_sl_order_id)
         return realized_pnl
 
     # -- Position courte (short) ---------------------------------------------
@@ -200,8 +211,11 @@ class Portfolio:
                          trade_date=trade_dt)
 
     def cover_short(self, ticker: str, quantity: float, price_eur: float,
-                     trade_date: datetime | None = None) -> float:
-        """Réduit ou clôture (rachète) une position courte. Retourne le P&L réalisé (€)."""
+                     trade_date: datetime | None = None, tp_sl_order_id: str | None = None) -> float:
+        """Réduit ou clôture (rachète) une position courte. Retourne le P&L réalisé (€).
+
+        `tp_sl_order_id` : voir sell() ci-dessus.
+        """
         existing = self.positions.get(ticker)
         if not existing or existing.side != "short":
             raise ValueError(f"Aucune position courte sur {ticker} à racheter.")
@@ -223,7 +237,8 @@ class Portfolio:
             del self.positions[ticker]
 
         self._log_trade(ticker, existing.name, "short", "rachat short", quantity, price_eur,
-                         existing.currency, 1.0, realized_pnl, trade_date=trade_date)
+                         existing.currency, 1.0, realized_pnl, trade_date=trade_date,
+                         tp_sl_order_id=tp_sl_order_id)
         return realized_pnl
 
     # -- Ordres à cours limité -------------------------------------------------
@@ -302,12 +317,13 @@ class Portfolio:
     # -- Interne ---------------------------------------------------------------
 
     def _log_trade(self, ticker, name, side, action, quantity, price_eur, currency,
-                    leverage=1.0, realized_pnl_eur=None, trade_date: datetime | None = None) -> None:
+                    leverage=1.0, realized_pnl_eur=None, trade_date: datetime | None = None,
+                    tp_sl_order_id: str | None = None) -> None:
         trade_dt = trade_date or datetime.now()
         self.history.append(Trade(
             date=trade_dt.isoformat(), ticker=ticker, name=name, side=side,
             action=action, quantity=quantity, price_eur=price_eur, currency=currency,
-            leverage=leverage, realized_pnl_eur=realized_pnl_eur,
+            leverage=leverage, realized_pnl_eur=realized_pnl_eur, tp_sl_order_id=tp_sl_order_id,
         ))
 
     # -- Sérialisation -----------------------------------------------------

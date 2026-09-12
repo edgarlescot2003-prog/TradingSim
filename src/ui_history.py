@@ -22,10 +22,11 @@ COLUMNS = [
     {"key": "quantity", "label": "Quantité", "kind": "num", "decimals": 4},
     {"key": "price", "label": "Prix d'exécution", "kind": "eur"},
     {"key": "total", "label": "Montant total", "kind": "eur"},
+    {"key": "origin", "label": "Origine", "kind": "text"},
 ]
 
 CSV_HEADER = [
-    "Date et heure", "Actif", "Sens", "Quantité", "Prix d'exécution (EUR)", "Montant total (EUR)",
+    "Date et heure", "Actif", "Sens", "Quantité", "Prix d'exécution (EUR)", "Montant total (EUR)", "Origine",
 ]
 
 
@@ -71,6 +72,7 @@ def _order_rows(trades: list[dict]) -> list[dict]:
             "quantity": t["quantity"],
             "price": t["price_eur"],
             "total": t["quantity"] * t["price_eur"],
+            "origin": "Auto (TP/SL)" if t.get("tp_sl_order_id") else "Manuel",
         })
     return rows
 
@@ -89,7 +91,9 @@ def _render_orders(trades: list[dict], username: str) -> None:
     writer = csv.writer(csv_buffer)
     writer.writerow(CSV_HEADER)
     for r in rows:
-        writer.writerow([r["date"], r["asset"], r["action"], r["quantity"], r["price"], r["total"]])
+        writer.writerow(
+            [r["date"], r["asset"], r["action"], r["quantity"], r["price"], r["total"], r["origin"]]
+        )
 
     st.download_button(
         "Exporter en CSV",

@@ -18,15 +18,16 @@ from sqlalchemy import text
 
 from src import db_core
 from src.db_models import (
-    CourseRow, NewsRow, PendingOrderRow, PortfolioRow, PositionRow, SearchHistoryRow, TradeRow, User,
-    ValueHistoryRow,
+    CourseRow, NewsRow, PendingOrderRow, PortfolioRow, PositionRow, SearchHistoryRow, TpSlOrderRow, TradeRow,
+    User, ValueHistoryRow,
 )
 
 # Ordre de SUPPRESSION : les tables filles (qui référencent users/portfolios
 # via une clé étrangère) doivent être vidées AVANT leurs tables parentes.
 # La RÉINSERTION se fait dans l'ordre inverse (parents d'abord).
+# TradeRow avant TpSlOrderRow : trades.tp_sl_order_id référence tp_sl_orders.id.
 TABLES_CHILDREN_FIRST = [
-    PositionRow, TradeRow, PendingOrderRow, ValueHistoryRow, SearchHistoryRow,
+    PositionRow, TradeRow, TpSlOrderRow, PendingOrderRow, ValueHistoryRow, SearchHistoryRow,
     CourseRow, NewsRow, PortfolioRow, User,
 ]
 

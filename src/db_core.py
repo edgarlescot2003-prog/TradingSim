@@ -53,9 +53,39 @@ def normalize_url(url: str) -> str:
 def create_engine_from_env() -> Engine:
     """Nouveau moteur SQLAlchemy à partir de DATABASE_URL (variable
     d'environnement uniquement, pas de cache ici) — pour les scripts
-    indépendants de l'app (sauvegarde, restauration...). Voir
+    indépendants de l'app (sauvegarde, restauration, cron TP/SL...). Voir
     `db.get_engine()` pour la version utilisée par l'app Streamlit
     (repli sur st.secrets + mise en cache par processus serveur)."""
     return create_engine(
         normalize_url(get_database_url_from_env()), pool_pre_ping=True, pool_recycle=3600,
     )
+
+
+def ensure_schema(engine: Engine) -> None:
+    """Crée les tables manquantes et applique les migrations idempotentes
+    (ADD COLUMN IF NOT EXISTS...) — centralisé ici (pas dans db.py) pour
+    qu'un script/cron indépendant de l'app (ex : scripts/check_tp_sl.py)
+    puisse s'assurer que le schéma est à jour même si l'app Streamlit n'a
+    pas encore été redémarrée depuis un ajout de schéma. `db.init_db()`
+    (app) appelle aussi cette fonction, pour une seule source de vérité.
+
+    `create_all` ne modifie JAMAIS une table déjà existante : toute colonne
+    ajoutée après coup sur une table préexistante doit être migrée
+    explicitement ici via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+    (idempotent, sans effet si la colonne existe déjà).
+    """
+    from sqlalchemy import text
+
+    from . import db_models
+
+    db_models.Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS is_official BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        conn.execute(text(
+            "ALTER TABLE news ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        conn.execute(text(
+            "ALTER TABLE trades ADD COLUMN IF NOT EXISTS tp_sl_order_id UUID REFERENCES tp_sl_orders(id)"
+        ))

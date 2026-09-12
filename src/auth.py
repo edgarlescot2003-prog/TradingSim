@@ -31,8 +31,8 @@ from sqlalchemy import select
 
 from . import db
 from .db_models import (
-    CourseRow, NewsRow, PendingOrderRow, PortfolioRow, PositionRow, SearchHistoryRow, TradeRow, User,
-    ValueHistoryRow,
+    CourseRow, NewsRow, PendingOrderRow, PortfolioRow, PositionRow, SearchHistoryRow, TpSlOrderRow, TradeRow,
+    User, ValueHistoryRow,
 )
 
 ROLE_ADMIN = "admin"
@@ -159,7 +159,9 @@ def delete_user(user_id: str) -> None:
                 select(PortfolioRow.id).where(PortfolioRow.user_id == user_id)
             ).all()
         ]
-        for model in (PositionRow, TradeRow, PendingOrderRow, ValueHistoryRow):
+        # TradeRow avant TpSlOrderRow : trades.tp_sl_order_id référence
+        # tp_sl_orders.id, il faut donc supprimer les trades d'abord.
+        for model in (PositionRow, TradeRow, PendingOrderRow, ValueHistoryRow, TpSlOrderRow):
             session.query(model).filter(model.portfolio_id.in_(portfolio_ids)).delete(
                 synchronize_session=False
             )

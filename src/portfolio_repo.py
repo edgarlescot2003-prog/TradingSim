@@ -1,0 +1,153 @@
+"""Chargement/sauvegarde d'UN portefeuille (dataclasses de portfolio.py)
+depuis/vers Supabase, SANS dépendance à Streamlit.
+
+Isolé de `storage.py` (qui ajoute le scoping sur l'utilisateur de la session
+Streamlit courante, via `st.session_state.user_id`) pour que les scripts/
+crons indépendants de l'app — qui n'ont pas de session Streamlit et opèrent
+sur un `portfolio_id` explicite, potentiellement pour PLUSIEURS utilisateurs
+différents dans une même exécution (ex : scripts/check_tp_sl.py, qui
+vérifie les paliers de tous les portefeuilles à chaque passage) — puissent
+réutiliser exactement la même logique de persistance que l'app, sans jamais
+importer Streamlit.
+
+Chaque appelant fournit sa propre `Session` SQLAlchemy déjà ouverte (via
+`db.get_session()` côté app, ou `db_core.create_engine_from_env()` côté
+script indépendant) : ce module ne gère lui-même aucune connexion.
+"""
+
+import uuid
+
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session
+
+from .db_models import PendingOrderRow, PortfolioRow, PositionRow, TradeRow, ValueHistoryRow
+from .portfolio import PendingOrder, Portfolio, Position, Trade
+
+
+def portfolio_from_rows(prow, positions, trades, orders, value_history) -> Portfolio:
+    return Portfolio(
+        id=prow.id,
+        name=prow.name,
+        initial_capital=prow.initial_capital,
+        cash=prow.cash,
+        created_at=prow.created_at,
+        is_official=prow.is_official,
+        positions={p.ticker: Position(
+            ticker=p.ticker, name=p.name, quantity=p.quantity, avg_price_eur=p.avg_price_eur,
+            currency=p.currency, entry_date=p.entry_date, side=p.side, margin_eur=p.margin_eur,
+        ) for p in positions},
+        history=[Trade(
+            date=t.date, ticker=t.ticker, name=t.name, side=t.side, action=t.action,
+            quantity=t.quantity, price_eur=t.price_eur, currency=t.currency,
+            leverage=t.leverage, realized_pnl_eur=t.realized_pnl_eur, tp_sl_order_id=t.tp_sl_order_id,
+        ) for t in trades],
+        pending_orders=[PendingOrder(
+            id=o.id, ticker=o.ticker, name=o.name, action=o.action, quantity=o.quantity,
+            limit_price_eur=o.limit_price_eur, currency=o.currency, leverage=o.leverage,
+            created_at=o.created_at, last_checked_at=o.last_checked_at,
+        ) for o in orders],
+        value_history=[{"date": v.date, "value_eur": v.value_eur} for v in value_history],
+    )
+
+
+def load_portfolio(session: Session, portfolio_id: str) -> Portfolio | None:
+    """Charge le portefeuille `portfolio_id` (positions/trades/ordres/courbe
+    de valeur compris), quel que soit son propriétaire. None s'il n'existe
+    pas (ou plus)."""
+    prow = session.get(PortfolioRow, portfolio_id)
+    if prow is None:
+        return None
+
+    positions = session.execute(
+        select(PositionRow).where(PositionRow.portfolio_id == prow.id)
+    ).scalars().all()
+    trades = session.execute(
+        select(TradeRow).where(TradeRow.portfolio_id == prow.id).order_by(TradeRow.date)
+    ).scalars().all()
+    orders = session.execute(
+        select(PendingOrderRow).where(PendingOrderRow.portfolio_id == prow.id)
+    ).scalars().all()
+    value_history = session.execute(
+        select(ValueHistoryRow).where(ValueHistoryRow.portfolio_id == prow.id).order_by(ValueHistoryRow.date)
+    ).scalars().all()
+    return portfolio_from_rows(prow, positions, trades, orders, value_history)
+
+
+def save_portfolio(session: Session, portfolio: Portfolio, user_id: str) -> None:
+    """Sauvegarde (création ou mise à jour complète) `portfolio`, propriété
+    de `user_id`, et commite. Chaque appel est donc sa propre transaction
+    (un portefeuille à la fois) — un script qui sauvegarde plusieurs
+    portefeuilles dans la même exécution (ex : scripts/check_tp_sl.py) fait
+    donc autant de commits indépendants, pas une seule transaction globale.
+    """
+    prow = session.get(PortfolioRow, portfolio.id)
+    if prow is None:
+        session.add(PortfolioRow(
+            id=portfolio.id, user_id=user_id, name=portfolio.name,
+            initial_capital=portfolio.initial_capital, cash=portfolio.cash,
+            created_at=portfolio.created_at, is_official=portfolio.is_official,
+        ))
+    else:
+        prow.name = portfolio.name
+        prow.cash = portfolio.cash
+        prow.initial_capital = portfolio.initial_capital
+        # is_official n'est JAMAIS réécrit ici, volontairement : ce statut
+        # est définitif et ne doit pouvoir changer que via l'action dédiée
+        # (auth.set_official_portfolio), jamais en passant par une simple
+        # sauvegarde de portefeuille (achat, vente, palier TP/SL...).
+
+    session.query(PositionRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
+    session.query(TradeRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
+    session.query(PendingOrderRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
+    session.query(ValueHistoryRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
+
+    for pos in portfolio.positions.values():
+        session.add(PositionRow(
+            portfolio_id=portfolio.id, user_id=user_id, ticker=pos.ticker, name=pos.name,
+            quantity=pos.quantity, avg_price_eur=pos.avg_price_eur, currency=pos.currency,
+            entry_date=pos.entry_date, side=pos.side, margin_eur=pos.margin_eur,
+        ))
+    for t in portfolio.history:
+        session.add(TradeRow(
+            portfolio_id=portfolio.id, user_id=user_id, date=t.date, ticker=t.ticker, name=t.name,
+            side=t.side, action=t.action, quantity=t.quantity, price_eur=t.price_eur,
+            currency=t.currency, leverage=t.leverage, realized_pnl_eur=t.realized_pnl_eur,
+            tp_sl_order_id=t.tp_sl_order_id,
+        ))
+    for o in portfolio.pending_orders:
+        session.add(PendingOrderRow(
+            id=o.id, portfolio_id=portfolio.id, user_id=user_id, ticker=o.ticker, name=o.name,
+            action=o.action, quantity=o.quantity, limit_price_eur=o.limit_price_eur,
+            currency=o.currency, leverage=o.leverage, created_at=o.created_at,
+            last_checked_at=o.last_checked_at,
+        ))
+    # dédoublonne par date avant insertion : la contrainte unique porte sur
+    # (portfolio_id, date) exact, et le value_history en mémoire peut
+    # contenir deux fois la même date (voir plus bas).
+    deduped_history = {v["date"]: v["value_eur"] for v in portfolio.value_history}
+    if deduped_history:
+        # INSERT ... ON CONFLICT DO UPDATE plutôt qu'un simple insert : deux
+        # sauvegardes quasi simultanées sur le même portefeuille (deux
+        # onglets ouverts, le cron TP/SL et une session utilisateur en même
+        # temps...) peuvent chacune recalculer un point du jour avec un
+        # timestamp identique si l'horloge n'a pas encore avancé entre les
+        # deux — la 2ᵉ tentait alors un INSERT en double juste après avoir
+        # supprimé les lignes existantes, ce qui violait la contrainte
+        # unique et faisait échouer TOUTE la sauvegarde (positions/trades
+        # compris), pas seulement la courbe de valeur. Avec upsert, la 2ᵉ
+        # requête écrase simplement la valeur au lieu d'échouer.
+        stmt = pg_insert(ValueHistoryRow).values([
+            {
+                "id": str(uuid.uuid4()), "portfolio_id": portfolio.id, "user_id": user_id,
+                "date": date, "value_eur": value_eur,
+            }
+            for date, value_eur in deduped_history.items()
+        ])
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_value_history_portfolio_date",
+            set_={"value_eur": stmt.excluded.value_eur},
+        )
+        session.execute(stmt)
+
+    session.commit()

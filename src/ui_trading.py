@@ -13,11 +13,13 @@ from datetime import datetime, timedelta, timezone
 import plotly.graph_objects as go
 import streamlit as st
 
+from . import db
 from . import kraken_data
 from . import market_data as md
 from . import search_history
 from . import storage
 from . import theme
+from . import tp_sl
 
 # -- Univers d'actifs "vitrine" de la page d'accueil -------------------------
 # 5 actifs par encadré (Indices/Top capitalisation) : FTSE 100 et Meta
@@ -577,6 +579,98 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                     st.rerun()
 
 
+def _render_tp_sl_section(portfolio, ticker: str) -> None:
+    """Paliers Take Profit / Stop Loss sur la position courante de `ticker`.
+    Rien à afficher sans position ouverte : un palier se pose toujours sur
+    une position EXISTANTE (voir tp_sl.py) — pour en ajouter un juste après
+    un nouvel achat, il suffit de valider l'achat d'abord : la position
+    existe alors immédiatement et cette section apparaît juste en dessous au
+    rerun suivant, pas besoin d'un formulaire combiné plus complexe.
+    """
+    position = portfolio.positions.get(ticker)
+    if position is None:
+        return
+
+    with st.container(key="ts_card_tp_sl"):
+        st.markdown("##### Take Profit / Stop Loss")
+        st.caption(
+            "Vend automatiquement une partie de cette position quand le prix atteint un seuil "
+            "exact que tu choisis — même si tu n'as pas l'app ouverte (vérifié toutes les 15 minutes)."
+        )
+
+        with db.get_session() as session:
+            orders = tp_sl.list_for_portfolio(session, portfolio.id)
+        ticker_orders = [o for o in orders if o.ticker == ticker]
+        active_orders = [o for o in ticker_orders if o.status == tp_sl.STATUS_ACTIVE]
+        past_orders = [o for o in ticker_orders if o.status != tp_sl.STATUS_ACTIVE]
+
+        if active_orders:
+            header_cols = st.columns([1.1, 1, 1.3, 1, 0.8])
+            for col, label in zip(header_cols, ["Type", "Prix cible", "Quantité", "Créé le", ""]):
+                col.markdown(f'<div class="ts-light-col-label">{label}</div>', unsafe_allow_html=True)
+            for o in active_orders:
+                cols = st.columns([1.1, 1, 1.3, 1, 0.8])
+                color = theme.LIGHT_GREEN if o.kind == tp_sl.KIND_TAKE_PROFIT else theme.LIGHT_RED
+                cols[0].markdown(
+                    f'<span style="color:{color};font-weight:600">{tp_sl.KIND_LABELS[o.kind]}</span>',
+                    unsafe_allow_html=True,
+                )
+                cols[1].markdown(f'<span class="ts-light-num">{o.target_price_eur:,.2f} €</span>', unsafe_allow_html=True)
+                cols[2].markdown(
+                    f'<span class="ts-light-num">{o.quantity_pct:g}% ({o.trigger_quantity:g} {ticker})</span>',
+                    unsafe_allow_html=True,
+                )
+                cols[3].caption(o.created_at[:10])
+                if cols[4].button("Annuler", key=f"cancel_tp_sl_{o.id}"):
+                    with db.get_session() as session:
+                        tp_sl.cancel_tp_sl(session, o.id, st.session_state.user_id)
+                    st.rerun()
+        else:
+            st.caption("Aucun palier actif sur cet actif pour l'instant.")
+
+        with st.expander("+ Ajouter un palier"):
+            kind_labels = [tp_sl.KIND_LABELS[tp_sl.KIND_TAKE_PROFIT], tp_sl.KIND_LABELS[tp_sl.KIND_STOP_LOSS]]
+            kind_label = st.radio("Type", kind_labels, horizontal=True, key="tp_sl_kind_radio")
+            kind = tp_sl.KIND_TAKE_PROFIT if kind_label == kind_labels[0] else tp_sl.KIND_STOP_LOSS
+
+            col_price, col_pct = st.columns(2)
+            target_price = col_price.number_input(
+                "Prix cible (€)", min_value=0.01, value=float(round(position.avg_price_eur, 2)),
+                step=0.5, key="tp_sl_target_price",
+            )
+            quantity_pct = col_pct.slider(
+                "% de la position actuelle", min_value=1, max_value=100, value=50, key="tp_sl_quantity_pct",
+            )
+            trigger_qty = position.quantity * quantity_pct / 100
+            st.caption(
+                f"Déclenchement : vente de {trigger_qty:g} {ticker} sur les {position.quantity:g} "
+                f"détenus actuellement (figé à la création, ne bougera pas même si la position "
+                "change ensuite)."
+            )
+
+            if st.button("Créer le palier", type="primary", key="submit_tp_sl"):
+                try:
+                    with db.get_session() as session:
+                        tp_sl.create_tp_sl(
+                            session, portfolio.id, st.session_state.user_id, position,
+                            kind, target_price, float(quantity_pct),
+                        )
+                except ValueError as e:
+                    st.error(str(e))
+                else:
+                    st.success("Palier créé.")
+                    st.rerun()
+
+        if past_orders:
+            with st.expander(f"Historique des paliers sur {ticker} ({len(past_orders)})"):
+                for o in past_orders:
+                    status_label = "Exécuté ✅" if o.status == tp_sl.STATUS_EXECUTED else "Annulé"
+                    line = f"{tp_sl.KIND_LABELS[o.kind]} à {o.target_price_eur:,.2f} € ({o.quantity_pct:g}%) — **{status_label}**"
+                    if o.executed_at:
+                        line += f" le {o.executed_at[:10]}"
+                    st.markdown(f"- {line}")
+
+
 def _render_pending_orders(portfolio) -> None:
     with st.container(key="ts_card_pending"):
         st.markdown("##### Ordres en attente")
@@ -669,5 +763,6 @@ def render(portfolio) -> None:
             st.info("Cet actif est affiché à titre informatif : le trading dessus n'est pas encore disponible.")
         else:
             _render_order_form(portfolio, ticker, name, price_eur, currency)
+            _render_tp_sl_section(portfolio, ticker)
 
         _render_pending_orders(portfolio)

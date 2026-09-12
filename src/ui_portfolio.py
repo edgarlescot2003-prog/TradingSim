@@ -41,6 +41,7 @@ HISTORY_COLUMNS = [
     {"key": "price", "label": "Prix", "kind": "eur"},
     {"key": "leverage", "label": "Levier", "kind": "text"},
     {"key": "realized_pnl", "label": "P&L réalisé", "kind": "signed_eur"},
+    {"key": "origin", "label": "Origine", "kind": "text"},
 ]
 
 # (label, jours en arrière ; "ytd" -> depuis le 1er janvier ; None -> tout
@@ -283,6 +284,7 @@ def _render_history(portfolio) -> None:
             "price": t.price_eur,
             "leverage": f"x{t.leverage:g}",
             "realized_pnl": t.realized_pnl_eur,
+            "origin": "Auto (TP/SL)" if t.tp_sl_order_id else "Manuel",
         } for i, t in enumerate(reversed(portfolio.history))]
 
         theme.render_table_light(rows, HISTORY_COLUMNS, row_key="_row_id", table_key="history")

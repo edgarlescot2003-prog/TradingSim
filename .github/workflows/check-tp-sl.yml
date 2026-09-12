@@ -1,0 +1,42 @@
+name: Verification TP/SL
+
+# S'execute meme quand aucun utilisateur n'a l'app ouverte : verifie tous les
+# paliers Take Profit / Stop Loss actifs contre le prix courant, et execute
+# ceux qui sont declenches. Meme modele que la sauvegarde nocturne
+# (.github/workflows/backup.yml). Necessite le meme secret DATABASE_URL
+# (deja configure, voir backups/README.md).
+#
+# Ne committe rien dans le depot (contrairement a la sauvegarde) : toutes
+# les modifications vont directement dans Supabase.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"  # toutes les 15 minutes
+  workflow_dispatch: {}  # bouton "Run workflow" manuel dans l'onglet Actions
+
+permissions:
+  contents: read
+
+jobs:
+  check-tp-sl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Seulement les dépendances nécessaires à ce script (pas tout
+      # requirements.txt : streamlit/plotly ne servent à rien ici, voir la
+      # panne ModuleNotFoundError du workflow de sauvegarde pour le contexte
+      # de cette règle) — mêmes versions que requirements.txt.
+      - name: Installer les dépendances
+        run: pip install yfinance==0.2.66 sqlalchemy==2.0.43 "psycopg[binary]==3.3.4" python-dotenv==1.1.1
+
+      - name: Vérifier et exécuter les paliers TP/SL déclenchés
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m scripts.check_tp_sl

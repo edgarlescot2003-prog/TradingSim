@@ -52,6 +52,27 @@ les 30 secondes via `@st.fragment(run_every=30)`, isolé du reste de la
 page. Le formulaire d'ordre (hors fragment) lit le prix via
 `st.session_state` sans dupliquer d'appel API.
 
+**Take Profit / Stop Loss (TP/SL) par paliers** : sur la fiche d'une
+position détenue, possibilité d'empiler plusieurs paliers (prix cible EXACT
+en €, quantité en % de la position **au moment de la création du palier**,
+figée une fois pour toutes — jamais recalculée sur la quantité résiduelle).
+Pas de contrainte de somme à 100%. Annulation possible tant que non
+déclenché. **S'exécute même quand personne n'a l'app ouverte** : un
+workflow GitHub Actions dédié (`.github/workflows/check-tp-sl.yml`,
+`scripts/check_tp_sl.py`) vérifie tous les paliers actifs toutes les 15
+minutes contre le prix courant (yfinance, `market_data.get_quote` — même
+source que le reste de l'app pour crypto et actions, Kraken n'est utilisé
+nulle part pour un prix courant, seulement pour l'historique intrajournalier
+des graphiques). Un palier dont la position d'origine n'existe plus dans le
+même sens (fermée/inversée entre-temps) est auto-annulé ; une quantité figée
+supérieure à ce qui reste réellement est plafonnée à la quantité
+disponible, jamais bloquante. Plusieurs paliers déclenchés en même temps sur
+la même position s'exécutent du plus proche du prix d'achat moyen au plus
+loin. Les ventes/rachats déclenchés automatiquement sont marqués comme tels
+(`TradeRow.tp_sl_order_id`) et affichés avec le badge "Auto (TP/SL)" dans
+l'historique des trades (Portefeuille) et la page Historique (colonne
+"Origine", CSV compris).
+
 ### Onglet Cours
 Ajout manuel de fiches de révision (pas d'automatisation via API pour
 l'instant — décision volontaire), organisées par thème, recherche possible.
@@ -174,15 +195,28 @@ Isolation stricte des données par `user_id` sur chaque requête.
 
 Logique de connexion scindée en deux : `src/db_core.py` (aucune dépendance à
 Streamlit — lecture de `DATABASE_URL` uniquement via variable
-d'environnement) utilisé par les scripts indépendants de l'app
-(sauvegarde/restauration, exécutés par GitHub Actions ou en local) ;
-`src/db.py` (dépend de Streamlit) ajoute par-dessus le repli sur
-`st.secrets` et la mise en cache par processus serveur, pour l'app
-elle-même. Ne jamais réintroduire un `import streamlit` dans un module
-utilisé par `scripts/backup_db.py`/`scripts/restore_db.py` — c'est
-exactement ce qui a fait échouer le workflow de sauvegarde une première
-fois (`ModuleNotFoundError: streamlit`, l'environnement GitHub Actions
-n'installant volontairement pas Streamlit).
+d'environnement, migrations de schéma via `db_core.ensure_schema`) utilisé
+par les scripts indépendants de l'app (sauvegarde/restauration/TP-SL,
+exécutés par GitHub Actions ou en local) ; `src/db.py` (dépend de
+Streamlit) ajoute par-dessus le repli sur `st.secrets` et la mise en cache
+par processus serveur, pour l'app elle-même. Ne jamais réintroduire un
+`import streamlit` dans un module utilisé par `scripts/backup_db.py`,
+`scripts/restore_db.py` ou `scripts/check_tp_sl.py` — c'est exactement ce
+qui a fait échouer le workflow de sauvegarde une première fois
+(`ModuleNotFoundError: streamlit`, l'environnement GitHub Actions
+n'installant volontairement pas Streamlit) ; même logique pour
+`src/portfolio_repo.py` (chargement/sauvegarde d'UN portefeuille par
+`portfolio_id`, sans dépendance à Streamlit, réutilisé par `storage.py`
+ET par `scripts/check_tp_sl.py`).
+
+Deux workflows GitHub Actions tournent sur ce même modèle (`db_core`,
+secret `DATABASE_URL` du dépôt, aucune dépendance à Streamlit) : sauvegarde
+quotidienne (`backup.yml`) et vérification TP/SL toutes les 15 minutes
+(`check-tp-sl.yml`). Contrairement aux scripts de test habituels,
+`scripts/check_tp_sl.py` traite TOUS les paliers actifs de TOUS les
+comptes à chaque exécution (c'est son rôle) : le relancer manuellement en
+local exécute donc pour de vrai n'importe quel palier réel déclenché à ce
+moment-là, pas seulement ceux d'un compte de test.
 
 **Sauvegarde automatique** : chaque nuit, un workflow GitHub Actions
 (`.github/workflows/backup.yml`) exporte toutes les tables en CSV dans
