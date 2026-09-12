@@ -222,11 +222,28 @@ def _search_tradable_assets(query: str) -> list[dict]:
 def _render_search() -> None:
     with st.container(key="ts_card_search"):
         st.markdown("##### 🔍 Rechercher un actif")
-        query = st.text_input(
-            "Rechercher un actif", key="search_query", label_visibility="collapsed",
-            placeholder="Nom ou ticker : Apple, AAPL, Bitcoin, CAC 40...",
-        )
+        # Champ + résultats dans un st.form plutôt qu'un simple st.text_input
+        # "live" : sans ça, CHAQUE frappe déclenche un rerun qui reconstruit
+        # les boutons de résultat, et cliquer sur l'un d'eux juste après avoir
+        # tapé fait courir ce clic contre le rerun encore en cours du champ de
+        # texte (son "commit" de valeur) -- le clic arrivait alors sur une
+        # instance de bouton déjà en train d'être remplacée côté serveur et
+        # était silencieusement perdu, d'où le besoin systématique d'un 2e
+        # clic pour ouvrir la fiche d'un actif (repéré au stress test, confirmé
+        # en isolant : cliquer un ticker des vitrines d'accueil, hors recherche,
+        # fonctionnait lui du premier coup). Avec st.form, la recherche ne se
+        # relance qu'à la soumission (Entrée ou bouton) : au moment où les
+        # boutons de résultat apparaissent, le champ de texte n'a plus aucun
+        # rerun en attente, donc plus de course possible avec le clic suivant.
+        with st.form("ts_search_form", border=False):
+            col_input, col_submit = st.columns([5, 1])
+            col_input.text_input(
+                "Rechercher un actif", key="search_query", label_visibility="collapsed",
+                placeholder="Nom ou ticker : Apple, AAPL, Bitcoin, CAC 40...",
+            )
+            col_submit.form_submit_button("Rechercher", use_container_width=True)
 
+        query = st.session_state.get("search_query", "")
         if query:
             results = _search_tradable_assets(query)
             if results:
@@ -239,11 +256,16 @@ def _render_search() -> None:
                                           table_key="search_results", show_header=False)
             else:
                 st.caption("Aucun résultat. Tu peux saisir le ticker exact ci-dessous.")
-                manual = st.text_input(
-                    "Ticker exact", key="manual_ticker_input", label_visibility="collapsed",
-                    placeholder="ex : SAN.PA",
-                )
-                if manual and st.button("Rechercher ce ticker", key="manual_ticker_go"):
+                with st.form("ts_manual_ticker_form", border=False):
+                    mcol_input, mcol_submit = st.columns([5, 1])
+                    manual = mcol_input.text_input(
+                        "Ticker exact", key="manual_ticker_input", label_visibility="collapsed",
+                        placeholder="ex : SAN.PA",
+                    )
+                    manual_submitted = mcol_submit.form_submit_button(
+                        "Rechercher ce ticker", use_container_width=True,
+                    )
+                if manual_submitted and manual:
                     theme.go_to_trading(manual.strip().upper(), manual.strip().upper())
             return
 
@@ -281,10 +303,17 @@ def _period_start(period_key: str) -> datetime:
     return now - timedelta(days=days)
 
 
+@st.cache_data(ttl=20, show_spinner=False)
 def _fetch_chart_history(ticker: str, quote_type: str, period_key: str):
     """Récupère l'historique pour le graphique, en choisissant la source
     (Kraken pour la crypto, Yahoo sinon) et en appliquant le repli
     automatique d'intervalle. Retourne (DataFrame, intervalle_effectif, source).
+
+    Mis en cache 20s (comme get_quote) : sans ça, changer de période/type de
+    graphique ou revenir peu après sur le même actif refait un appel réseau
+    complet à chaque fois. Sans lien avec le bug du double-clic (voir
+    _render_search) : ce cache et le st.spinner posé à l'appel, plus bas,
+    améliorent juste le retour visuel pendant un premier chargement.
     """
     interval = PERIOD_INTERVAL[period_key]
     start = _period_start(period_key)
@@ -310,7 +339,8 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
     que le formulaire d'ordre (hors fragment) puisse s'en servir.
     """
     try:
-        quote = md.get_quote(ticker)
+        with st.spinner(f"Chargement de {ticker}..."):
+            quote = md.get_quote(ticker)
     except md.MarketDataError as e:
         st.error(str(e))
         st.session_state.trading_price_eur = None
@@ -345,7 +375,8 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
     chart_type = col_b.radio("Type", ["Courbe", "Chandeliers"], key="chart_type_radio")
 
     try:
-        hist, effective_interval, source = _fetch_chart_history(ticker, quote_type, period_key)
+        with st.spinner(f"Chargement du graphique {ticker}..."):
+            hist, effective_interval, source = _fetch_chart_history(ticker, quote_type, period_key)
     except md.MarketDataError as e:
         st.error(str(e))
         return
