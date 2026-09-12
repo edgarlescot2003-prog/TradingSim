@@ -95,6 +95,69 @@ def _render_portfolio_pills(user_id: str) -> None:
                     st.rerun()
 
 
+def _official_portfolio_progress(active_portfolio, active_total_value: float) -> dict | None:
+    """Variation du portefeuille OFFICIEL de l'utilisateur depuis le début du
+    concours (capital de départ -> valeur actuelle) — pas forcément celle du
+    portefeuille actuellement affiché/sélectionné (voir "Portefeuille
+    officiel" dans CLAUDE.md), qui peut être un portefeuille fun/test.
+
+    Ne déclenche AUCUN appel API : si le portefeuille officiel est celui déjà
+    affiché, on réutilise sa valorisation déjà calculée (active_total_value,
+    gratuite) ; sinon on retombe sur le dernier point connu de sa courbe de
+    valeur (déjà en mémoire, voir st.session_state.portfolios), forcément
+    plus rapide à afficher mais possiblement daté de la dernière fois où ce
+    portefeuille-là a été ouvert (`live=False` dans le résultat)."""
+    official = next((p for p in st.session_state.portfolios.values() if p.is_official), None)
+    if official is None:
+        return None
+
+    if official.id == active_portfolio.id:
+        current_value, live, as_of = active_total_value, True, None
+    elif official.value_history:
+        last_point = official.value_history[-1]
+        current_value, live, as_of = last_point["value_eur"], False, last_point["date"]
+    else:
+        current_value, live, as_of = official.cash, False, official.created_at
+
+    pnl_eur = current_value - official.initial_capital
+    pnl_pct = (pnl_eur / official.initial_capital * 100) if official.initial_capital else 0.0
+    return {
+        "portfolio_name": official.name, "initial_capital": official.initial_capital,
+        "current_value": current_value, "pnl_eur": pnl_eur, "pnl_pct": pnl_pct,
+        "live": live, "as_of": as_of,
+    }
+
+
+def _render_contest_progress(active_portfolio, active_total_value: float) -> None:
+    progress = _official_portfolio_progress(active_portfolio, active_total_value)
+
+    with st.container(key="ts_card_contest_progress"):
+        st.markdown("##### Depuis le début du concours")
+        if progress is None:
+            st.caption("Pas encore de portefeuille officiel désigné pour ton compte.")
+            return
+
+        color = theme.LIGHT_GREEN if progress["pnl_eur"] >= 0 else theme.LIGHT_RED
+        sign = "+" if progress["pnl_eur"] >= 0 else ""
+        c1, c2 = st.columns([1, 2])
+        c1.metric(
+            f"Variation ({progress['portfolio_name']})",
+            f"{sign}{progress['pnl_eur']:,.2f} €", delta=f"{sign}{progress['pnl_pct']:.2f} %",
+        )
+        with c2:
+            st.markdown(
+                f"Capital de départ : **{progress['initial_capital']:,.2f} €** → "
+                f"valeur {'actuelle' if progress['live'] else 'au dernier calcul'} : "
+                f"<span style='color:{color};font-weight:600'>{progress['current_value']:,.2f} €</span>",
+                unsafe_allow_html=True,
+            )
+            if not progress["live"] and progress["as_of"]:
+                st.caption(
+                    f"Portefeuille officiel non actif en ce moment — valeur au "
+                    f"{progress['as_of'][:16].replace('T', ' ')} (pas de nouvel appel de prix pour l'actualiser)."
+                )
+
+
 def _render_highlights(portfolio, total_value: float, snapshots: list[dict]) -> None:
     day_pnl_eur, day_pnl_pct = valuation.daily_pnl(portfolio, total_value)
     total_pnl_eur = sum(s["pnl_eur"] for s in snapshots)
@@ -370,6 +433,7 @@ def render(portfolio, total_value: float, snapshots: list[dict]) -> None:
     theme.inject_light()
     with st.container(key="ts_light"):
         _render_portfolio_pills(st.session_state.user_id)
+        _render_contest_progress(portfolio, total_value)
         _render_highlights(portfolio, total_value, snapshots)
         _render_positions_table(snapshots)
         _render_performance(portfolio)

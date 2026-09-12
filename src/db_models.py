@@ -192,3 +192,9 @@ class NewsRow(Base):
     # l'auteur.
     image_couverture = Column(Text, nullable=True)
     created_at = Column(String, nullable=False, default=_now_iso)
+    # Article généré automatiquement (résumé hebdomadaire, voir
+    # weekly_summary.py) : `user_id` reste NULL comme pour un compte
+    # supprimé (aucun "utilisateur système" en base), donc ce flag distingue
+    # explicitement les deux cas à l'affichage (voir ui_news.py) plutôt que
+    # d'afficher "(compte supprimé)" pour un résumé automatique.
+    is_system = Column(Boolean, nullable=False, default=False)

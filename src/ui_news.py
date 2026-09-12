@@ -253,6 +253,12 @@ def _render_card(item: NewsItem, author_name: str, can_delete: bool) -> None:
             st.rerun()
 
 
+def _author_name(item: NewsItem, usernames: dict[str, str]) -> str:
+    if item.is_system:
+        return "Résumé automatique"
+    return usernames.get(item.author_id, "(compte supprimé)")
+
+
 def render(role: str, user_id: str) -> None:
     st.subheader("News")
 
@@ -275,7 +281,7 @@ def render(role: str, user_id: str) -> None:
         columns = st.columns(3)
         for i, item in enumerate(items):
             with columns[i % 3]:
-                _render_card(item, usernames.get(item.author_id, "(compte supprimé)"), can_delete)
+                _render_card(item, _author_name(item, usernames), can_delete)
 
     open_id = st.session_state.get("open_news_id")
     if open_id:
@@ -283,4 +289,4 @@ def render(role: str, user_id: str) -> None:
         if opened is None:
             st.session_state.open_news_id = None
         else:
-            _render_article_dialog(opened, usernames.get(opened.author_id, "(compte supprimé)"), can_delete)
+            _render_article_dialog(opened, _author_name(opened, usernames), can_delete)

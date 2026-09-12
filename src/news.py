@@ -17,5 +17,10 @@ class NewsItem:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     # Auteur d'origine. None si l'auteur a supprimé son compte (l'article
-    # est conservé, juste détaché — voir auth.delete_user).
+    # est conservé, juste détaché — voir auth.delete_user) OU si l'article
+    # est généré automatiquement (voir is_system ci-dessous, qui distingue
+    # les deux cas à l'affichage).
     author_id: str | None = None
+    # Résumé hebdomadaire automatique (voir weekly_summary.py) plutôt
+    # qu'un article publié par un compte réel.
+    is_system: bool = False

@@ -90,7 +90,44 @@ tête si un participant s'en plaint, mais pas à remettre en question.
 Fil d'articles (titre, contenu, lien, image de couverture). Admin et
 Contributeur peuvent publier librement (sans validation) ; suppression
 réservée à l'Admin (y compris les news d'un Contributeur) ; lecture seule
-pour un compte standard.
+pour un compte standard. Un article peut aussi être généré automatiquement
+(voir "Notifications et engagement" ci-dessous) — affiché avec l'auteur
+"Résumé automatique" (`NewsRow.is_system`), pas rattaché à un compte réel.
+
+### Notifications et engagement
+Trois fonctionnalités ajoutées pour donner des raisons de revenir sur l'app
+pendant les 6 mois du concours, sous une contrainte stricte : **aucune ne
+doit augmenter la fréquence/le volume d'appels aux API de prix**
+(Kraken/Yahoo, déjà sous surveillance) — tout se construit à partir de
+données déjà en base ou déjà récupérées ailleurs dans le même chargement de
+page.
+
+- **Résumé hebdomadaire automatique** (`src/weekly_summary.py`) : publié
+  dans l'onglet News comme un article système (classement de la semaine des
+  portefeuilles officiels, plus forte progression/baisse, actif le plus
+  tradé). Pas de vrai scheduler dans ce projet (app Streamlit sans tâche de
+  fond) : la génération est donc vérifiée à chaque démarrage du serveur
+  (`weekly_summary.check_and_generate`, mis en cache 1h) plutôt qu'à heure
+  fixe — un lundi sans connexion est rattrapé au prochain démarrage, quel
+  que soit le jour. Dédoublonné par le titre exact de la semaine (pas de
+  colonne dédiée), donc un titre d'article ne doit jamais être modifié à la
+  main pour un résumé déjà publié.
+- **Widget "Depuis le début du concours"** (`ui_portfolio._render_contest_progress`) :
+  en tête de l'onglet Portefeuille (page d'accueil après connexion), variation
+  du **portefeuille officiel** (pas forcément celui affiché/sélectionné) entre
+  son capital de départ réel et sa valeur actuelle. Si le portefeuille officiel
+  est celui déjà affiché, la valeur est en direct (gratuite, déjà calculée) ;
+  sinon, repli sur le dernier point connu de sa courbe de valeur (peut être
+  daté de plusieurs jours) plutôt qu'un nouvel appel de prix.
+- **Alerte de variation de prix** : bannière affichée sur tous les onglets
+  (`theme.render_movers_alert`, seuil `valuation.MOVER_THRESHOLD_PCT` = 5 %)
+  quand une position **détenue** du portefeuille actif bouge de plus du seuil
+  depuis la clôture précédente. Construite à partir des snapshots déjà
+  calculés à chaque chargement de page (`valuation.total_value`, déjà
+  nécessaire à l'affichage du P&L) — zéro appel réseau supplémentaire.
+  Volontairement limitée aux positions détenues : couvrir aussi les actifs
+  seulement "suivis" (recherchés sans être possédés) nécessiterait des
+  appels API dédiés, ce qui violerait la contrainte ci-dessus.
 
 ### Esthétique
 Thème clair partout (plus de thème sombre — la démarcation entre un onglet

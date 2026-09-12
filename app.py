@@ -7,6 +7,7 @@ import streamlit as st
 from src import (
     auth, db, order_engine, storage, theme,
     ui_admin, ui_auth, ui_history, ui_leaderboard, ui_news, ui_portfolio, ui_trading, ui_tutorial, valuation,
+    weekly_summary,
 )
 from src.portfolio import MAX_PORTFOLIOS_PER_USER, Portfolio
 
@@ -18,6 +19,12 @@ theme.inject()
 if "db_ready" not in st.session_state:
     db.bootstrap()
     st.session_state.db_ready = True
+
+# Résumé hebdomadaire automatique (onglet News) : vérifié à chaque démarrage
+# serveur plutôt qu'à heure fixe (pas de vrai scheduler dans ce projet), mais
+# mis en cache 1h (voir weekly_summary.check_and_generate) pour ne pas
+# refaire ces quelques requêtes DB à chaque rerun de chaque session.
+weekly_summary.check_and_generate()
 
 # Porte d'authentification : rien d'autre ne s'affiche tant que l'utilisateur
 # n'est pas connecté.
@@ -188,6 +195,10 @@ with topbar_slot.container():
 with messages_slot.container():
     for msg in executed_messages:
         st.success(msg)
+    # Alerte de variation de prix : construite à partir des snapshots déjà
+    # calculés juste au-dessus (valuation.total_value), donc sans aucun appel
+    # API de prix supplémentaire — voir valuation.large_movers.
+    theme.render_movers_alert(valuation.large_movers(snapshots))
 
 if st.session_state.active_tab == "trading":
     ui_trading.render(portfolio)

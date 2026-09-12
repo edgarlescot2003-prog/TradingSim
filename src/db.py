@@ -80,6 +80,9 @@ def init_db() -> None:
         conn.execute(text(
             "ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS is_official BOOLEAN NOT NULL DEFAULT FALSE"
         ))
+        conn.execute(text(
+            "ALTER TABLE news ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
 
 
 DEFAULT_USERNAME = "default"

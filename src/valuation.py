@@ -115,6 +115,34 @@ def total_value(portfolio, price_cache: dict[str, float] | None = None) -> tuple
     return total, snapshots
 
 
+# Seuil de variation (depuis la clôture précédente) au-delà duquel une
+# position détenue déclenche la bannière d'alerte (voir large_movers).
+MOVER_THRESHOLD_PCT = 5.0
+
+
+def large_movers(snapshots: list[dict], threshold_pct: float = MOVER_THRESHOLD_PCT) -> list[dict]:
+    """Positions DÉTENUES dont le prix a bougé de plus de `threshold_pct`
+    depuis la clôture précédente (day_pnl_pct, déjà calculé par
+    position_snapshot ci-dessus à partir du même appel API que le prix
+    courant — voir get_quote). Ne déclenche donc AUCUN appel réseau
+    supplémentaire : c'est un sous-produit de la revalorisation du
+    portefeuille actif déjà effectuée à chaque chargement de page (voir
+    app.py), qu'un mouvement de prix soit surveillé ou non.
+
+    Volontairement limité aux positions détenues (pas aux actifs seulement
+    "suivis"/recherchés sans être possédés, voir la doc de conception
+    d'origine) : les revaloriser en continu demanderait des appels API
+    dédiés, ce que cette fonctionnalité s'interdit explicitement.
+    """
+    movers = [
+        {"ticker": s["position"].ticker, "name": s["position"].name, "day_pnl_pct": s["day_pnl_pct"]}
+        for s in snapshots
+        if not s["error"] and abs(s["day_pnl_pct"]) >= threshold_pct
+    ]
+    movers.sort(key=lambda m: abs(m["day_pnl_pct"]), reverse=True)
+    return movers
+
+
 def daily_pnl(portfolio, total_value_eur: float) -> tuple[float, float]:
     """P&L depuis le dernier point de value_history antérieur à aujourd'hui.
 

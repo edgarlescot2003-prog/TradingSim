@@ -1136,6 +1136,35 @@ def go_to_trading(ticker: str, name: str | None = None) -> None:
     st.rerun()
 
 
+def render_movers_alert(movers: list[dict]) -> None:
+    """Bannière en session (pas de push/email) signalant qu'une position
+    détenue du portefeuille actif a bougé de plus du seuil configuré
+    (voir valuation.MOVER_THRESHOLD_PCT) depuis la clôture précédente.
+    Construite uniquement à partir de snapshots déjà calculés à chaque
+    chargement de page (valuation.total_value) : aucun appel réseau
+    supplémentaire vers les API de prix externes."""
+    if not movers:
+        return
+    parts = []
+    for m in movers:
+        color = GREEN if m["day_pnl_pct"] >= 0 else RED
+        sign = "+" if m["day_pnl_pct"] >= 0 else ""
+        parts.append(
+            f'<span style="color:{color};font-weight:600">{html_lib.escape(m["ticker"])} '
+            f'{sign}{m["day_pnl_pct"]:.1f}%</span>'
+        )
+    st.markdown(
+        f"""
+        <div style="padding:0.5rem 1.1rem;border:1px solid var(--ts-border);border-radius:4px;
+                     background:var(--ts-panel);margin-bottom:0.6rem;font-family:{FONT_SANS};
+                     font-size:0.85rem;color:var(--ts-text);">
+            ⚡ Mouvement du jour sur tes positions : {" &nbsp;·&nbsp; ".join(parts)}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def go_to_history(user_id: str, username: str | None = None) -> None:
     """Bascule vers la page Historique (transparence des ordres + métriques
     de performance) du portefeuille officiel d'un utilisateur ARBITRAIRE,
