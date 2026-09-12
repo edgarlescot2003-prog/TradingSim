@@ -172,6 +172,18 @@ Connexion via Session Pooler IMPÉRATIVEMENT
 connection" (`db.xxx.supabase.co`) qui échoue sur Streamlit Cloud.
 Isolation stricte des données par `user_id` sur chaque requête.
 
+Logique de connexion scindée en deux : `src/db_core.py` (aucune dépendance à
+Streamlit — lecture de `DATABASE_URL` uniquement via variable
+d'environnement) utilisé par les scripts indépendants de l'app
+(sauvegarde/restauration, exécutés par GitHub Actions ou en local) ;
+`src/db.py` (dépend de Streamlit) ajoute par-dessus le repli sur
+`st.secrets` et la mise en cache par processus serveur, pour l'app
+elle-même. Ne jamais réintroduire un `import streamlit` dans un module
+utilisé par `scripts/backup_db.py`/`scripts/restore_db.py` — c'est
+exactement ce qui a fait échouer le workflow de sauvegarde une première
+fois (`ModuleNotFoundError: streamlit`, l'environnement GitHub Actions
+n'installant volontairement pas Streamlit).
+
 **Sauvegarde automatique** : chaque nuit, un workflow GitHub Actions
 (`.github/workflows/backup.yml`) exporte toutes les tables en CSV dans
 `backups/AAAA-MM-JJ/` (rotation : 14 sauvegardes conservées), commité
@@ -181,10 +193,11 @@ directement dans le dépôt — gratuit, aucun service tiers. Voir
 (`scripts/restore_db.py`) en cas de problème.
 
 ## Tâches en cours / pas encore faites
-- **Ajouter le secret `DATABASE_URL` dans GitHub** (Settings > Secrets and
-  variables > Actions du dépôt) pour que la sauvegarde automatique
-  nocturne fonctionne — voir `backups/README.md`, étape que je ne peux pas
-  faire à ta place (accès à l'interface web GitHub).
+- Secret GitHub `DATABASE_URL` déjà configuré par Edgar (sauvegarde
+  automatique nocturne) ; le workflow avait échoué une première fois
+  (`ModuleNotFoundError: streamlit`, corrigé en isolant `src/db_core.py` de
+  Streamlit) — à confirmer que le prochain run passe au vert dans l'onglet
+  Actions du dépôt GitHub.
 - Désigner le portefeuille officiel de testutilisateur/oscar/edgarv2 depuis
   l'Admin (voir "Portefeuille officiel" ci-dessus) — sinon ils restent
   absents du Classement.

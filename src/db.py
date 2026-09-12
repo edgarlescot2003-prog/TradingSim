@@ -1,25 +1,29 @@
-"""Connexion à la base PostgreSQL (Supabase).
+"""Connexion à la base PostgreSQL (Supabase) pour l'app Streamlit.
 
 La chaîne de connexion est lue depuis `st.secrets["DATABASE_URL"]` une fois
 déployé (Streamlit Cloud), ou depuis la variable d'environnement
-`DATABASE_URL` (fichier .env local via python-dotenv) en développement.
-Jamais codée en dur dans le script.
+`DATABASE_URL` (fichier .env local via python-dotenv, voir db_core.py) en
+développement. Jamais codée en dur dans le script.
+
+Toute la logique indépendante de Streamlit (normalisation de l'URL, création
+du moteur SQLAlchemy) vit dans `src/db_core.py` — ce module-ci n'ajoute que
+le repli `st.secrets` et la mise en cache par processus serveur
+(`st.cache_resource`), pour que les scripts exécutés HORS de l'app
+(sauvegarde/restauration, voir scripts/backup_db.py) n'aient jamais besoin
+d'installer Streamlit en important `src.db`.
 
 `pool_pre_ping=True` évite de renvoyer une connexion morte du pool (le
 pooler Supabase peut fermer les connexions inactives sans prévenir) ;
 `pool_recycle=3600` recycle les connexions avant qu'elles ne soient coupées
-côté serveur. `sslmode=require` est forcé si absent de l'URL fournie.
+côté serveur. `sslmode=require` est forcé si absent de l'URL fournie
+(voir db_core.normalize_url).
 """
 
-import os
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-
 import streamlit as st
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-load_dotenv()
+from . import db_core
 
 
 def _get_database_url() -> str:
@@ -27,34 +31,14 @@ def _get_database_url() -> str:
         url = st.secrets["DATABASE_URL"]
     except Exception:
         url = None
-    if not url:
-        url = os.environ.get("DATABASE_URL")
-    if not url:
-        raise RuntimeError(
-            "DATABASE_URL introuvable : définis-la dans .env (local) ou dans "
-            "les secrets Streamlit Cloud (déploiement)."
-        )
-    return url
-
-
-def _normalize_url(url: str) -> str:
-    """Force le driver psycopg (v3) et sslmode=require."""
-    if url.startswith("postgresql://"):
-        url = "postgresql+psycopg://" + url[len("postgresql://"):]
-    elif url.startswith("postgres://"):
-        url = "postgresql+psycopg://" + url[len("postgres://"):]
-
-    parts = urlsplit(url)
-    query = dict(parse_qsl(parts.query))
-    query.setdefault("sslmode", "require")
-    return urlunsplit(parts._replace(query=urlencode(query)))
+    return url or db_core.get_database_url_from_env()
 
 
 @st.cache_resource(show_spinner=False)
 def get_engine():
     """Moteur SQLAlchemy, mis en cache (un seul pool de connexions par
     processus serveur, réutilisé à travers tous les reruns Streamlit)."""
-    url = _normalize_url(_get_database_url())
+    url = db_core.normalize_url(_get_database_url())
     return create_engine(url, pool_pre_ping=True, pool_recycle=3600)
 
 

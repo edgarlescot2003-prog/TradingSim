@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src import db
+from src import db_core
 from src.db_models import (
     CourseRow, NewsRow, PendingOrderRow, PortfolioRow, PositionRow, SearchHistoryRow, TradeRow, User,
     ValueHistoryRow,
@@ -68,7 +68,7 @@ def run_backup() -> Path:
     out_dir = BACKUPS_DIR / today
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    engine = db.get_engine()
+    engine = db_core.create_engine_from_env()
     for table_name, model in TABLES.items():
         count = _export_table(engine, model, out_dir / f"{table_name}.csv")
         print(f"  {table_name}: {count} lignes")

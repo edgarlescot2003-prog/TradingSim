@@ -16,7 +16,7 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy import text
 
-from src import db
+from src import db_core
 from src.db_models import (
     CourseRow, NewsRow, PendingOrderRow, PortfolioRow, PositionRow, SearchHistoryRow, TradeRow, User,
     ValueHistoryRow,
@@ -45,7 +45,7 @@ def _load_dataframe(backup_dir: Path, table_name: str) -> pd.DataFrame:
 
 
 def restore(backup_dir: Path) -> None:
-    engine = db.get_engine()
+    engine = db_core.create_engine_from_env()
     with engine.begin() as conn:
         print("Suppression des données actuelles...")
         for model in TABLES_CHILDREN_FIRST:
