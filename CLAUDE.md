@@ -61,7 +61,29 @@ Classement multi-utilisateurs trié par P&L en €, avec le P&L en % affiché
 à côté. Ne prend en compte que le **portefeuille officiel** de chaque
 utilisateur (voir Portefeuille officiel ci-dessus) — recalculé en temps
 réel à chaque consultation, pour tout le monde. Ma propre ligne est repérée
-par un "(toi)". Visible par tous les comptes connectés.
+par un "(toi)". Visible par tous les comptes connectés. Chaque nom est
+cliquable et ouvre la page Historique de cet utilisateur (voir ci-dessous).
+
+### Page Historique (accessible depuis le Classement)
+Cliquer sur un nom dans le Classement ouvre l'historique complet de son
+**portefeuille officiel** uniquement (jamais ses portefeuilles fun/test) :
+tableau chronologique des ordres (date/heure, actif, sens, quantité, prix
+d'exécution, montant total) avec export CSV, précédé de 4 métriques de
+performance calculées sur la courbe de valeur du portefeuille (rendement
+annualisé, volatilité annualisée, ratio de Sharpe, max drawdown). Le taux
+sans risque du Sharpe (proxy OAT France 3 mois) est une valeur fixe codée
+en dur dans `src/history.py` (`RISK_FREE_RATE`, 2,5 %/an par défaut) — à
+ajuster si besoin. En dessous de 30 jours de données (`MIN_RELIABLE_DAYS`),
+les métriques restent affichées mais avec une mention explicite du nombre
+de jours disponibles plutôt qu'une annualisation silencieuse peu fiable.
+
+Page **publique** : n'importe quel participant connecté peut consulter
+l'historique et les métriques de risque de n'importe quel autre, en temps
+réel pendant le concours — choix assumé pour la transparence/crédibilité du
+concours (utile pour montrer les résultats aux professeurs MBFA en fin de
+compétition), pas une fuite à corriger. Peut inciter à copier les positions
+d'un leader ou changer les comportements en fin de concours : à garder en
+tête si un participant s'en plaint, mais pas à remettre en question.
 
 ### Onglet News
 Fil d'articles (titre, contenu, lien, image de couverture). Admin et
