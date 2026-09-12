@@ -129,6 +129,14 @@ page.
   seulement "suivis" (recherchés sans être possédés) nécessiterait des
   appels API dédiés, ce qui violerait la contrainte ci-dessus.
 
+### Onglet Règlement
+Contenu statique du règlement du concours (participants, capital de départ,
+durée, opérations autorisées, actifs éligibles, classement, récompense).
+Chargé depuis `content/reglement.md` — un simple fichier texte séparé du
+code, éditable directement sur GitHub (aucun redéploiement complexe, juste
+un commit) sans toucher au code Python. Purement informatif : pas de case à
+cocher/validation obligatoire pour utiliser l'app.
+
 ### Esthétique
 Thème clair partout (plus de thème sombre — la démarcation entre un onglet
 clair et le reste en sombre était trop dérangeante) : fond quasi-blanc,
@@ -164,7 +172,19 @@ Connexion via Session Pooler IMPÉRATIVEMENT
 connection" (`db.xxx.supabase.co`) qui échoue sur Streamlit Cloud.
 Isolation stricte des données par `user_id` sur chaque requête.
 
+**Sauvegarde automatique** : chaque nuit, un workflow GitHub Actions
+(`.github/workflows/backup.yml`) exporte toutes les tables en CSV dans
+`backups/AAAA-MM-JJ/` (rotation : 14 sauvegardes conservées), commité
+directement dans le dépôt — gratuit, aucun service tiers. Voir
+`backups/README.md` pour la mise en place du secret GitHub `DATABASE_URL`
+(à faire une fois) et la marche à suivre pour restaurer
+(`scripts/restore_db.py`) en cas de problème.
+
 ## Tâches en cours / pas encore faites
+- **Ajouter le secret `DATABASE_URL` dans GitHub** (Settings > Secrets and
+  variables > Actions du dépôt) pour que la sauvegarde automatique
+  nocturne fonctionne — voir `backups/README.md`, étape que je ne peux pas
+  faire à ta place (accès à l'interface web GitHub).
 - Désigner le portefeuille officiel de testutilisateur/oscar/edgarv2 depuis
   l'Admin (voir "Portefeuille officiel" ci-dessus) — sinon ils restent
   absents du Classement.

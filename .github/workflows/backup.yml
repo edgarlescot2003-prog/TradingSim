@@ -1,0 +1,53 @@
+name: Sauvegarde quotidienne de la base
+
+# Filet de sécurité gratuit en cas de problème sur la base Supabase
+# (suppression accidentelle, bug, corruption) : exporte chaque table en CSV
+# et les commite dans backups/AAAA-MM-JJ/ (voir scripts/backup_db.py et
+# backups/README.md pour restaurer). Aucun service tiers payant.
+#
+# Nécessite un secret DATABASE_URL configuré dans les secrets du dépôt
+# GitHub (Settings > Secrets and variables > Actions) — voir backups/README.md
+# pour la marche à suivre pas à pas.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # tous les jours à 03:00 UTC
+  workflow_dispatch: {}  # bouton "Run workflow" manuel dans l'onglet Actions
+
+permissions:
+  contents: write  # nécessaire pour committer/pousser la sauvegarde
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Seulement les dépendances nécessaires à la sauvegarde (pas tout
+      # requirements.txt : streamlit/yfinance/plotly ne servent à rien ici),
+      # mêmes versions que requirements.txt pour rester cohérent.
+      - name: Installer les dépendances
+        run: pip install pandas==3.0.5 sqlalchemy==2.0.43 "psycopg[binary]==3.3.4" python-dotenv==1.1.1
+
+      - name: Exécuter la sauvegarde
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m scripts.backup_db
+
+      - name: Committer et pousser la sauvegarde si elle a changé
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add backups/
+          if git diff --cached --quiet; then
+            echo "Rien de nouveau à sauvegarder (aucun changement depuis la dernière fois)."
+          else
+            git commit -m "Sauvegarde automatique de la base ($(date -u +%Y-%m-%d))"
+            git push
+          fi

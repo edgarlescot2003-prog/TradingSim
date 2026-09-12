@@ -6,8 +6,8 @@ import streamlit as st
 
 from src import (
     auth, db, order_engine, storage, theme,
-    ui_admin, ui_auth, ui_history, ui_leaderboard, ui_news, ui_portfolio, ui_trading, ui_tutorial, valuation,
-    weekly_summary,
+    ui_admin, ui_auth, ui_history, ui_leaderboard, ui_news, ui_portfolio, ui_reglement, ui_trading,
+    ui_tutorial, valuation, weekly_summary,
 )
 from src.portfolio import MAX_PORTFOLIOS_PER_USER, Portfolio
 
@@ -210,6 +210,8 @@ elif st.session_state.active_tab == "historique":
     ui_history.render(st.session_state.get("history_user_id", user_id), user_id)
 elif st.session_state.active_tab == "news":
     ui_news.render(role, user_id)
+elif st.session_state.active_tab == "reglement":
+    ui_reglement.render()
 elif st.session_state.active_tab == "administration" and auth.is_admin(role):
     ui_admin.render(user_id)
 else:

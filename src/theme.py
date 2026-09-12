@@ -1180,6 +1180,7 @@ def go_to_history(user_id: str, username: str | None = None) -> None:
 DEFAULT_TABS = [
     ("portefeuille", "Portefeuille"), ("trading", "Trading"),
     ("cours", "Tutoriel"), ("classement", "Classement"), ("news", "News"),
+    ("reglement", "Règlement"),
 ]
 
 

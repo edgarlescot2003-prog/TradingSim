@@ -104,7 +104,7 @@ Si tu renforces une position existante, ton prix moyen d'achat est recalculé au
 Avant de valider, un récapitulatif t'indique le coût total, la marge nécessaire, et une simulation de ton gain/perte si le prix bouge de ±5% ou ±10%. Prends toujours 5 secondes pour le relire avant de cliquer.
 """),
     ("7. Le classement", """
-Dans l'onglet **Classement**, tu retrouves tous les participants triés par performance (P&L en euros et en %), recalculé en direct sur les prix actuels du marché. Ta ligne est repérée par "(toi)" pour la retrouver facilement. Si tu as plusieurs portefeuilles, c'est leur somme qui compte pour ton classement.
+Dans l'onglet **Classement**, tu retrouves tous les participants triés par performance (P&L en euros et en %), recalculé en direct sur les prix actuels du marché. Ta ligne est repérée par "(toi)" pour la retrouver facilement. Si tu as plusieurs portefeuilles, seul ton **portefeuille officiel** (⭐, unique et défini une fois pour toutes) compte pour ton classement — tes éventuels autres portefeuilles fun/test n'y sont jamais comptabilisés. Clique sur un nom (le tien ou celui d'un autre participant) pour voir le détail de ses ordres et ses métriques de performance dans la page **Historique**.
 """),
     ("Pour résumer en 3 points avant de te lancer", """
 1. **Long** = tu paries à la hausse, **Short** = tu paries à la baisse.
