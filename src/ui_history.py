@@ -56,7 +56,7 @@ def _render_metrics(metrics: dict) -> None:
         st.caption(
             f"Calculé sur {metrics['n_days']} jours de données. Taux sans risque utilisé pour "
             f"le ratio de Sharpe : {metrics['risk_free_rate'] * 100:.2f} % par an "
-            "(proxy OAT France 3 mois, valeur fixe pour la durée du concours)."
+            "(Euribor 3 mois, valeur fixe pour la durée du concours)."
         )
 
 

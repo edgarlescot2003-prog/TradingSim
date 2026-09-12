@@ -16,11 +16,11 @@ from sqlalchemy import select
 from . import db
 from .db_models import PortfolioRow, TradeRow, User, ValueHistoryRow
 
-# Taux sans risque utilisé pour le ratio de Sharpe : proxy OAT France 3 mois,
-# valeur fixe pour toute la durée du concours (pas de récupération temps
-# réel, voir la doc de conception d'origine). À ajuster ici si Edgar
-# communique une valeur plus précise/à jour.
-RISK_FREE_RATE = 0.025  # 2.5 %/an
+# Taux sans risque utilisé pour le ratio de Sharpe : Euribor 3 mois (≈2,64 %
+# au moment de l'implémentation), valeur fixe pour toute la durée du concours
+# (pas de récupération temps réel, voir la doc de conception d'origine). À
+# ajuster ici si Edgar communique une valeur plus à jour.
+RISK_FREE_RATE = 0.0264  # 2.64 %/an
 
 # En dessous de ce nombre de jours de données, l'annualisation n'est pas
 # jugée représentative : les métriques restent calculées et affichées, mais
