@@ -8,7 +8,7 @@ from . import leaderboard, theme
 
 COLUMNS = [
     {"key": "rank", "label": "Rang", "kind": "text"},
-    {"key": "username", "label": "Utilisateur", "kind": "text"},
+    {"key": "username", "label": "Utilisateur", "kind": "user_link"},
     {"key": "initial_capital", "label": "Capital de départ", "kind": "eur"},
     {"key": "current_value", "label": "Valeur actuelle", "kind": "eur"},
     {"key": "pnl_eur", "label": "P&L", "kind": "signed_eur"},
@@ -21,7 +21,8 @@ def render(current_user_id: str) -> None:
     st.caption(
         "Seul le portefeuille officiel de chaque utilisateur compte pour le classement "
         "(revalorisé en direct à chaque consultation) — ses éventuels autres portefeuilles "
-        "fun/test n'y apparaissent pas."
+        "fun/test n'y apparaissent pas. Clique sur un nom pour voir son historique détaillé "
+        "d'ordres et ses métriques de performance."
     )
 
     with st.spinner("Calcul des positions de tous les portefeuilles officiels en direct..."):
@@ -38,6 +39,8 @@ def render(current_user_id: str) -> None:
         rows.append({
             "rank": f"#{i}",
             "username": username,
+            "nav_username": r["username"],
+            "user_id": r["user_id"],
             "initial_capital": r["initial_capital"],
             "current_value": r["current_value"],
             "pnl_eur": r["pnl_eur"],

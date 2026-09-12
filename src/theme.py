@@ -342,7 +342,7 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
 
 /* Boutons de navigation vers un actif (tableaux, historique, ordres) :
    de vrais st.button stylés pour ressembler à un lien discret */
-[class*="st-key-navcell_"] button, [class*="st-key-navorder_"] button {{
+[class*="st-key-navcell_"] button, [class*="st-key-navorder_"] button, [class*="st-key-navuser_"] button {{
     background: transparent !important;
     border: none !important;
     border-bottom: 1px dashed var(--ts-border) !important;
@@ -352,7 +352,8 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     font-weight: 400 !important;
     width: auto !important;
 }}
-[class*="st-key-navcell_"] button:hover, [class*="st-key-navorder_"] button:hover {{
+[class*="st-key-navcell_"] button:hover, [class*="st-key-navorder_"] button:hover,
+[class*="st-key-navuser_"] button:hover {{
     color: var(--ts-accent) !important;
     border-color: var(--ts-accent) !important;
 }}
@@ -1135,6 +1136,18 @@ def go_to_trading(ticker: str, name: str | None = None) -> None:
     st.rerun()
 
 
+def go_to_history(user_id: str, username: str | None = None) -> None:
+    """Bascule vers la page Historique (transparence des ordres + métriques
+    de performance) du portefeuille officiel d'un utilisateur ARBITRAIRE,
+    accessible en cliquant sur son nom depuis le Classement. Même mécanique
+    que go_to_trading (session_state + st.rerun, jamais un lien <a href>,
+    voir le commentaire en tête de fichier)."""
+    st.session_state.history_user_id = user_id
+    st.session_state.history_username = username or ""
+    st.session_state.active_tab = "historique"
+    st.rerun()
+
+
 DEFAULT_TABS = [
     ("portefeuille", "Portefeuille"), ("trading", "Trading"),
     ("cours", "Tutoriel"), ("classement", "Classement"), ("news", "News"),
@@ -1237,6 +1250,14 @@ def render_table(rows: list[dict], columns: list[dict], row_key: str = "id", tab
                     key_prefix = "navcell_ticker" if col.get("mono") else "navcell_name"
                     if cell.button(label, key=f"{key_prefix}_{col['key']}_{rid}"):
                         go_to_trading(ticker, name)
+                    continue
+
+                if kind == "user_link":
+                    target_user_id = row.get("user_id", "")
+                    nav_name = row.get("nav_username", row.get("username", ""))
+                    label = "—" if value is None else str(value)
+                    if cell.button(label, key=f"navuser_{col['key']}_{rid}"):
+                        go_to_history(target_user_id, nav_name)
                     continue
 
                 # Le libellé mobile (voir _CSS, masqué en desktop) permet à
