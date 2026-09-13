@@ -52,6 +52,20 @@ les 30 secondes via `@st.fragment(run_every=30)`, isolé du reste de la
 page. Le formulaire d'ordre (hors fragment) lit le prix via
 `st.session_state` sans dupliquer d'appel API.
 
+**Saisie par montant à risquer** : pour ouvrir/renforcer une position
+(achat, short), l'utilisateur saisit un **montant en euros** (sa marge,
+plafonnée à son cash disponible) plutôt qu'une quantité brute — la taille de
+position s'en déduit (`montant × levier`, converti en quantité au prix de
+référence choisi, marché ou cours limité). Pour **clôturer** une position
+(Vendre, Racheter), la saisie reste par quantité, inchangée. La formule de
+liquidation estimée ne dépend que du prix et du levier (pas de la quantité),
+donc inchangée elle aussi malgré ce remaniement. Un ordre au marché
+d'ouverture peut aussi inclure directement jusqu'à 3 paliers Take Profit /
+Stop Loss (case à cocher dans le formulaire), créés juste après l'exécution
+sur la position fraîchement ouverte — au-delà, ou pour un ordre à cours
+limité (impossible avant que la position n'existe), les paliers
+supplémentaires s'ajoutent après coup depuis la section dédiée.
+
 **Take Profit / Stop Loss (TP/SL) par paliers** : sur la fiche d'une
 position détenue, possibilité d'empiler plusieurs paliers (prix cible EXACT
 en €, quantité en % de la position **au moment de la création du palier**,

@@ -96,12 +96,34 @@ Une fois sur la fiche d'un actif, tu trouveras un formulaire pour passer ton ord
 
 Si tu renforces une position existante, ton prix moyen d'achat est recalculé automatiquement en tenant compte du nouveau prix — pas juste écrasé par le dernier prix payé.
 
+### Le montant à risquer, pas la quantité
+
+Pour ouvrir ou renforcer une position (achat, vente à découvert), tu ne saisis pas directement une quantité d'actif — tu indiques le **montant en euros que tu acceptes d'engager** (ta marge), exactement comme sur les plateformes de trading à effet de levier usuelles (Binance Futures, eToro...). La taille de ta position s'en déduit automatiquement :
+
+`Taille de position (€) = Montant à risquer (€) × Levier`, puis convertie en quantité au prix courant.
+
+Exemple : 500 € engagés avec un levier x2 → une position de 1000 €. Le montant à risquer ne peut jamais dépasser ton cash disponible. Pour **clôturer** une position existante (Vendre, Racheter), c'est en revanche bien une quantité que tu indiques, comme avant.
+
 ### Ordre au marché vs ordre à cours limité
 
 - **Ordre au marché** : exécution immédiate, au prix affiché à l'instant T.
 - **Ordre à cours limité** : tu fixes un prix cible, et l'ordre s'exécute automatiquement seulement quand le marché atteint ce niveau. Tu peux voir tous tes ordres en attente et les annuler à tout moment si tu changes d'avis.
 
 Avant de valider, un récapitulatif t'indique le coût total, la marge nécessaire, et une simulation de ton gain/perte si le prix bouge de ±5% ou ±10%. Prends toujours 5 secondes pour le relire avant de cliquer.
+
+Pour un ordre **au marché** qui ouvre ou renforce une position, tu peux aussi cocher "Ajouter un ou plusieurs paliers Take Profit / Stop Loss dès l'ouverture" pour poser tes paliers de sortie automatique en même temps que ton achat — sans avoir à y revenir juste après (voir le chapitre suivant sur le Take Profit / Stop Loss si tu ne connais pas encore ce mécanisme).
+"""),
+    ("Take Profit / Stop Loss : automatiser tes sorties", """
+Sur la fiche d'une position que tu détiens, une section **Take Profit / Stop Loss** te permet de poser des paliers de sortie automatique : un prix cible **exact** (pas un pourcentage) et le **pourcentage de ta position** à vendre quand ce prix est atteint.
+
+- **Take Profit** : tu sors (partiellement) avec un gain quand le prix atteint un niveau que tu juges satisfaisant.
+- **Stop Loss** : tu limites ta perte si le prix se retourne contre toi.
+
+Tu peux empiler plusieurs paliers sur la même position (ex : Take Profit à +10% pour la moitié, Stop Loss à -5% pour l'autre moitié) — rien n'oblige à couvrir 100% de la position, le reste continue de vivre comme une position normale.
+
+⚠️ Point important : le pourcentage d'un palier est calculé sur la quantité que tu détenais **au moment où tu as créé ce palier**, pas sur ce qu'il te reste au moment où il se déclenche. Si tu vends une partie de ta position entre-temps par un autre moyen, le palier s'ajuste automatiquement à ce qu'il reste réellement disponible plutôt que d'échouer.
+
+Ces paliers sont vérifiés et exécutés automatiquement toutes les 15 minutes, **même si tu n'as pas l'application ouverte** — tu peux fermer ton navigateur, ton palier continuera de fonctionner. Tu peux annuler un palier à tout moment tant qu'il ne s'est pas encore déclenché. Une vente déclenchée ainsi apparaît dans ton historique avec la mention "Auto (TP/SL)", pour bien la distinguer d'une vente que tu as faite toi-même.
 """),
     ("7. Le classement", """
 Dans l'onglet **Classement**, tu retrouves tous les participants triés par performance (P&L en euros et en %), recalculé en direct sur les prix actuels du marché. Ta ligne est repérée par "(toi)" pour la retrouver facilement. Si tu as plusieurs portefeuilles, seul ton **portefeuille officiel** (⭐, unique et défini une fois pour toutes) compte pour ton classement — tes éventuels autres portefeuilles fun/test n'y sont jamais comptabilisés. Clique sur un nom (le tien ou celui d'un autre participant) pour voir le détail de ses ordres et ses métriques de performance dans la page **Historique**.

@@ -65,6 +65,13 @@ _EXCLUDED_SEARCH_TYPES = {"CURRENCY", "FUTURE"}
 
 MAX_LEVERAGE = 20.0
 
+# Nombre max de paliers TP/SL proposables directement dans le formulaire
+# d'ordre (voir _render_tp_sl_at_order_form) : garde le formulaire gérable ;
+# des paliers supplémentaires restent ajoutables après coup depuis la fiche
+# de la position (section Take Profit / Stop Loss, sans cette limite).
+MAX_ORDER_TP_SL_TIERS = 3
+TP_SL_KIND_LABELS = [tp_sl.KIND_LABELS[tp_sl.KIND_TAKE_PROFIT], tp_sl.KIND_LABELS[tp_sl.KIND_STOP_LOSS]]
+
 # Période affichée -> intervalle demandé. Poussé au maximum autorisé par les
 # APIs ; get_history_with_fallback (Yahoo) / kraken_data (crypto) se rabattent
 # automatiquement sur un intervalle moins précis si celui-ci dépasse la
@@ -476,6 +483,76 @@ def _render_order_summary(price: float, quantity: float, leverage: float, side: 
 
 # -- Formulaire d'ordre ---------------------------------------------------------
 
+def _render_tp_sl_at_order_form(order_mode: str, ref_price: float) -> list[tuple[str, float, float]]:
+    """Paliers Take Profit / Stop Loss à créer juste après l'exécution d'un
+    ordre D'OUVERTURE (achat ou short) au marché — voir tp_sl.py. Retourne
+    une liste de (libellé du type, prix cible €, % de la position).
+
+    Non proposé pour un ordre à cours limité : la position n'existe pas
+    encore au moment du placement, impossible d'y poser un palier avant
+    qu'elle existe — une fois l'ordre limité rempli, la section Take Profit
+    / Stop Loss (déjà disponible sur toute position ouverte) permet de le
+    faire après coup, sans limite de paliers celle-là.
+    """
+    if order_mode != "Ordre au marché":
+        return []
+
+    if not st.checkbox(
+        "Ajouter un ou plusieurs paliers Take Profit / Stop Loss dès l'ouverture",
+        key="order_add_tp_sl",
+    ):
+        return []
+
+    tiers = []
+    with st.container(key="ts_card_order_tp_sl"):
+        tier_count = st.number_input(
+            "Nombre de paliers", min_value=1, max_value=MAX_ORDER_TP_SL_TIERS, value=1, step=1,
+            key="order_tp_sl_count",
+        )
+        for i in range(int(tier_count)):
+            st.markdown(f"**Palier {i + 1}**")
+            c1, c2, c3 = st.columns(3)
+            kind_label = c1.radio(
+                "Type", TP_SL_KIND_LABELS, horizontal=True, key=f"order_tp_sl_kind_{i}",
+                label_visibility="collapsed",
+            )
+            target_price = c2.number_input(
+                "Prix cible (€)", min_value=0.01, value=float(round(ref_price, 2)), step=0.5,
+                key=f"order_tp_sl_price_{i}",
+            )
+            quantity_pct = c3.slider(
+                "% de la position", min_value=1, max_value=100, value=50, key=f"order_tp_sl_pct_{i}",
+            )
+            tiers.append((kind_label, target_price, float(quantity_pct)))
+    return tiers
+
+
+def _create_tp_sl_tiers(portfolio, ticker: str, tiers: list[tuple[str, float, float]]) -> int:
+    """Crée les paliers définis dans le formulaire, juste après l'exécution
+    réussie de l'ordre d'ouverture qui vient de créer/augmenter la position
+    (donc sur la quantité fraîchement mise à jour — voir tp_sl.create_tp_sl,
+    qui fige la quantité initiale au moment de CET appel). Retourne le
+    nombre de paliers effectivement créés : un palier invalide n'annule pas
+    l'ordre déjà exécuté, juste ignoré avec un avertissement.
+    """
+    position = portfolio.positions.get(ticker)
+    if position is None or not tiers:
+        return 0
+
+    created = 0
+    with db.get_session() as session:
+        for kind_label, target_price, quantity_pct in tiers:
+            kind = tp_sl.KIND_TAKE_PROFIT if kind_label == TP_SL_KIND_LABELS[0] else tp_sl.KIND_STOP_LOSS
+            try:
+                tp_sl.create_tp_sl(
+                    session, portfolio.id, st.session_state.user_id, position, kind, target_price, quantity_pct,
+                )
+                created += 1
+            except ValueError as e:
+                st.warning(f"Palier ignoré : {e}")
+    return created
+
+
 def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: float, currency: str) -> None:
     with st.container(key="ts_card_order"):
         st.markdown("##### Passer un ordre")
@@ -505,6 +582,20 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
         else:
             side_for_pnl = existing.side if existing else "long"
 
+        # Mode d'exécution et prix de référence déterminés AVANT la
+        # quantité : pour un ordre d'ouverture, la quantité se déduit
+        # maintenant du montant à risquer ET du prix (voir plus bas), il
+        # faut donc déjà connaître ce prix de référence (marché ou cours
+        # limité choisi) à ce stade.
+        order_mode = st.radio("Mode d'exécution", ["Ordre au marché", "Ordre à cours limité"], horizontal=True)
+
+        if order_mode == "Ordre à cours limité":
+            ref_price = st.number_input(
+                "Prix cible (€)", min_value=0.01, value=float(round(price_eur, 2)), step=0.5, key="limit_price",
+            )
+        else:
+            ref_price = price_eur
+
         col_lev, col_qty = st.columns(2)
         if is_opening:
             leverage = col_lev.number_input(
@@ -518,24 +609,39 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 st.caption("Clôturer une position ne fait pas intervenir de nouveau levier : "
                            "la marge déjà engagée est simplement libérée.")
 
-        default_qty = existing.quantity if (existing and order_type in ("Vendre", "Racheter (clôturer)")) else 1.0
-        quantity = col_qty.number_input(
-            "Quantité", min_value=0.0, value=float(default_qty), step=1.0, key="order_qty",
-        )
-
-        order_mode = st.radio("Mode d'exécution", ["Ordre au marché", "Ordre à cours limité"], horizontal=True)
-
-        if order_mode == "Ordre à cours limité":
-            ref_price = st.number_input(
-                "Prix cible (€)", min_value=0.01, value=float(round(price_eur, 2)), step=0.5, key="limit_price",
+        if is_opening:
+            # Saisie par montant à risquer (= marge engagée) plutôt que par
+            # quantité brute, à l'image des plateformes de trading à effet
+            # de levier usuelles (Binance Futures, eToro...) : l'utilisateur
+            # part de ce qu'il accepte d'engager, la taille de position s'en
+            # déduit — pas l'inverse. Taille de position = montant × levier ;
+            # quantité = taille de position / prix de référence.
+            amount_at_risk = col_qty.number_input(
+                "Montant à risquer (€)", min_value=0.0, max_value=float(max(portfolio.cash, 0.0)),
+                value=float(min(1000.0, portfolio.cash)), step=50.0, key="order_amount_at_risk",
+                help="La marge que tu acceptes d'engager sur cet ordre — jamais plus que ton cash disponible.",
+            )
+            notional = amount_at_risk * leverage
+            # Arrondi à 6 décimales : large marge pour les fractions de
+            # crypto (ex : BTC), sans laisser un bruit de calcul flottant
+            # visible sur les actifs à prix élevé.
+            quantity = round(notional / ref_price, 6) if ref_price > 0 else 0.0
+            st.caption(
+                f"Taille de position : {notional:,.2f} € → {quantity:g} {ticker} au prix de référence "
+                f"({ref_price:,.2f} €)."
             )
         else:
-            ref_price = price_eur
+            default_qty = existing.quantity if order_type in ("Vendre", "Racheter (clôturer)") else 1.0
+            quantity = col_qty.number_input(
+                "Quantité", min_value=0.0, value=float(default_qty), step=1.0, key="order_qty",
+            )
 
         if is_opening and quantity > 0:
             _render_order_summary(ref_price, quantity, leverage, side_for_pnl)
         elif not is_opening and quantity > 0:
             st.caption(f"Exposition : {quantity * ref_price:,.2f} € · Cash disponible : {portfolio.cash:,.2f} €")
+
+        tp_sl_tiers = _render_tp_sl_at_order_form(order_mode, ref_price) if is_opening else []
 
         if order_mode == "Ordre au marché":
             if st.button("Valider l'ordre", type="primary", key="submit_market_order"):
@@ -557,7 +663,10 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 except ValueError as e:
                     st.error(str(e))
                 else:
+                    created = _create_tp_sl_tiers(portfolio, ticker, tp_sl_tiers) if tp_sl_tiers else 0
                     storage.save_portfolio(portfolio)
+                    if created:
+                        msg += f" {created} palier(s) TP/SL créé(s)."
                     st.success(msg)
                     st.rerun()
 
