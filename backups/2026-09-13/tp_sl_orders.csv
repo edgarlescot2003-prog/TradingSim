@@ -1,0 +1,1 @@
+id,portfolio_id,user_id,ticker,name,currency,side,kind,target_price_eur,quantity_pct,initial_quantity,trigger_quantity,status,created_at,executed_at,executed_price_eur
