@@ -293,21 +293,6 @@ def _render_history(portfolio) -> None:
         theme.render_table_light(rows, HISTORY_COLUMNS, row_key="_row_id", table_key="history")
 
 
-def _light_layout(**overrides) -> dict:
-    layout = dict(
-        height=380,
-        margin=dict(l=10, r=10, t=10, b=10),
-        paper_bgcolor=theme.LIGHT_SURFACE,
-        plot_bgcolor=theme.LIGHT_SURFACE,
-        font=dict(family=theme.FONT_SANS, color=theme.LIGHT_TEXT),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        xaxis=dict(gridcolor=theme.LIGHT_GRIDLINE, linecolor=theme.LIGHT_GRIDLINE),
-        yaxis=dict(gridcolor=theme.LIGHT_GRIDLINE, linecolor=theme.LIGHT_GRIDLINE),
-    )
-    layout.update(overrides)
-    return layout
-
-
 def _filter_value_history(value_history: list[dict], period_label: str) -> list[dict]:
     spec = dict(PERIODS).get(period_label)
     if spec is None:
@@ -354,12 +339,20 @@ def _render_performance(portfolio) -> None:
         if benchmark_label == "Aucun":
             df = pd.DataFrame(filtered_history)
             df["date"] = pd.to_datetime(df["date"])
+            # Vert si la valeur a progressé sur la période affichée, rouge sinon —
+            # même principe hausse/baisse que partout ailleurs dans l'app.
+            positive = df["value_eur"].iloc[-1] >= df["value_eur"].iloc[0]
+            color = theme.LIGHT_GREEN if positive else theme.LIGHT_RED
             fig.add_trace(go.Scatter(
                 x=df["date"], y=df["value_eur"], mode="lines", name="Portefeuille",
-                line=dict(color=theme.LIGHT_BLUE, width=2),
+                line=dict(color=color, width=2),
+                fill="tozeroy", fillgradient=theme.plotly_area_fillgradient(color),
             ))
-            fig.update_layout(**_light_layout(yaxis_title="Valeur (€)"))
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_layout(**theme.plotly_layout(yaxis_title="Valeur (€)"))
+            # autorange=False : sans ça, le remplissage tirerait l'axe jusqu'à 0 et
+            # écraserait la courbe (voir theme.plotly_area_range).
+            fig.update_yaxes(range=theme.plotly_area_range(df["value_eur"]), autorange=False)
+            st.plotly_chart(fig, use_container_width=True, config=theme.PLOTLY_CONFIG)
             return
 
         try:
@@ -372,14 +365,27 @@ def _render_performance(portfolio) -> None:
             st.caption("Pas assez de points sur cette période pour comparer à un indice.")
             return
 
-        colors = [theme.LIGHT_BLUE, theme.LIGHT_FAINT]
-        for i, column in enumerate(comparison_df.columns):
-            fig.add_trace(go.Scatter(
-                x=comparison_df.index, y=comparison_df[column], mode="lines", name=column,
-                line=dict(color=colors[i % len(colors)], width=2),
-            ))
-        fig.update_layout(**_light_layout(yaxis_title="Base 100"))
-        st.plotly_chart(fig, use_container_width=True)
+        # Courbe du portefeuille : même logique vert/rouge que ci-dessus, avec
+        # remplissage. La courbe de comparaison reste nette et neutre (MUTED),
+        # sans remplissage, pour ne pas rivaliser visuellement avec la principale.
+        portfolio_series = comparison_df["Portefeuille"]
+        positive = portfolio_series.iloc[-1] >= portfolio_series.iloc[0]
+        color = theme.LIGHT_GREEN if positive else theme.LIGHT_RED
+        fig.add_trace(go.Scatter(
+            x=comparison_df.index, y=portfolio_series, mode="lines", name="Portefeuille",
+            line=dict(color=color, width=2),
+            fill="tozeroy", fillgradient=theme.plotly_area_fillgradient(color),
+        ))
+        fig.add_trace(go.Scatter(
+            x=comparison_df.index, y=comparison_df[benchmark_label], mode="lines", name=benchmark_label,
+            line=dict(color=theme.LIGHT_MUTED, width=2),
+        ))
+        fig.update_layout(**theme.plotly_layout(yaxis_title="Base 100"))
+        fig.update_yaxes(
+            range=theme.plotly_area_range(portfolio_series, comparison_df[benchmark_label]),
+            autorange=False,
+        )
+        st.plotly_chart(fig, use_container_width=True, config=theme.PLOTLY_CONFIG)
         st.caption(
             "Les deux courbes sont indexées à 100 sur leur premier point commun de la période "
             "sélectionnée, pour comparer leur performance relative."

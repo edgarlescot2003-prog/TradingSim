@@ -1211,6 +1211,79 @@ def mono(text: str, color: str | None = None, weight: int = 600) -> str:
     return f'<span style="{style}">{html_lib.escape(text)}</span>'
 
 
+# -- Graphiques Plotly (Portefeuille + Trading) -------------------------------
+# Centralisé ici plutôt que dupliqué dans chaque ui_*.py : si la palette
+# change un jour, les graphiques suivent automatiquement (voir prompt 2/5).
+
+def plotly_layout(**overrides) -> dict:
+    """Mise en page Plotly commune : fond transparent (se fond dans la page,
+    plus de carte avec son propre fond derrière depuis la refonte des cadres),
+    grille discrète (LIGHT_GRIDLINE, à peine plus marquée que le fond — jamais
+    un gris franc), graduations en police mono (cohérent avec le reste des
+    chiffres de l'app) et atténuées (LIGHT_MUTED, ce sont des repères, pas la
+    donnée principale)."""
+    layout = dict(
+        height=380,
+        margin=dict(l=10, r=10, t=10, b=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family=FONT_SANS, color=LIGHT_MUTED),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        xaxis=dict(
+            gridcolor=LIGHT_GRIDLINE, linecolor=LIGHT_GRIDLINE,
+            tickfont=dict(family=FONT_MONO, color=LIGHT_MUTED),
+        ),
+        yaxis=dict(
+            gridcolor=LIGHT_GRIDLINE, linecolor=LIGHT_GRIDLINE,
+            tickfont=dict(family=FONT_MONO, color=LIGHT_MUTED),
+        ),
+    )
+    layout.update(overrides)
+    return layout
+
+
+def plotly_area_range(*value_lists, pad_frac: float = 0.08) -> list[float]:
+    """Plage [min, max] paddée à poser explicitement (`autorange=False`) sur
+    l'axe Y d'un graphique utilisant `fill="tozeroy"` : sans ça, Plotly étend
+    l'autorange jusqu'à 0 pour englober le polygone de remplissage, ce qui
+    écrase visuellement toute variation qui reste loin de zéro (valeur de
+    portefeuille en euros, indice en base 100...). Accepte directement des
+    colonnes pandas (itérables), plusieurs si le graphique partage l'axe Y
+    entre plusieurs courbes (ex : portefeuille + indice de comparaison)."""
+    values = [v for values in value_lists for v in values if v is not None and v == v]
+    lo, hi = min(values), max(values)
+    span = hi - lo
+    pad = span * pad_frac if span > 0 else max(abs(hi), 1.0) * pad_frac
+    return [lo - pad, hi + pad]
+
+
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def plotly_area_fillgradient(color: str, opacity: float = 0.22) -> dict:
+    """Dégradé vertical léger sous une courbe (`fill="tozeroy"`) : opaque près
+    de la courbe, transparent vers la ligne de base — jamais un aplat uni."""
+    return dict(
+        type="vertical",
+        colorscale=[[0, _hex_to_rgba(color, opacity)], [1, _hex_to_rgba(color, 0.0)]],
+    )
+
+
+# Modebar sans le logo Plotly (peu cohérent avec le style épuré) ni les
+# boutons de sélection (select/lasso, toggle spikelines) : sans usage sur un
+# graphique en ligne/aire/chandeliers, seulement du bruit visuel. Zoom/pan/
+# reset/téléchargement restent disponibles. À fusionner avec {"scrollZoom":
+# False} côté Trading (voir ui_trading.py), déjà en place et à ne pas
+# changer (prompt 2/5).
+PLOTLY_CONFIG = {
+    "displaylogo": False,
+    "modeBarButtonsToRemove": ["select2d", "lasso2d", "toggleSpikelines"],
+}
+
+
 def _cell_content(col: dict, value) -> str:
     """HTML intérieur d'une cellule non cliquable (sans wrapper)."""
     kind = col.get("kind", "text")

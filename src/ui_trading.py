@@ -409,28 +409,28 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
 
     fig = go.Figure()
     if chart_type == "Courbe":
-        fig.add_trace(go.Scatter(x=hist.index, y=hist["Close"], mode="lines", name=ticker))
+        # Couleur (et remplissage en dégradé sous la courbe) alignés sur le sens
+        # de la variation du jour (comme Google Finance), plutôt qu'une couleur fixe.
+        color = theme.LIGHT_GREEN if day_up else theme.LIGHT_RED
+        fig.add_trace(go.Scatter(
+            x=hist.index, y=hist["Close"], mode="lines", name=ticker,
+            line=dict(color=color, width=2),
+            fill="tozeroy", fillgradient=theme.plotly_area_fillgradient(color),
+        ))
     else:
         fig.add_trace(go.Candlestick(
             x=hist.index, open=hist["Open"], high=hist["High"],
             low=hist["Low"], close=hist["Close"], name=ticker,
-        ))
-    fig.update_layout(
-        height=450, margin=dict(l=10, r=10, t=20, b=10), xaxis_rangeslider_visible=False,
-        paper_bgcolor=theme.LIGHT_SURFACE, plot_bgcolor=theme.LIGHT_SURFACE,
-        font=dict(family=theme.FONT_SANS, color=theme.LIGHT_TEXT),
-        xaxis=dict(gridcolor=theme.LIGHT_GRIDLINE, linecolor=theme.LIGHT_GRIDLINE),
-        yaxis=dict(gridcolor=theme.LIGHT_GRIDLINE, linecolor=theme.LIGHT_GRIDLINE),
-    )
-    if chart_type == "Courbe":
-        # Couleur de la ligne alignée sur le sens de la variation du jour
-        # (comme Google Finance), plutôt qu'une couleur fixe.
-        fig.update_traces(line=dict(color=theme.LIGHT_GREEN if day_up else theme.LIGHT_RED, width=2))
-    else:
-        fig.update_traces(
             increasing_line_color=theme.LIGHT_GREEN, increasing_fillcolor=theme.LIGHT_GREEN,
             decreasing_line_color=theme.LIGHT_RED, decreasing_fillcolor=theme.LIGHT_RED,
-        )
+        ))
+    fig.update_layout(**theme.plotly_layout(height=450, margin=dict(l=10, r=10, t=20, b=10),
+                                             xaxis_rangeslider_visible=False))
+    if chart_type == "Courbe":
+        # autorange=False : sans ça, le remplissage tirerait l'axe jusqu'à 0 et
+        # écraserait la courbe (voir theme.plotly_area_range) — inutile pour les
+        # chandeliers, qui n'ont pas de remplissage.
+        fig.update_yaxes(range=theme.plotly_area_range(hist["Close"]), autorange=False)
 
     # Zoom par défaut à l'ouverture : les 3 derniers mois de données
     # chargées (pas tout l'historique compressé façon "1A"/"5A"/"Tout"),
@@ -457,7 +457,9 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
     # réinitialiser le zoom restent actifs (gérés par Plotly indépendamment
     # de ce flag) ; même flag côté Plotly.js pour le pinch tactile, pas de
     # réglage séparé à faire pour le mobile.
-    st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": False})
+    # theme.PLOTLY_CONFIG (displaylogo + modebar allégée) fusionné avec le
+    # scrollZoom désactivé ci-dessus : le zoom/pan/reset restent disponibles.
+    st.plotly_chart(fig, use_container_width=True, config={**theme.PLOTLY_CONFIG, "scrollZoom": False})
 
     fallback_note = "" if effective_interval == PERIOD_INTERVAL[period_key] else " (repli, plage trop longue)"
     st.caption(
