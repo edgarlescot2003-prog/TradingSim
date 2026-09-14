@@ -98,13 +98,15 @@ Une fois sur la fiche d'un actif, tu trouveras un formulaire pour passer ton ord
 
 Si tu renforces une position existante, ton prix moyen d'achat est recalculé automatiquement en tenant compte du nouveau prix — pas juste écrasé par le dernier prix payé.
 
-### Le montant à risquer, pas la quantité
+### Le montant à risquer, pas la quantité — pour la crypto seulement
 
-Pour ouvrir ou renforcer une position (achat, vente à découvert), tu ne saisis pas directement une quantité d'actif — tu indiques le **montant en euros que tu acceptes d'engager** (ta marge), exactement comme sur les plateformes de trading à effet de levier usuelles (Binance Futures, eToro...). La taille de ta position s'en déduit automatiquement :
+Pour ouvrir ou renforcer une position **sur une crypto** (achat, vente à découvert), tu ne saisis pas directement une quantité — tu indiques le **montant en euros que tu acceptes d'engager** (ta marge), exactement comme sur les plateformes de trading à effet de levier usuelles (Binance Futures, eToro...). La taille de ta position s'en déduit automatiquement :
 
-`Taille de position (€) = Montant à risquer (€) × Levier`, puis convertie en quantité au prix courant.
+`Taille de position (€) = Montant à risquer (€) × Levier`, puis convertie en quantité fractionnée au prix courant.
 
-Exemple : 500 € engagés avec un levier x2 → une position de 1000 €. Le montant à risquer ne peut jamais dépasser ton cash disponible. Pour **clôturer** une position existante (Vendre, Racheter), c'est en revanche bien une quantité que tu indiques, comme avant.
+Exemple : 500 € engagés avec un levier x2 → une position de 1000 €. Le montant à risquer ne peut jamais dépasser ton cash disponible.
+
+Pour une **action, un ETF ou un indice**, en revanche, tu indiques directement un **nombre entier de titres** (une action ne se fractionne pas dans la réalité, contrairement à une crypto) — le coût total et la marge nécessaire s'affichent juste en dessous une fois la quantité choisie. Pour **clôturer** une position existante (Vendre, Racheter), c'est dans tous les cas bien une quantité que tu indiques, quelle que soit la classe d'actif.
 
 ### Ordre au marché vs ordre à cours limité
 

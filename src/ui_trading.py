@@ -583,10 +583,12 @@ def _render_maintenance_indicator(position, current_price_eur: float) -> None:
         st.caption(message)
 
 
-def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: float, currency: str) -> None:
+def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: float, currency: str,
+                        quote_type: str = "") -> None:
     with st.container(key="ts_card_order"):
         st.markdown("##### Passer un ordre")
 
+        is_crypto = _is_crypto(ticker, quote_type)
         existing = portfolio.positions.get(ticker)
         if existing is None:
             st.caption(f"Aucune position ouverte sur {ticker}.")
@@ -641,13 +643,15 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 st.caption("Clôturer une position ne fait pas intervenir de nouveau levier : "
                            "la marge déjà engagée est simplement libérée.")
 
-        if is_opening:
+        if is_opening and is_crypto:
             # Saisie par montant à risquer (= marge engagée) plutôt que par
             # quantité brute, à l'image des plateformes de trading à effet
             # de levier usuelles (Binance Futures, eToro...) : l'utilisateur
             # part de ce qu'il accepte d'engager, la taille de position s'en
             # déduit — pas l'inverse. Taille de position = montant × levier ;
-            # quantité = taille de position / prix de référence.
+            # quantité = taille de position / prix de référence. Réservé à la
+            # crypto (fractionnable) : une action/ETF ne se divise pas dans
+            # la réalité, voir la branche ci-dessous.
             amount_at_risk = col_qty.number_input(
                 "Montant à risquer (€)", min_value=0.0, max_value=float(max(portfolio.cash, 0.0)),
                 value=float(min(1000.0, portfolio.cash)), step=50.0, key="order_amount_at_risk",
@@ -662,6 +666,18 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 f"Taille de position : {notional:,.2f} € → {quantity:g} {ticker} au prix de référence "
                 f"({ref_price:,.2f} €)."
             )
+        elif is_opening:
+            # Actions/ETF/indices : pas de fraction possible (impossible
+            # d'acheter 2,28 actions dans la réalité) — l'utilisateur choisit
+            # directement un nombre entier de titres, comportement historique
+            # inchangé pour cette classe d'actif. Le coût total/la marge s'en
+            # déduisent normalement, affichés juste en dessous par
+            # _render_order_summary (fonds insuffisants -> ValueError au
+            # moment de valider l'ordre, même garde-fou que pour la crypto).
+            quantity = float(col_qty.number_input(
+                "Quantité", min_value=1, value=1, step=1, format="%d", key="order_qty_shares",
+                help="Nombre entier de titres : une action/ETF ne se fractionne pas.",
+            ))
         else:
             default_qty = existing.quantity if order_type in ("Vendre", "Racheter (clôturer)") else 1.0
             quantity = col_qty.number_input(
@@ -903,7 +919,7 @@ def render(portfolio) -> None:
         if ticker in NON_TRADABLE_TICKERS:
             st.info("Cet actif est affiché à titre informatif : le trading dessus n'est pas encore disponible.")
         else:
-            _render_order_form(portfolio, ticker, name, price_eur, currency)
+            _render_order_form(portfolio, ticker, name, price_eur, currency, quote_type)
             _render_tp_sl_section(portfolio, ticker)
 
         _render_pending_orders(portfolio)

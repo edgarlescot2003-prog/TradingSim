@@ -52,14 +52,20 @@ les 30 secondes via `@st.fragment(run_every=30)`, isolé du reste de la
 page. Le formulaire d'ordre (hors fragment) lit le prix via
 `st.session_state` sans dupliquer d'appel API.
 
-**Saisie par montant à risquer** : pour ouvrir/renforcer une position
-(achat, short), l'utilisateur saisit un **montant en euros** (sa marge,
-plafonnée à son cash disponible) plutôt qu'une quantité brute — la taille de
-position s'en déduit (`montant × levier`, converti en quantité au prix de
-référence choisi, marché ou cours limité). Pour **clôturer** une position
-(Vendre, Racheter), la saisie reste par quantité, inchangée. La formule de
-liquidation ne dépend que du prix et du levier (pas de la quantité), donc
-inchangée elle aussi malgré ce remaniement. Un ordre au marché
+**Saisie par montant à risquer (crypto uniquement)** : pour ouvrir/renforcer
+une position sur une **crypto** (achat, short), l'utilisateur saisit un
+**montant en euros** (sa marge, plafonnée à son cash disponible) plutôt
+qu'une quantité brute — la taille de position s'en déduit (`montant ×
+levier`, converti en quantité fractionnée au prix de référence choisi,
+marché ou cours limité). Pour une **action/ETF/indice** (tout ce qui n'est
+pas identifié comme crypto par `ui_trading._is_crypto`, la même détection
+déjà utilisée pour choisir la source du graphique Kraken vs Yahoo), le champ
+reste une **quantité entière de titres** classique (comportement
+historique) : une action ne se fractionne pas dans la réalité, contrairement
+à une crypto. Pour **clôturer** une position (Vendre, Racheter), la saisie
+reste par quantité dans tous les cas, inchangée. La formule de liquidation
+ne dépend que du prix et du levier (pas de la quantité), donc inchangée par
+ce remaniement, quelle que soit la classe d'actif. Un ordre au marché
 d'ouverture peut aussi inclure directement jusqu'à 3 paliers Take Profit /
 Stop Loss (case à cocher dans le formulaire), créés juste après l'exécution
 sur la position fraîchement ouverte — au-delà, ou pour un ordre à cours
