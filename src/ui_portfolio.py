@@ -32,15 +32,11 @@ LIGHT_POSITION_COLUMNS = [
 ]
 
 # Récapitulatif compact affiché à côté de la courbe de performance (voir
-# _render_positions_summary) : mêmes colonnes que LIGHT_POSITION_COLUMNS,
-# réduites (pas de Nom/Gain du jour/Valeur) pour rester étroit à côté du
-# graphique.
+# _render_positions_summary) : juste nom + prix actuel, pour rester le plus
+# étroit possible et laisser le maximum de largeur au graphique.
 COMPACT_POSITION_COLUMNS = [
-    {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
-    {"key": "side", "label": "Sens", "kind": "text"},
-    {"key": "price", "label": "Prix", "kind": "eur"},
-    {"key": "quantity", "label": "Quantité", "kind": "num", "decimals": 4},
-    {"key": "total_pnl", "label": "Gain", "kind": "signed_eur_pct", "width": 1.6},
+    {"key": "name", "label": "Actif", "kind": "link", "width": 1.4},
+    {"key": "price", "label": "Prix", "kind": "eur", "width": 1.0},
 ]
 
 HISTORY_COLUMNS = [
@@ -339,11 +335,7 @@ def _render_positions_summary(snapshots: list[dict]) -> None:
         rows = [{
             "ticker": s["position"].ticker,
             "name": s["position"].name,
-            "category": s["category"],
-            "side": "Long" if s["position"].side == "long" else "Short",
             "price": s["current_price_eur"],
-            "quantity": s["position"].quantity,
-            "total_pnl": (s["pnl_eur"], s["pnl_pct"]),
         } for s in snapshots]
         theme.render_table_light(
             rows, COMPACT_POSITION_COLUMNS, row_key="ticker", table_key="portfolio_chart_positions",
@@ -361,7 +353,7 @@ def _render_performance(portfolio, snapshots: list[dict]) -> None:
         # doit s'afficher même si le graphique lui-même n'a pas encore assez
         # de données (portefeuille tout neuf, ci-dessous).
         with st.container(key="ts_portfolio_chart_row"):
-            col_chart, col_positions = st.columns([2.3, 1])
+            col_chart, col_positions = st.columns([3, 0.9])
             with col_positions:
                 _render_positions_summary(snapshots)
 
