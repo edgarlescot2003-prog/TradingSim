@@ -41,7 +41,16 @@ déjà un portefeuille mais aucun n'a encore de portefeuille officiel désigné
 désignation pour chacun depuis l'Admin.
 
 ### Onglet Trading
-Actions + crypto + indices/ETF (couverture US/Europe/Asie), positions
+Actions + crypto + indices/ETF (couverture US/Europe/Asie) + Forex (15
+paires majeures/croisées, tickers yfinance `XXXYYY=X`) + matières premières
+(or, argent, pétrole WTI/Brent, gaz naturel, tickers `XX=F`) + obligations
+via ETF obligataires (TLT/IEF/BND/AGG/SHY — jamais les tickers de rendement
+d'État bruts type `^TNX`, qui sont des % non négociables, incompatibles
+avec le système de marge/P&L/liquidation). Ces 3 dernières classes sont une
+extension pure du système existant (même marge/levier/liquidation/TP-SL/
+short, aucune règle spécifique type horaires 24/5 ou taille de contrat) et
+suivent la même détection de catégorie que Crypto pour le formulaire d'ordre
+(voir "Saisie par montant à risquer" ci-dessous). Positions
 longues et courtes (short), effet de levier, ordres au marché et à cours
 limité. Graphiques avec sélecteur d'échelle temporelle progressif
 (1J/1S/1M/3M/6M/YTD/1A/5A/Tout), granularité maximale à chaque échelle.
@@ -64,17 +73,24 @@ disparaissait quasi instantanément à cause du `st.rerun()` juste après —
 assumée : le message s'affiche désormais en haut à droite (notification
 Streamlit standard) plutôt qu'en bandeau vert inline dans le formulaire.
 
-**Saisie par montant à risquer (crypto uniquement)** : pour ouvrir/renforcer
-une position sur une **crypto** (achat, short), l'utilisateur saisit un
-**montant en euros** (sa marge, plafonnée à son cash disponible) plutôt
-qu'une quantité brute — la taille de position s'en déduit (`montant ×
-levier`, converti en quantité fractionnée au prix de référence choisi,
-marché ou cours limité). Pour une **action/ETF/indice** (tout ce qui n'est
-pas identifié comme crypto par `ui_trading._is_crypto`, la même détection
-déjà utilisée pour choisir la source du graphique Kraken vs Yahoo), le champ
-reste une **quantité entière de titres** classique (comportement
+**Saisie par montant à risquer (Crypto/Forex/Matières premières/
+Obligations)** : pour ouvrir/renforcer une position sur l'une de ces 4
+classes (achat, short), l'utilisateur saisit un **montant en euros** (sa
+marge, plafonnée à son cash disponible) plutôt qu'une quantité brute — la
+taille de position s'en déduit (`montant × levier`, converti en quantité
+fractionnée au prix de référence choisi, marché ou cours limité). Routage
+par `ui_trading._uses_amount_input`, basé sur `valuation.category_for`
+(quoteType yfinance si connu, sinon repli par syntaxe de ticker — ex.
+`BTC-USD`, `EURUSD=X`, `GC=F` — puisque `st.session_state.selected_quote_type`
+n'est jamais renseigné après une navigation, voir `theme.go_to_trading` ;
+les ETF obligataires sont eux identifiés par une liste de tickers explicite,
+`valuation.BOND_ETF_TICKERS`, un ETF obligataire ayant le même quoteType
+"ETF" qu'un ETF actions/indices classique). Pour une **action/ETF/indice**
+classique, le champ reste une **quantité entière de titres** (comportement
 historique) : une action ne se fractionne pas dans la réalité, contrairement
-à une crypto. Pour **clôturer** une position (Vendre, Racheter), la saisie
+aux 4 classes ci-dessus (simplification volontaire pour Forex/matières
+premières/obligations, qui ont pourtant de vraies tailles de contrat/lots
+dans la réalité — hors scope ici). Pour **clôturer** une position (Vendre, Racheter), la saisie
 reste par quantité dans tous les cas, inchangée. La formule de liquidation
 ne dépend que du prix et du levier (pas de la quantité), donc inchangée par
 ce remaniement, quelle que soit la classe d'actif. Un ordre au marché

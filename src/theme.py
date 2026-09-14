@@ -53,13 +53,15 @@ LIGHT_RED = "#DC2626"
 # deux tickers de la même classe d'actif ont toujours la même couleur, jamais
 # une couleur aléatoire par ticker (voir badge_color ci-dessous). "Indices/ETF"
 # reste le libellé de catégorie utilisé par valuation.category_for (regroupe
-# ETF/indice/fonds) ; "Obligations" n'est pas encore une classe d'actif
-# disponible dans l'app, mais réservée dans la palette pour ce jour-là.
+# ETF/indice/fonds classiques ; "Obligations" couvre spécifiquement les ETF
+# obligataires, voir valuation.BOND_ETF_TICKERS).
 CATEGORY_COLORS = {
     "Actions": "#2563EB",
     "Crypto": "#F59E0B",
     "Indices/ETF": "#7C3AED",
     "Obligations": "#059669",
+    "Forex": "#0891B2",
+    "Matières premières": "#92400E",
 }
 
 # Contraste insuffisant en texte blanc sur ces fonds de badge (couleurs
@@ -71,9 +73,9 @@ def badge_color(category: str | None) -> tuple[str, str]:
     """Couleur de fond + couleur de texte lisible pour le badge d'un ticker,
     déterminée uniquement par sa classe d'actif (voir CATEGORY_COLORS) —
     deux tickers de la même catégorie partagent toujours la même couleur.
-    Catégorie absente/inconnue (ex. forex, tables où elle n'est pas
-    disponible sans appel réseau supplémentaire) : couleur neutre par défaut,
-    jamais une couleur aléatoire par ticker."""
+    Catégorie absente/inconnue (tables où elle n'est pas disponible sans
+    appel réseau supplémentaire, ex. historique/ordres en attente) : couleur
+    neutre par défaut, jamais une couleur aléatoire par ticker."""
     bg = CATEGORY_COLORS.get(category or "", LIGHT_FAINT)
     fg = LIGHT_TEXT if category in _BADGE_DARK_TEXT_CATEGORIES else "#ffffff"
     return bg, fg

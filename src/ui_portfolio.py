@@ -193,7 +193,10 @@ def _render_highlights(portfolio, total_value: float, snapshots: list[dict]) -> 
             if not by_category or not total_value:
                 st.caption("Pas encore de position.")
             else:
-                for label in ("Actions", "Crypto", "Indices/ETF", "Autres"):
+                # Toutes les catégories connues (voir theme.CATEGORY_COLORS)
+                # plus "Autres" en repli : pas de liste figée à maintenir à
+                # chaque nouvelle classe d'actif ajoutée à la palette.
+                for label in (*theme.CATEGORY_COLORS.keys(), "Autres"):
                     amount = by_category.get(label, 0.0)
                     if amount <= 0:
                         continue

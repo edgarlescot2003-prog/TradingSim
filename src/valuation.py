@@ -4,13 +4,15 @@ l'affichage (onglet Portefeuille) et par l'enregistrement de la courbe de
 valeur (record_value_snapshot).
 """
 
+import re
 from datetime import datetime
 
 from . import market_data as md
 
-# Regroupement des quoteType Yahoo en 3 grandes catégories d'actif, utilisées
-# pour la répartition affichée dans l'onglet Portefeuille. "Autres" couvre le
-# cas où le quoteType n'a pas pu être déterminé (prix en repli, cache de prix
+# Regroupement des quoteType Yahoo en grandes catégories d'actif, utilisées
+# pour la répartition affichée dans l'onglet Portefeuille et pour la couleur
+# des badges de ticker (voir theme.CATEGORY_COLORS). "Autres" couvre le cas
+# où le quoteType n'a pas pu être déterminé (prix en repli, cache de prix
 # partagé sans ce détail — voir leaderboard.py).
 _CATEGORY_LABELS = {
     "EQUITY": "Actions",
@@ -18,11 +20,43 @@ _CATEGORY_LABELS = {
     "INDEX": "Indices/ETF",
     "MUTUALFUND": "Indices/ETF",
     "CRYPTOCURRENCY": "Crypto",
+    "CURRENCY": "Forex",
+    "FUTURE": "Matières premières",
 }
 
+# ETF obligataires (voir ui_trading.BONDS) : yfinance les classe en quoteType
+# "ETF", indistinguable d'un ETF actions/indices classique par ce seul
+# champ — d'où cette liste explicite plutôt qu'une détection automatique.
+# Les tickers de rendement d'État bruts (^TNX, ^TYX, ^FVX, ^IRX...) sont
+# volontairement absents : ce sont des % de rendement, pas des prix
+# négociables, incompatibles avec le système de marge/P&L/liquidation.
+BOND_ETF_TICKERS = {"TLT", "IEF", "BND", "AGG", "SHY"}
 
-def category_for(quote_type: str) -> str:
-    return _CATEGORY_LABELS.get((quote_type or "").upper(), "Autres")
+# Repli par syntaxe de ticker, utilisé UNIQUEMENT quand quote_type est
+# indisponible (ex. st.session_state.selected_quote_type après une
+# navigation via theme.go_to_trading, jamais renseigné avec la vraie valeur
+# — voir sa docstring) : les suffixes yfinance "=X" (paire de devises) et
+# "=F" (contrat future) sont des conventions fiables, tout comme le format
+# "XXX-YYY" pour une paire crypto (ex. BTC-USD).
+_CRYPTO_TICKER_RE = re.compile(r"^[A-Z0-9]{2,10}-[A-Z]{3,4}$")
+_FOREX_TICKER_RE = re.compile(r"^[A-Z]{6}=X$")
+_FUTURE_TICKER_RE = re.compile(r"^[A-Z]{1,4}=F$")
+
+
+def category_for(quote_type: str, ticker: str | None = None) -> str:
+    ticker = (ticker or "").upper()
+    if ticker in BOND_ETF_TICKERS:
+        return "Obligations"
+    if quote_type:
+        return _CATEGORY_LABELS.get(quote_type.upper(), "Autres")
+    if ticker:
+        if _FOREX_TICKER_RE.match(ticker):
+            return "Forex"
+        if _FUTURE_TICKER_RE.match(ticker):
+            return "Matières premières"
+        if _CRYPTO_TICKER_RE.match(ticker):
+            return "Crypto"
+    return "Autres"
 
 
 # Perte latente (en fraction de la marge engagée) qui déclenche la liquidation
@@ -171,7 +205,7 @@ def position_snapshot(position, price_cache: dict[str, float] | None = None) -> 
         "equity_contribution_eur": position.margin_eur + pnl_eur,
         "day_pnl_eur": day_pnl_eur,
         "day_pnl_pct": day_pnl_pct,
-        "category": category_for(quote_type),
+        "category": category_for(quote_type, position.ticker),
         "error": error,
     }
 

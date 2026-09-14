@@ -6,7 +6,6 @@ sélecteur de période), formulaire d'ordre avec récapitulatif (coût/marge/
 liquidation/simulation P&L).
 """
 
-import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
@@ -38,12 +37,28 @@ TOP_CAP = [
 CRYPTO = [
     ("BTC-USD", "Bitcoin"), ("ETH-USD", "Ethereum"), ("SOL-USD", "Solana"), ("XRP-USD", "XRP"),
 ]
-FOREX_COMMODITIES = [
-    ("EURUSD=X", "EUR/USD"), ("EURGBP=X", "EUR/GBP"), ("GC=F", "Or"), ("CL=F", "Pétrole"),
+# 5 paires majeures pour la vitrine — 10 autres paires majeures/croisées
+# restent disponibles via la recherche (voir valuation.category_for, qui
+# détecte le quoteType "CURRENCY" générique de yfinance, pas une liste figée
+# de tickers) : GBPUSD=X, USDJPY=X, USDCHF=X, USDCAD=X, NZDUSD=X, EURJPY=X,
+# EURCHF=X, GBPJPY=X, AUDJPY=X, EURAUD=X, GBPCHF=X, CHFJPY=X — toutes
+# vérifiées disponibles (prix + historique) avant intégration.
+FOREX = [
+    ("EURUSD=X", "EUR/USD"), ("GBPUSD=X", "GBP/USD"), ("USDJPY=X", "USD/JPY"),
+    ("USDCHF=X", "USD/CHF"), ("AUDUSD=X", "AUD/USD"),
 ]
-# Affichage seul : pas de bouton Trader, pas d'ouverture de position (chantier
-# séparé plus tard) — voir la vérification dans render().
-NON_TRADABLE_TICKERS = {t for t, _ in FOREX_COMMODITIES}
+COMMODITIES = [
+    ("GC=F", "Or"), ("SI=F", "Argent"), ("CL=F", "Pétrole WTI"),
+    ("BZ=F", "Pétrole Brent"), ("NG=F", "Gaz naturel"),
+]
+# ETF obligataires (voir valuation.BOND_ETF_TICKERS) : les tickers de
+# rendement d'État bruts (^TNX, ^TYX...) ne sont PAS des prix négociables,
+# incompatibles avec le système de marge/P&L/liquidation — voir la doc de
+# conception d'origine de ce chantier.
+BONDS = [
+    ("TLT", "Treasury 20+ ans"), ("IEF", "Treasury 7-10 ans"), ("BND", "Obligations US (total market)"),
+    ("AGG", "Obligations US (agrégé)"), ("SHY", "Treasury 1-3 ans"),
+]
 # Suggestions par défaut de la recherche quand l'utilisateur n'a pas encore
 # d'historique de recherche (ticker, nom, catégorie — pour le badge coloré).
 DEFAULT_SUGGESTIONS = (
@@ -61,10 +76,6 @@ SEARCH_RESULT_COLUMNS = [
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
     {"key": "name", "label": "Nom", "kind": "link"},
 ]
-# yfinance renvoie aussi des devises/futures dans ses résultats de recherche :
-# hors périmètre pour l'instant (forex/matières premières restent dans leur
-# encadré dédié, non recherchables ici — voir la demande initiale).
-_EXCLUDED_SEARCH_TYPES = {"CURRENCY", "FUTURE"}
 
 MAX_LEVERAGE = 20.0
 
@@ -98,8 +109,6 @@ PERIOD_INTERVAL = {
     "5A": "1d",
     "Tout": "1d",
 }
-
-_CRYPTO_TICKER_RE = re.compile(r"^[A-Z0-9]{2,10}-[A-Z]{3,4}$")
 
 # Ordres qui ouvrent/augmentent une position (par opposition à ceux qui la
 # réduisent/ferment) : seuls ceux-là ont un levier à choisir.
@@ -183,7 +192,7 @@ def _format_price(ticker: str, price: float, currency: str) -> str:
 
 
 def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
-                       quotes: dict, category: str, tradable: bool = True) -> None:
+                       quotes: dict, category: str) -> None:
     with st.container(key=f"ts_card_{card_key}"):
         st.markdown(f"##### {title}")
         rows = []
@@ -198,12 +207,10 @@ def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
                 "change_30d_pct": q.get("change_30d_pct") if q else None,
             })
         theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key=f"compact_{card_key}")
-        if not tradable:
-            st.caption("Cours en lecture seule : le trading sur ces actifs n'est pas encore disponible.")
 
 
 def _render_home_boxes() -> None:
-    universe = INDICES + TOP_CAP + CRYPTO + FOREX_COMMODITIES
+    universe = INDICES + TOP_CAP + CRYPTO + FOREX + COMMODITIES + BONDS
     tickers = tuple(t for t, _ in universe)
     quotes = _fetch_quotes(tickers)
     changes_30d = _fetch_30d_changes(tickers)
@@ -224,10 +231,15 @@ def _render_home_boxes() -> None:
         with row2[0]:
             _render_asset_box("home_crypto", "Crypto les plus suivies", CRYPTO, quotes, category="Crypto")
         with row2[1]:
+            _render_asset_box("home_forex", "Forex", FOREX, quotes, category="Forex")
+
+        row3 = st.columns(2)
+        with row3[0]:
             _render_asset_box(
-                "home_forex", "Forex & Matières premières", FOREX_COMMODITIES, quotes,
-                category=None, tradable=False,
+                "home_commodities", "Matières premières", COMMODITIES, quotes, category="Matières premières",
             )
+        with row3[1]:
+            _render_asset_box("home_bonds", "Obligations (ETF)", BONDS, quotes, category="Obligations")
 
 
 # -- Recherche -----------------------------------------------------------------
@@ -238,7 +250,7 @@ def _search_tradable_assets(query: str) -> list[dict]:
     except md.MarketDataError as e:
         st.error(str(e))
         return []
-    return [r for r in results if (r.get("type") or "").upper() not in _EXCLUDED_SEARCH_TYPES]
+    return results
 
 
 def _render_search() -> None:
@@ -273,7 +285,7 @@ def _render_search() -> None:
                     "ticker": r["symbol"],
                     "name": f"{r['name']} · {r['exchange']}" if r["exchange"] else r["name"],
                     "nav_name": r["name"],  # sans la bourse : c'est ce nom qui atterrit sur les trades/positions
-                    "category": valuation.category_for(r.get("type", "")),
+                    "category": valuation.category_for(r.get("type", ""), r["symbol"]),
                 } for r in results[:8]]
                 theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
                                           table_key="compact_search_results", show_header=False)
@@ -303,7 +315,10 @@ def _render_search() -> None:
                 unsafe_allow_html=True,
             )
             rows = [
-                {"ticker": r["ticker"], "name": r["name"], "category": valuation.category_for(r["quote_type"])}
+                {
+                    "ticker": r["ticker"], "name": r["name"],
+                    "category": valuation.category_for(r["quote_type"], r["ticker"]),
+                }
                 for r in recent
             ]
             theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
@@ -321,9 +336,28 @@ def _render_search() -> None:
 # -- Prix + graphique (mécanique inchangée) -----------------------------------
 
 def _is_crypto(ticker: str, quote_type: str) -> bool:
-    if quote_type:
-        return quote_type.upper() == "CRYPTOCURRENCY"
-    return bool(_CRYPTO_TICKER_RE.match(ticker))
+    """Détermine la source du graphique (Kraken si crypto, Yahoo sinon).
+    Délègue à valuation.category_for, qui sait retrouver la classe d'actif
+    par la syntaxe du ticker (ex. BTC-USD) quand quote_type est inconnu —
+    le cas courant ici, voir theme.go_to_trading."""
+    return valuation.category_for(quote_type, ticker) == "Crypto"
+
+
+# Classes d'actifs négociées par "montant à risquer" (marge en €) plutôt que
+# par quantité brute d'unités dans le formulaire d'ordre (voir
+# _render_order_form) : la taille de position se déduit automatiquement
+# (montant × levier / prix), comme sur les plateformes de trading à effet de
+# levier usuelles. Actions/ETF/indices restent en quantité entière (une
+# action ne se fractionne pas dans la réalité) ; Forex/Matières premières/
+# Obligations rejoignent ici la Crypto, qui avait déjà ce comportement —
+# même simplification pour les 3, par cohérence avec l'existant plutôt que
+# de modéliser des tailles de contrat/lots réelles (hors scope, voir la doc
+# de conception d'origine de ce chantier).
+_FRACTIONAL_AMOUNT_CATEGORIES = {"Crypto", "Forex", "Matières premières", "Obligations"}
+
+
+def _uses_amount_input(ticker: str, quote_type: str) -> bool:
+    return valuation.category_for(quote_type, ticker) in _FRACTIONAL_AMOUNT_CATEGORIES
 
 
 def _period_start(period_key: str) -> datetime:
@@ -625,7 +659,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
     with st.container(key="ts_card_order"):
         st.markdown("##### Passer un ordre")
 
-        is_crypto = _is_crypto(ticker, quote_type)
+        uses_amount_input = _uses_amount_input(ticker, quote_type)
         existing = portfolio.positions.get(ticker)
         if existing is None:
             st.caption(f"Aucune position ouverte sur {ticker}.")
@@ -680,15 +714,16 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 st.caption("Clôturer une position ne fait pas intervenir de nouveau levier : "
                            "la marge déjà engagée est simplement libérée.")
 
-        if is_opening and is_crypto:
+        if is_opening and uses_amount_input:
             # Saisie par montant à risquer (= marge engagée) plutôt que par
             # quantité brute, à l'image des plateformes de trading à effet
             # de levier usuelles (Binance Futures, eToro...) : l'utilisateur
             # part de ce qu'il accepte d'engager, la taille de position s'en
             # déduit — pas l'inverse. Taille de position = montant × levier ;
-            # quantité = taille de position / prix de référence. Réservé à la
-            # crypto (fractionnable) : une action/ETF ne se divise pas dans
-            # la réalité, voir la branche ci-dessous.
+            # quantité = taille de position / prix de référence. Réservé à
+            # Crypto/Forex/Matières premières/Obligations (voir
+            # _FRACTIONAL_AMOUNT_CATEGORIES) : une action/ETF classique ne se
+            # divise pas dans la réalité, voir la branche ci-dessous.
             amount_at_risk = col_qty.number_input(
                 "Montant à risquer (€)", min_value=0.0, max_value=float(max(portfolio.cash, 0.0)),
                 value=float(min(1000.0, portfolio.cash)), step=50.0, key="order_amount_at_risk",
@@ -1004,10 +1039,7 @@ def render(portfolio) -> None:
         if price_eur is None:
             return  # l'erreur a déjà été affichée par le fragment
 
-        if ticker in NON_TRADABLE_TICKERS:
-            st.info("Cet actif est affiché à titre informatif : le trading dessus n'est pas encore disponible.")
-        else:
-            _render_order_form(portfolio, ticker, name, price_eur, currency, quote_type)
-            _render_tp_sl_section(portfolio, ticker)
+        _render_order_form(portfolio, ticker, name, price_eur, currency, quote_type)
+        _render_tp_sl_section(portfolio, ticker)
 
         _render_pending_orders(portfolio)
