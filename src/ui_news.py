@@ -6,27 +6,32 @@ voir auth.can_write_news / can_delete_news.
 
 Un lien externe reconnu comme un tweet (twitter.com/x.com) est affiché en
 embed visuel complet dans la modal (voir _render_tweet_embed) ; tout autre
-lien reste un simple lien cliquable.
+lien reste un aperçu compact cliquable (favicon + domaine, _render_link_preview).
 
-Couverture de carte (`image_couverture`, voir news.py) : résolue à la
-publication parmi les visuels détectés dans l'article — image envoyée
-(upload, stockée en base64 dans la colonne, pas de stockage de fichiers
-dédié), image collée en markdown/URL brute dans le contenu, et/ou le lien
-externe — automatiquement s'il n'y en a qu'un, sinon l'auteur choisit
-explicitement (pas de choix arbitraire silencieux).
+Gabarit de carte unique (titre, texte, image(s), action), quelle que soit
+l'origine (résumé automatique ou post libre) : les images (upload en data
+URI ET images collées en markdown/URL brute dans le contenu, voir
+_display_images/_extract_images) sont TOUJOURS affichées à part, dans une
+grille régulière après le texte — jamais laissées inline dans le contenu
+markdown, ce qui produirait un collage de tailles disparates dès que
+plusieurs images se suivent. `image_couverture` (voir news.py) reste
+résolu à la publication comme avant (choix explicite si plusieurs visuels
+candidats), mais n'est plus le seul visuel affiché : c'est juste une image
+supplémentaire ajoutée à cette même grille.
 
 Pas de modification en place (V1, voir la roadmap) : un article publié se
 supprime, il ne s'édite pas.
 """
 
 import base64
+import html as html_lib
 import re
 from urllib.parse import urlparse
 
 import streamlit as st
 import streamlit.components.v1 as components
 
-from . import auth, news_storage
+from . import auth, news_storage, theme
 from .news import NewsItem
 
 # Taille max d'une image envoyée : stockée telle quelle (encodée base64) dans
@@ -91,48 +96,85 @@ def _render_tweet_embed(url: str, height: int = 550) -> None:
     )
 
 
-def _render_link_cover(link: str) -> None:
-    """Aperçu compact d'un lien externe pour la carte : favicon + domaine.
+def _render_link_preview(link: str) -> None:
+    """Aperçu compact et cliquable d'un lien externe : favicon + domaine.
     Volontairement léger (pas de vrai embed de tweet ici) — afficher un
     tweet complet par carte serait lourd pour une grille qui peut en
-    contenir beaucoup ; l'embed complet reste réservé à la modal."""
+    contenir beaucoup ; l'embed complet (voir _render_tweet_embed) reste
+    réservé à la modal, pour les liens X/Twitter uniquement."""
     domain = urlparse(link).netloc or link
-    favicon_url = f"https://www.google.com/s2/favicons?sz=64&domain={domain}"
+    favicon_url = f"https://www.google.com/s2/favicons?sz=64&domain={html_lib.escape(domain)}"
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.9rem;
-                     border:1px solid rgba(11,11,11,0.10);border-radius:8px;
-                     background:#fcfcfb;">
-            <img src="{favicon_url}" width="28" height="28" style="border-radius:4px;">
-            <span style="font-size:0.85rem;color:#52514e;overflow:hidden;
-                         text-overflow:ellipsis;white-space:nowrap;">{domain}</span>
-        </div>
+        <a href="{html_lib.escape(link)}" target="_blank" rel="noopener" style="text-decoration:none;">
+            <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;
+                         border-radius:8px;background:{theme.LIGHT_SURFACE};margin:0.5rem 0;">
+                <img src="{favicon_url}" width="20" height="20" style="border-radius:4px;flex-shrink:0;">
+                <span style="font-family:{theme.FONT_SANS};font-size:0.8rem;color:{theme.LIGHT_MUTED};
+                             overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                    {html_lib.escape(domain)}
+                </span>
+            </div>
+        </a>
         """,
         unsafe_allow_html=True,
     )
 
 
-def _render_card_cover(item: NewsItem) -> None:
-    if item.image_couverture == _LINK_COVER and item.link:
-        _render_link_cover(item.link)
-    elif item.image_couverture and item.image_couverture.startswith("data:"):
-        # Image envoyée (upload) : encodée en base64 directement dans la
-        # colonne, pas une URL — st.image ne l'accepte pas telle quelle,
-        # d'où un <img> brut avec la data URI comme src.
-        st.markdown(
-            f'<img src="{item.image_couverture}" style="width:100%;border-radius:8px;'
-            f'display:block;object-fit:cover;max-height:220px;">',
-            unsafe_allow_html=True,
-        )
-    elif item.image_couverture:
-        st.image(item.image_couverture, use_container_width=True)
+def _extract_images(content: str) -> tuple[str, list[str]]:
+    """(texte sans les images embarquées, images trouvées dans l'ordre
+    d'apparition). Les images ne sont jamais laissées inline dans le texte —
+    st.markdown les rendrait alors à leur taille native à l'endroit où elles
+    apparaissent, produisant un collage de tailles disparates dès que
+    plusieurs images sont collées à la suite. Affichées à part (voir
+    _render_image_grid), dans une grille régulière, après le texte."""
+    images = _images_in_content(content)
+    stripped = _MARKDOWN_IMAGE_RE.sub("", content)
+    stripped = _BARE_IMAGE_URL_RE.sub("", stripped)
+    stripped = re.sub(r"\n{3,}", "\n\n", stripped).strip()
+    return stripped, images
 
 
-def _excerpt(content: str, limit: int = 280) -> str:
+def _display_images(item: NewsItem, content_images: list[str]) -> list[str]:
+    """Images à afficher pour cet article : l'éventuelle image envoyée
+    (upload, data URI — jamais dans le texte donc jamais dans
+    content_images) en premier, puis celles détectées dans le contenu, sans
+    doublon. Le sentinel _LINK_COVER n'est pas une image (voir
+    _render_link_preview, affiché séparément)."""
+    images = list(content_images)
+    cover = item.image_couverture
+    if cover and cover != _LINK_COVER and cover not in images:
+        images.insert(0, cover)
+    return images
+
+
+def _render_image_grid(images: list[str], max_images: int | None = None) -> None:
+    """Grille régulière (colonnes égales, tuiles carrées recadrées) — jamais
+    une juxtaposition de tailles/formats disparates, que l'image vienne d'un
+    upload (data URI) ou d'une URL externe collée dans le texte."""
+    if not images:
+        return
+    shown = images[:max_images] if max_images else images
+    tiles = "".join(
+        f'<div style="aspect-ratio:1/1;overflow:hidden;border-radius:8px;'
+        f'background:{theme.LIGHT_SURFACE};">'
+        f'<img src="{html_lib.escape(url)}" style="width:100%;height:100%;'
+        f'object-fit:cover;display:block;">'
+        f"</div>"
+        for url in shown
+    )
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:repeat({min(len(shown), 3)},1fr);'
+        f'gap:0.5rem;margin:0.5rem 0;">{tiles}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _excerpt(content: str, limit: int = 280) -> tuple[str, bool]:
     content = content.strip()
     if len(content) <= limit:
-        return content
-    return content[:limit].rsplit(" ", 1)[0] + "…"
+        return content, False
+    return content[:limit].rsplit(" ", 1)[0] + "…", True
 
 
 # -- Publication ---------------------------------------------------------
@@ -215,12 +257,16 @@ def _close_dialog() -> None:
 def _render_article_dialog(item: NewsItem, author_name: str, can_delete: bool) -> None:
     st.markdown(f"### {item.title}")
     st.caption(f"{author_name} · {item.created_at[:16].replace('T', ' ')}")
-    st.markdown(item.content)
+
+    clean_content, content_images = _extract_images(item.content)
+    st.markdown(clean_content if clean_content else "_(Sans texte)_")
+    _render_image_grid(_display_images(item, content_images))
+
     if item.link:
         if _is_tweet_url(item.link):
             _render_tweet_embed(item.link)
         else:
-            st.markdown(f"🔗 [{item.link}]({item.link})")
+            _render_link_preview(item.link)
 
     if can_delete:
         if st.button("Supprimer", key=f"delete_news_{item.id}"):
@@ -244,13 +290,25 @@ def _render_article_dialog(item: NewsItem, author_name: str, can_delete: bool) -
 # -- Grille d'aperçu -------------------------------------------------------
 
 def _render_card(item: NewsItem, author_name: str, can_delete: bool) -> None:
-    with st.container(border=True):
-        _render_card_cover(item)
+    # Un seul gabarit pour toute origine (résumé automatique ou post libre) :
+    # titre, texte, image(s) si présentes, puis l'action "Lire l'article" —
+    # seulement si le texte est effectivement tronqué (voir _excerpt).
+    with st.container(key=f"ts_card_news_{item.id}"):
         st.markdown(f"**{item.title}**")
-        st.caption(_excerpt(item.content))
-        if st.button("Lire l'article", key=f"open_news_{item.id}", use_container_width=True):
-            st.session_state.open_news_id = item.id
-            st.rerun()
+        st.caption(f"{author_name} · {item.created_at[:10]}")
+
+        clean_content, content_images = _extract_images(item.content)
+        excerpt, truncated = _excerpt(clean_content)
+        st.markdown(excerpt if excerpt else "_(Sans texte)_")
+
+        _render_image_grid(_display_images(item, content_images), max_images=4)
+        if item.link and not _is_tweet_url(item.link):
+            _render_link_preview(item.link)
+
+        if truncated:
+            if st.button("Lire l'article →", key=f"open_news_{item.id}", use_container_width=True):
+                st.session_state.open_news_id = item.id
+                st.rerun()
 
 
 def _author_name(item: NewsItem, usernames: dict[str, str]) -> str:

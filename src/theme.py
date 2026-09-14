@@ -380,6 +380,18 @@ hr {{ border-color: var(--ts-border) !important; }}
     font-family: {FONT_SANS} !important;
 }}
 
+/* Cartes de la grille News (voir ui_news.py, render_card) : fond légèrement
+   rehaussé (PANEL) sans bordure — juste assez pour distinguer chaque carte
+   dans une grille répétitive de plusieurs items similaires, contrairement
+   aux sections Portefeuille/Trading (déjà séparées par l'espacement seul,
+   voir prompt 1/5) qui n'ont pas ce besoin. */
+[class*="st-key-ts_card_news_"] {{
+    background: var(--ts-panel);
+    border-radius: 10px;
+    padding: 0.9rem 1.1rem;
+    margin-bottom: 0.5rem;
+}}
+
 /* Tableaux (positions, historique) : de vrais st.columns par ligne (pas du
    HTML brut), pour pouvoir y placer de vrais boutons de navigation. Pas de
    cadre autour du tableau — juste de la marge ; le repère visuel entre
@@ -596,6 +608,9 @@ hr {{ border-color: var(--ts-border) !important; }}
     [class*="st-key-ts_news_grid"] [data-testid="stColumn"] {{
         width: 100% !important;
         flex: none !important;
+    }}
+    [class*="st-key-ts_card_news_"] {{
+        padding: 0.7rem 0.85rem !important;
     }}
 }}
 """
