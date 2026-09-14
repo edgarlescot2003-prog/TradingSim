@@ -49,7 +49,7 @@ def _render_metrics(metrics: dict) -> None:
 
     if not metrics["reliable"]:
         st.caption(
-            f"⚠️ Basé sur seulement {metrics['n_days']} jour(s) de données : ces métriques "
+            f"Basé sur seulement {metrics['n_days']} jour(s) de données : ces métriques "
             "annualisées ne sont pas encore représentatives à ce stade du concours, à "
             "interpréter avec prudence."
         )

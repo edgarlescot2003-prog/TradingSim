@@ -61,6 +61,16 @@ SEARCH_RESULT_COLUMNS = [
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
     {"key": "name", "label": "Nom", "kind": "link"},
 ]
+# Récapitulatif compact affiché à côté du graphique (voir _render_positions_
+# summary) : mêmes colonnes que le tableau Positions du Portefeuille, mais
+# réduites (pas de Nom/Gain du jour/Valeur) pour rester étroit.
+COMPACT_POSITION_COLUMNS = [
+    {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
+    {"key": "side", "label": "Sens", "kind": "text"},
+    {"key": "price", "label": "Prix", "kind": "eur"},
+    {"key": "quantity", "label": "Quantité", "kind": "num", "decimals": 4},
+    {"key": "total_pnl", "label": "Gain", "kind": "signed_eur_pct", "width": 1.6},
+]
 # yfinance renvoie aussi des devises/futures dans ses résultats de recherche :
 # hors périmètre pour l'instant (forex/matières premières restent dans leur
 # encadré dédié, non recherchables ici — voir la demande initiale).
@@ -197,7 +207,7 @@ def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
                 "change_pct": q["change_pct"] if q else None,
                 "change_30d_pct": q.get("change_30d_pct") if q else None,
             })
-        theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key=card_key)
+        theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key=f"compact_{card_key}")
         if not tradable:
             st.caption("Cours en lecture seule : le trading sur ces actifs n'est pas encore disponible.")
 
@@ -243,7 +253,7 @@ def _search_tradable_assets(query: str) -> list[dict]:
 
 def _render_search() -> None:
     with st.container(key="ts_card_search"):
-        st.markdown("##### 🔍 Rechercher un actif")
+        st.markdown("##### Rechercher un actif")
         # Champ + résultats dans un st.form plutôt qu'un simple st.text_input
         # "live" : sans ça, CHAQUE frappe déclenche un rerun qui reconstruit
         # les boutons de résultat, et cliquer sur l'un d'eux juste après avoir
@@ -276,7 +286,7 @@ def _render_search() -> None:
                     "category": valuation.category_for(r.get("type", "")),
                 } for r in results[:8]]
                 theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
-                                          table_key="search_results", show_header=False)
+                                          table_key="compact_search_results", show_header=False)
             else:
                 st.caption("Aucun résultat. Tu peux saisir le ticker exact ci-dessous.")
                 with st.form("ts_manual_ticker_form", border=False):
@@ -293,20 +303,29 @@ def _render_search() -> None:
             return
 
         user_id = st.session_state.user_id
-        recent = search_history.get_recent(user_id)
+        # Limité aux 3 plus récentes (get_recent trie déjà du plus récent au
+        # plus ancien) : au-delà, la liste de suggestions perdait son intérêt
+        # de raccourci rapide.
+        recent = search_history.get_recent(user_id, limit=3)
         if recent:
-            st.markdown('<div class="ts-light-col-label">Recherches récentes</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="ts-light-col-label" style="margin-bottom:0.5rem;">Recherches récentes</div>',
+                unsafe_allow_html=True,
+            )
             rows = [
                 {"ticker": r["ticker"], "name": r["name"], "category": valuation.category_for(r["quote_type"])}
                 for r in recent
             ]
             theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
-                                      table_key="recent_searches", show_header=False)
+                                      table_key="compact_recent_searches", show_header=False)
         else:
-            st.markdown('<div class="ts-light-col-label">Suggestions</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="ts-light-col-label" style="margin-bottom:0.5rem;">Suggestions</div>',
+                unsafe_allow_html=True,
+            )
             rows = [{"ticker": t, "name": n, "category": c} for t, n, c in DEFAULT_SUGGESTIONS]
             theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
-                                      table_key="suggested_searches", show_header=False)
+                                      table_key="compact_suggested_searches", show_header=False)
 
 
 # -- Prix + graphique (mécanique inchangée) -----------------------------------
@@ -353,6 +372,31 @@ def _fetch_chart_history(ticker: str, quote_type: str, period_key: str):
 
     hist, effective = md.get_history_with_fallback(ticker, interval, start)
     return hist, effective, "Yahoo Finance"
+
+
+def _render_positions_summary(snapshots: list[dict]) -> None:
+    """Récapitulatif compact des positions ouvertes, affiché à côté du
+    graphique (voir render()) plutôt qu'en dessous — pour que le graphique
+    n'occupe plus toute la largeur disponible sur desktop. Mêmes colonnes
+    que le tableau Positions de l'onglet Portefeuille, réduites (voir
+    COMPACT_POSITION_COLUMNS), calculées à partir des MÊMES snapshots déjà
+    valorisés une fois par app.py pour la page entière : aucun appel API
+    supplémentaire propre à cet encadré."""
+    with st.container(key="ts_card_trading_positions"):
+        st.markdown("##### Positions ouvertes")
+        if not snapshots:
+            st.caption("Aucune position ouverte.")
+            return
+        rows = [{
+            "ticker": s["position"].ticker,
+            "name": s["position"].name,
+            "category": s["category"],
+            "side": "Long" if s["position"].side == "long" else "Short",
+            "price": s["current_price_eur"],
+            "quantity": s["position"].quantity,
+            "total_pnl": (s["pnl_eur"], s["pnl_pct"]),
+        } for s in snapshots]
+        theme.render_table_light(rows, COMPACT_POSITION_COLUMNS, row_key="ticker", table_key="trading_positions")
 
 
 @st.fragment(run_every=30)
@@ -465,6 +509,7 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
     st.caption(
         f"{len(hist)} bougies chargées · intervalle {effective_interval}{fallback_note} · source {source}"
     )
+    st.caption(theme.PLOTLY_ZOOM_HINT)
 
 
 # -- Récapitulatif d'ordre -----------------------------------------------------
@@ -543,9 +588,9 @@ def _render_tp_sl_at_order_form(order_mode: str, ref_price: float) -> list[tuple
         for i in range(int(tier_count)):
             st.markdown(f"**Palier {i + 1}**")
             c1, c2, c3 = st.columns(3)
-            kind_label = c1.radio(
-                "Type", TP_SL_KIND_LABELS, horizontal=True, key=f"order_tp_sl_kind_{i}",
-                label_visibility="collapsed",
+            kind_label = c1.segmented_control(
+                "Type", TP_SL_KIND_LABELS, default=TP_SL_KIND_LABELS[0], required=True,
+                key=f"order_tp_sl_kind_{i}", label_visibility="collapsed",
             )
             target_price = c2.number_input(
                 "Prix cible (€)", min_value=0.01, value=float(round(ref_price, 2)), step=0.5,
@@ -603,7 +648,7 @@ def _render_maintenance_indicator(position, current_price_eur: float) -> None:
         f"(liquidation automatique à {threshold:.0f}%, prix ≈ {liq_price:,.2f} €)."
     )
     if ratio >= 0.75:
-        st.error(f"⚠️ {message}")
+        st.error(message)
     elif ratio >= 0.4:
         st.warning(message)
     else:
@@ -747,7 +792,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                     storage.save_portfolio(portfolio)
                     if created:
                         msg += f" {created} palier(s) TP/SL créé(s)."
-                    st.toast(msg, icon="✅", duration=ORDER_CONFIRMATION_TOAST_SECONDS)
+                    st.toast(msg, duration=ORDER_CONFIRMATION_TOAST_SECONDS)
                     st.rerun()
 
         else:  # Ordre à cours limité
@@ -766,7 +811,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                     storage.save_portfolio(portfolio)
                     st.toast(
                         f"Ordre à cours limité placé : {quantity:g} x {ticker} à {ref_price:,.2f} €.",
-                        icon="✅", duration=ORDER_CONFIRMATION_TOAST_SECONDS,
+                        duration=ORDER_CONFIRMATION_TOAST_SECONDS,
                     )
                     st.rerun()
 
@@ -838,7 +883,9 @@ def _render_tp_sl_section(portfolio, ticker: str) -> None:
 
         with st.expander("+ Ajouter un palier"):
             kind_labels = [tp_sl.KIND_LABELS[tp_sl.KIND_TAKE_PROFIT], tp_sl.KIND_LABELS[tp_sl.KIND_STOP_LOSS]]
-            kind_label = st.radio("Type", kind_labels, horizontal=True, key="tp_sl_kind_radio")
+            kind_label = st.segmented_control(
+                "Type", kind_labels, default=kind_labels[0], required=True, key="tp_sl_kind_radio",
+            )
             kind = tp_sl.KIND_TAKE_PROFIT if kind_label == kind_labels[0] else tp_sl.KIND_STOP_LOSS
 
             col_price, col_pct = st.columns(2)
@@ -872,7 +919,7 @@ def _render_tp_sl_section(portfolio, ticker: str) -> None:
         if past_orders:
             with st.expander(f"Historique des paliers sur {ticker} ({len(past_orders)})"):
                 for o in past_orders:
-                    status_label = "Exécuté ✅" if o.status == tp_sl.STATUS_EXECUTED else "Annulé"
+                    status_label = "Exécuté" if o.status == tp_sl.STATUS_EXECUTED else "Annulé"
                     line = f"{tp_sl.KIND_LABELS[o.kind]} à {o.target_price_eur:,.2f} € ({o.quantity_pct:g}%) — **{status_label}**"
                     if o.executed_at:
                         line += f" le {o.executed_at[:10]}"
@@ -952,7 +999,7 @@ def _render_pending_orders(portfolio) -> None:
 
 # -- Point d'entrée -------------------------------------------------------------
 
-def render(portfolio) -> None:
+def render(portfolio, snapshots: list[dict]) -> None:
     theme.inject_light()
     # À consommer avant de recréer le widget search_query ci-dessous (voir la
     # docstring de theme.go_to_trading : la remise à zéro ne peut pas se faire
@@ -982,7 +1029,16 @@ def render(portfolio) -> None:
             st.session_state.selected_ticker = None
             st.rerun()
 
-        _render_price_and_chart(ticker, quote_type)
+        # Conteneur dédié : ancrage CSS pour repasser en 1 colonne sur mobile
+        # (voir le media query dans theme.py), le graphique gardant alors
+        # toute la largeur — la densité qui justifie la colonne recap n'a de
+        # sens que sur desktop.
+        with st.container(key="ts_trading_chart_row"):
+            col_chart, col_positions = st.columns([2.3, 1])
+            with col_chart:
+                _render_price_and_chart(ticker, quote_type)
+            with col_positions:
+                _render_positions_summary(snapshots)
 
         # Déposé en session par le fragment ci-dessus (voir sa docstring) : il a
         # déjà tourné une fois de façon synchrone à ce stade du script, cette

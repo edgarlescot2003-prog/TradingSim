@@ -56,7 +56,7 @@ PERIODS = [
 def _display_name(p) -> str:
     """Nom d'un portefeuille pour affichage, avec le badge Officiel s'il y a
     lieu (pastilles ici, sélecteur du panneau latéral dans app.py)."""
-    return p.name + (" ⭐ Officiel" if p.is_official else "")
+    return p.name + (" (Officiel)" if p.is_official else "")
 
 
 def _render_portfolio_pills(user_id: str) -> None:
@@ -276,7 +276,11 @@ def _render_history(portfolio) -> None:
     if not portfolio.history:
         return
 
-    with st.expander(f"Historique des trades ({len(portfolio.history)})"):
+    # Visible directement, sans repli à ouvrir (l'historique complet des
+    # trades est une information consultée assez souvent pour ne pas mériter
+    # un accordéon fermé par défaut).
+    with st.container(key="ts_card_history"):
+        st.markdown(f"##### Historique des trades ({len(portfolio.history)})")
         rows = [{
             "_row_id": f"{i}_{t.date}",  # Trade n'a pas d'id propre ; index + date suffit à être unique
             "date": t.date[:16].replace("T", " "),
@@ -357,6 +361,7 @@ def _render_performance(portfolio) -> None:
             # écraserait la courbe (voir theme.plotly_area_range).
             fig.update_yaxes(range=theme.plotly_area_range(df["value_eur"]), autorange=False)
             st.plotly_chart(fig, use_container_width=True, config=theme.PLOTLY_CONFIG)
+            st.caption(theme.PLOTLY_ZOOM_HINT)
             return
 
         try:
@@ -394,6 +399,7 @@ def _render_performance(portfolio) -> None:
             "Les deux courbes sont indexées à 100 sur leur premier point commun de la période "
             "sélectionnée, pour comparer leur performance relative."
         )
+        st.caption(theme.PLOTLY_ZOOM_HINT)
 
 
 def _render_portfolio_actions(portfolio) -> None:

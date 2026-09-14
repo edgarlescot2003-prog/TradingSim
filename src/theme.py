@@ -313,14 +313,18 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     margin-bottom: 0.9rem;
     align-items: center !important;
 }}
+/* Seule la couleur du texte distingue l'onglet actif des autres — même
+   taille, même graisse, même position que [class*="st-key-navtab_"] button
+   ci-dessous (bordure transparente incluse, pour ne pas décaler la ligne
+   au clic) : aucun autre repère visuel (pas de soulignement plein, pas de
+   letter-spacing différent). */
 .ts-tab {{
     font-family: {FONT_SANS};
     font-weight: 600;
     font-size: 0.85rem;
-    letter-spacing: 0.02em;
     color: var(--ts-accent);
     padding: 0.55rem 0.05rem;
-    border-bottom: 2px solid var(--ts-accent);
+    border-bottom: 2px solid transparent;
 }}
 [class*="st-key-navtab_"] button {{
     background: transparent !important;
@@ -579,18 +583,36 @@ hr {{ border-color: var(--ts-border) !important; }}
         padding: 0.5rem 3rem 0.5rem 0.9rem !important;
     }}
     .ts-topbar-sep, .ts-topbar-portfolio {{ display: none; }}
-    .ts-topbar-right {{ gap: 0.75rem; }}
+    /* Les 3 indicateurs passent d'une rangée (label au-dessus de la valeur,
+       serrés côte à côte) à une colonne de 3 lignes (label à gauche, valeur
+       à droite, sur la même ligne) : avec 3 libellés dont un long
+       ("LIQUIDITÉ DISPONIBLE"), les caser côte à côte à 375-414px forçait le
+       libellé à passer à la ligne alors que sa valeur restait sur une
+       seule, donnant l'impression que valeur et libellé n'étaient plus
+       associés (repéré au test réel). Chaque paire reste sans ambiguïté
+       quelle que soit la longueur du libellé. */
+    .ts-topbar-right {{
+        gap: 0.3rem;
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+    }}
+    .ts-topbar-item {{
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: baseline;
+        width: 100%;
+    }}
     .ts-topbar-logo {{ font-size: 0.62rem !important; }}
-    .ts-topbar-label {{ font-size: 0.52rem !important; }}
-    .ts-topbar-value {{ font-size: 0.78rem !important; }}
-    .ts-topbar-pnl-amount {{ display: block; }}
+    .ts-topbar-label {{ font-size: 0.6rem !important; }}
+    .ts-topbar-value {{ font-size: 0.85rem !important; }}
+    .ts-topbar-pnl-amount {{ display: inline; }}
     .ts-topbar-pnl-pct {{
-        display: block;
-        margin-left: 0;
-        font-size: 0.62rem !important;
+        display: inline;
+        margin-left: 0.3rem;
+        font-size: 0.7rem !important;
         font-weight: 500;
     }}
-    .ts-topbar-pnl-pct::before, .ts-topbar-pnl-pct::after {{ content: ""; }}
     body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{ margin-left: 1.8rem; }}
     /* Titres de page hors barre de valeur (connexion, onboarding premier
        portefeuille, accueil Tutoriel) : mêmes st.title en tout début de
@@ -1007,6 +1029,19 @@ _LIGHT_CSS = f"""
     }}
     .ts-light-cell, .ts-light-cell .ts-light-num {{ text-align: left !important; white-space: normal; }}
 
+    /* Cartes d'actifs "compactes" (encadrés d'accueil Trading, résultats de
+       recherche, recherches récentes/suggestions — voir ui_trading.py, tout
+       table_key préfixé "compact_") : version resserrée de la carte
+       ci-dessus, jugée trop grande pour une simple liste de tickers (peu de
+       colonnes, pas de raison d'occuper autant de hauteur qu'une ligne de
+       Positions/Historique, plus riches en colonnes). */
+    .st-key-ts_light [class*="st-key-tslight_table_compact_"] [data-testid="stHorizontalBlock"] {{
+        padding: 0.35rem 0.6rem !important;
+        margin-bottom: 0.3rem !important;
+        border-radius: 6px !important;
+        gap: 0.15rem !important;
+    }}
+
     /* Vitrine d'accueil Trading (Indices/Top cap/Crypto/Forex) : 1 colonne
        au lieu de 2, quel que soit le comportement natif exact de Streamlit
        sur les st.columns (non garanti pour un nombre fixe). */
@@ -1014,6 +1049,18 @@ _LIGHT_CSS = f"""
         flex-direction: column !important;
     }}
     .st-key-ts_light [class*="st-key-ts_home_grid"] [data-testid="stColumn"] {{
+        width: 100% !important;
+        flex: none !important;
+    }}
+
+    /* Graphique + récapitulatif des positions (fiche Trading) : 1 colonne au
+       lieu de 2 — le graphique garde toute la largeur sur mobile, la colonne
+       recap (pensée desktop, pour ne plus que le graphique occupe 100% de
+       la largeur) passe juste en dessous. */
+    .st-key-ts_light [class*="st-key-ts_trading_chart_row"] [data-testid="stHorizontalBlock"] {{
+        flex-direction: column !important;
+    }}
+    .st-key-ts_light [class*="st-key-ts_trading_chart_row"] [data-testid="stColumn"] {{
         width: 100% !important;
         flex: none !important;
     }}
@@ -1176,7 +1223,7 @@ def render_movers_alert(movers: list[dict]) -> None:
         <div style="padding:0.5rem 1.1rem;border:1px solid var(--ts-border);border-radius:4px;
                      background:var(--ts-panel);margin-bottom:0.6rem;font-family:{FONT_SANS};
                      font-size:0.85rem;color:var(--ts-text);">
-            ⚡ Mouvement du jour sur tes positions : {" &nbsp;·&nbsp; ".join(parts)}
+            Mouvement du jour sur tes positions : {" &nbsp;·&nbsp; ".join(parts)}
         </div>
         """,
         unsafe_allow_html=True,
@@ -1297,6 +1344,11 @@ PLOTLY_CONFIG = {
     "displaylogo": False,
     "modeBarButtonsToRemove": ["select2d", "lasso2d", "toggleSpikelines"],
 }
+
+# Affiché sous chaque graphique (voir ui_portfolio.py/ui_trading.py) :
+# documente un comportement déjà en place (zoom par défaut resserré, double-
+# clic pour le réinitialiser) mais jamais signalé à l'utilisateur.
+PLOTLY_ZOOM_HINT = "Double-clique sur le graphique pour réinitialiser le zoom."
 
 
 def _cell_content(col: dict, value) -> str:

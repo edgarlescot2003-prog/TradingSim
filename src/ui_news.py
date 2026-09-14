@@ -191,7 +191,7 @@ def _uploaded_image_data_uri(uploaded_file) -> str | None:
 
 
 def _render_form(user_id: str) -> None:
-    with st.expander("📝 Publier une news", expanded=False):
+    with st.expander("Publier une news", expanded=False):
         title = st.text_input("Titre", key="news_form_title")
         content = st.text_area(
             "Contenu", height=200, key="news_form_content",
@@ -200,7 +200,7 @@ def _render_form(user_id: str) -> None:
         link_raw = st.text_input("Lien externe (optionnel)", key="news_form_link", placeholder="https://...")
         link = link_raw.strip().split()[0] if link_raw.strip() else ""
         if link_raw.strip() and " " in link_raw.strip():
-            st.caption("⚠️ Un seul lien à la fois : seul le premier a été retenu, le reste est ignoré.")
+            st.caption("Un seul lien à la fois : seul le premier a été retenu, le reste est ignoré.")
 
         uploaded_file = st.file_uploader(
             "Image (optionnelle)", type=["png", "jpg", "jpeg", "gif", "webp"], key="news_form_upload",

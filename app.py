@@ -94,7 +94,7 @@ if not portfolios:
 with st.sidebar:
     st.subheader("Portefeuilles")
     names_by_id = {
-        pid: p.name + (" ⭐ Officiel" if p.is_official else "") for pid, p in portfolios.items()
+        pid: p.name + (" (Officiel)" if p.is_official else "") for pid, p in portfolios.items()
     }
     ids = list(names_by_id.keys())
     current_index = ids.index(st.session_state.active_id) if st.session_state.active_id in ids else 0
@@ -201,7 +201,7 @@ with messages_slot.container():
     theme.render_movers_alert(valuation.large_movers(snapshots))
 
 if st.session_state.active_tab == "trading":
-    ui_trading.render(portfolio)
+    ui_trading.render(portfolio, snapshots)
 elif st.session_state.active_tab == "cours":
     ui_tutorial.render()
 elif st.session_state.active_tab == "classement":

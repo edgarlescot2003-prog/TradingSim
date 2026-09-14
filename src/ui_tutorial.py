@@ -17,7 +17,7 @@ INTRO = (
 
 CHAPTERS = [
     ("1. Se connecter", """
-⚠️ **Petit point important** : il n'y a pas de session "permanente". Si tu fermes ton onglet ou ton navigateur, tu seras déconnecté et il faudra te reconnecter à ta prochaine visite. C'est normal, pas de panique si ça t'arrive.
+**Petit point important** : il n'y a pas de session "permanente". Si tu fermes ton onglet ou ton navigateur, tu seras déconnecté et il faudra te reconnecter à ta prochaine visite. C'est normal, pas de panique si ça t'arrive.
 """),
     ("2. Comprendre ton portefeuille", """
 Quand tu démarres, tu as un **portefeuille** avec un capital de départ virtuel.
@@ -32,7 +32,7 @@ Ensuite, une carte "Points clés" avec trois chiffres qu'il ne faut **pas confon
 - **Gain total** : le gain ou la perte cumulée sur chaque position depuis le prix auquel tu l'as achetée. Ça peut remonter à plusieurs semaines.
 - **Répartition par catégorie** : comment ton argent est réparti entre actions, cryptos, indices/ETF, etc. C'est calculé automatiquement, tu n'as rien à saisir.
 
-💡 **Pourquoi ces deux gains peuvent être très différents** : imagine que tu achètes une action *après* qu'elle ait déjà bien monté dans la journée. Ton **Gain du jour** peut être positif (le marché continue de monter un peu), alors que ton **Gain total** est négatif (tu as acheté "cher" par rapport à ton prix d'achat). Les deux indicateurs répondent à des questions différentes, c'est totalement normal que les chiffres divergent.
+**Pourquoi ces deux gains peuvent être très différents** : imagine que tu achètes une action *après* qu'elle ait déjà bien monté dans la journée. Ton **Gain du jour** peut être positif (le marché continue de monter un peu), alors que ton **Gain total** est négatif (tu as acheté "cher" par rapport à ton prix d'achat). Les deux indicateurs répondent à des questions différentes, c'est totalement normal que les chiffres divergent.
 
 ### Le tableau de tes positions
 
@@ -81,7 +81,7 @@ Plus le levier est élevé, plus les mouvements de prix ont un impact fort sur t
 
 C'est la somme réellement débitée de ton cash disponible pour ouvrir une position à levier. Dans l'exemple au-dessus (position de 1000€ à levier x10), ta marge est de 100€ : c'est ce qui sort réellement de ton cash, pas les 1000€ complets.
 
-### ⚠️ Un point important à connaître : la liquidation automatique
+### Un point important à connaître : la liquidation automatique
 
 Le simulateur t'affiche un "prix de liquidation auto. estimé" quand tu prépares un ordre à levier. Ce n'est **pas** qu'une info indicative : au-delà de x1, une position est réellement **fermée automatiquement** dès que sa perte latente atteint 80% de la marge engagée (marge de maintenance à 20%, comme sur un vrai broker) — même si tu n'as pas l'application ouverte, vérifié toutes les 15 minutes en arrière-plan. Ta perte reste donc plafonnée à environ 80% de ta marge, elle ne peut pas dépasser 100% de ce que tu as engagé.
 
@@ -125,12 +125,12 @@ Sur la fiche d'une position que tu détiens, une section **Take Profit / Stop Lo
 
 Tu peux empiler plusieurs paliers sur la même position (ex : Take Profit à +10% pour la moitié, Stop Loss à -5% pour l'autre moitié) — rien n'oblige à couvrir 100% de la position, le reste continue de vivre comme une position normale.
 
-⚠️ Point important : le pourcentage d'un palier est calculé sur la quantité que tu détenais **au moment où tu as créé ce palier**, pas sur ce qu'il te reste au moment où il se déclenche. Si tu vends une partie de ta position entre-temps par un autre moyen, le palier s'ajuste automatiquement à ce qu'il reste réellement disponible plutôt que d'échouer.
+Point important : le pourcentage d'un palier est calculé sur la quantité que tu détenais **au moment où tu as créé ce palier**, pas sur ce qu'il te reste au moment où il se déclenche. Si tu vends une partie de ta position entre-temps par un autre moyen, le palier s'ajuste automatiquement à ce qu'il reste réellement disponible plutôt que d'échouer.
 
 Ces paliers sont vérifiés et exécutés automatiquement toutes les 15 minutes, **même si tu n'as pas l'application ouverte** — tu peux fermer ton navigateur, ton palier continuera de fonctionner. Tu peux annuler un palier à tout moment tant qu'il ne s'est pas encore déclenché. Une vente déclenchée ainsi apparaît dans ton historique avec la mention "Auto (TP/SL)", pour bien la distinguer d'une vente que tu as faite toi-même — à ne pas confondre avec la mention "Liquidation auto" (voir le chapitre précédent), qui signale elle une clôture forcée par manque de marge, pas un palier que tu as posé volontairement.
 """),
     ("7. Le classement", """
-Dans l'onglet **Classement**, tu retrouves tous les participants triés par performance (P&L en euros et en %), recalculé en direct sur les prix actuels du marché. Ta ligne est repérée par "(toi)" pour la retrouver facilement. Si tu as plusieurs portefeuilles, seul ton **portefeuille officiel** (⭐, unique et défini une fois pour toutes) compte pour ton classement — tes éventuels autres portefeuilles fun/test n'y sont jamais comptabilisés. Clique sur un nom (le tien ou celui d'un autre participant) pour voir le détail de ses ordres et ses métriques de performance dans la page **Historique**.
+Dans l'onglet **Classement**, tu retrouves tous les participants triés par performance (P&L en euros et en %), recalculé en direct sur les prix actuels du marché. Ta ligne est repérée par "(toi)" pour la retrouver facilement. Si tu as plusieurs portefeuilles, seul ton **portefeuille officiel** (unique et défini une fois pour toutes) compte pour ton classement — tes éventuels autres portefeuilles fun/test n'y sont jamais comptabilisés. Clique sur un nom (le tien ou celui d'un autre participant) pour voir le détail de ses ordres et ses métriques de performance dans la page **Historique**.
 """),
     ("Pour résumer en 3 points avant de te lancer", """
 1. **Long** = tu paries à la hausse, **Short** = tu paries à la baisse.

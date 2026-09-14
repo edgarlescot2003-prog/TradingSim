@@ -126,12 +126,12 @@ def _build_summary_content(session, monday: date, sunday: date) -> str | None:
 
     best = weekly_returns[0]
     best_sign = "+" if best["return_pct"] >= 0 else ""
-    lines += ["", f"📈 Plus forte progression : **{best['username']}** ({best_sign}{best['return_pct']:.2f} %)"]
+    lines += ["", f"Plus forte progression : **{best['username']}** ({best_sign}{best['return_pct']:.2f} %)"]
 
     if len(weekly_returns) > 1:
         worst = weekly_returns[-1]
         worst_sign = "+" if worst["return_pct"] >= 0 else ""
-        lines.append(f"📉 Plus forte baisse : **{worst['username']}** ({worst_sign}{worst['return_pct']:.2f} %)")
+        lines.append(f"Plus forte baisse : **{worst['username']}** ({worst_sign}{worst['return_pct']:.2f} %)")
 
     top_ticker = _most_traded_ticker(
         session, datetime.combine(monday, datetime.min.time()).isoformat(),
@@ -140,7 +140,7 @@ def _build_summary_content(session, monday: date, sunday: date) -> str | None:
     if top_ticker:
         ticker, count = top_ticker
         ordre = "ordre" if count == 1 else "ordres"
-        lines += ["", f"🔥 Actif le plus tradé de la semaine (tous portefeuilles confondus) : **{ticker}** ({count} {ordre})"]
+        lines += ["", f"Actif le plus tradé de la semaine (tous portefeuilles confondus) : **{ticker}** ({count} {ordre})"]
 
     return "\n".join(lines)
 
