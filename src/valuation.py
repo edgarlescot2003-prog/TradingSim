@@ -25,6 +25,72 @@ def category_for(quote_type: str) -> str:
     return _CATEGORY_LABELS.get((quote_type or "").upper(), "Autres")
 
 
+# Perte latente (en fraction de la marge engagée) qui déclenche la liquidation
+# automatique d'une position à levier — marge de maintenance à 20%, plus
+# prudent que la formule à 100% qui n'était auparavant qu'indicative dans le
+# formulaire d'ordre (voir scripts/check_liquidation.py, qui applique ce même
+# seuil). Ne s'applique qu'aux positions À LEVIER (leverage > 1, voir
+# is_liquidatable ci-dessous) : une position sans levier (marge = notionnel,
+# perte plafonnée à 100% de la marge par construction) n'est jamais liquidée
+# automatiquement.
+MAINTENANCE_LOSS_RATIO = 0.80
+
+
+def unrealized_pnl_eur(position, current_price_eur: float) -> float:
+    """P&L latent (€) d'une position au prix courant, formule identique à
+    celle utilisée dans position_snapshot ci-dessous (centralisée ici pour
+    être réutilisable sans price_cache/appel API, voir scripts/check_liquidation.py)."""
+    cost_basis = position.quantity * position.avg_price_eur
+    current_exposure_eur = position.quantity * current_price_eur
+    if position.side == "long":
+        return current_exposure_eur - cost_basis
+    return cost_basis - current_exposure_eur
+
+
+def position_leverage(position) -> float | None:
+    """Levier effectif d'une position (notionnel / marge engagée). None si
+    aucune marge n'est enregistrée (positions héritées de la Phase 2, short
+    sans levier — voir Portfolio.from_dict)."""
+    if position.margin_eur <= 1e-9:
+        return None
+    cost_basis = position.quantity * position.avg_price_eur
+    return cost_basis / position.margin_eur
+
+
+def liquidation_price_eur(entry_price_eur: float, leverage: float | None, side: str) -> float | None:
+    """Prix auquel une position ouverte à `entry_price_eur` avec `leverage`
+    serait liquidée automatiquement (perte latente = MAINTENANCE_LOSS_RATIO
+    de la marge engagée). None si `leverage` est absent ou <= 1 (pas de
+    risque de liquidation sans effet de levier)."""
+    if not leverage or leverage <= 1 + 1e-9:
+        return None
+    if side == "long":
+        return entry_price_eur * (1 - MAINTENANCE_LOSS_RATIO / leverage)
+    return entry_price_eur * (1 + MAINTENANCE_LOSS_RATIO / leverage)
+
+
+def maintenance_margin_pct(position, current_price_eur: float) -> float | None:
+    """% de la marge engagée déjà perdu au prix courant (0 si la position est
+    en gain), pour l'indicateur de proximité de liquidation (voir
+    ui_trading.py) — la liquidation se déclenche à MAINTENANCE_LOSS_RATIO*100
+    (80%). None si la position n'est pas à levier (leverage <= 1)."""
+    leverage = position_leverage(position)
+    if leverage is None or leverage <= 1 + 1e-9:
+        return None
+    pnl_eur = unrealized_pnl_eur(position, current_price_eur)
+    return max(0.0, -pnl_eur / position.margin_eur * 100)
+
+
+def is_liquidatable(position, current_price_eur: float) -> bool:
+    """Vrai si la perte latente de `position` au prix courant atteint le
+    seuil de marge de maintenance (MAINTENANCE_LOSS_RATIO de sa marge
+    engagée) — voir scripts/check_liquidation.py, qui clôture alors la
+    position automatiquement. Ne s'applique qu'aux positions à levier
+    (leverage > 1), jamais à une position sans levier."""
+    pct = maintenance_margin_pct(position, current_price_eur)
+    return pct is not None and pct >= MAINTENANCE_LOSS_RATIO * 100 - 1e-6
+
+
 def position_snapshot(position, price_cache: dict[str, float] | None = None) -> dict:
     """Calcule les indicateurs courants d'une position : prix actuel, P&L en
     €/%, levier effectif, contribution à l'équity du portefeuille.
@@ -73,7 +139,9 @@ def position_snapshot(position, price_cache: dict[str, float] | None = None) -> 
     # Phase 2 dont la marge enregistrée est nulle (short sans levier).
     pnl_base = position.margin_eur if position.margin_eur > 1e-9 else cost_basis
     pnl_pct = (pnl_eur / pnl_base * 100) if pnl_base else 0.0
-    leverage = (cost_basis / position.margin_eur) if position.margin_eur > 1e-9 else None
+    leverage = position_leverage(position)
+    liq_price_eur = liquidation_price_eur(position.avg_price_eur, leverage, position.side)
+    maint_pct = maintenance_margin_pct(position, current_price_eur)
 
     # Gain du jour : variation depuis la clôture précédente (pas depuis le
     # prix d'achat). Indisponible (0) si previous_close n'a pas pu être
@@ -98,6 +166,8 @@ def position_snapshot(position, price_cache: dict[str, float] | None = None) -> 
         "pnl_pct": pnl_pct,
         "pnl_base_eur": pnl_base,  # dénominateur utilisé pour pnl_pct, réutilisable pour un % agrégé
         "leverage": leverage,
+        "liquidation_price_eur": liq_price_eur,
+        "maintenance_margin_pct": maint_pct,  # None si pas à levier ; 0-100+ sinon (liquidation à 80%)
         "equity_contribution_eur": position.margin_eur + pnl_eur,
         "day_pnl_eur": day_pnl_eur,
         "day_pnl_pct": day_pnl_pct,

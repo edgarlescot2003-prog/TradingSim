@@ -72,7 +72,10 @@ def _order_rows(trades: list[dict]) -> list[dict]:
             "quantity": t["quantity"],
             "price": t["price_eur"],
             "total": t["quantity"] * t["price_eur"],
-            "origin": "Auto (TP/SL)" if t.get("tp_sl_order_id") else "Manuel",
+            "origin": (
+                "Liquidation auto" if t.get("is_liquidation")
+                else "Auto (TP/SL)" if t.get("tp_sl_order_id") else "Manuel"
+            ),
         })
     return rows
 

@@ -41,6 +41,7 @@ def portfolio_from_rows(prow, positions, trades, orders, value_history) -> Portf
             date=t.date, ticker=t.ticker, name=t.name, side=t.side, action=t.action,
             quantity=t.quantity, price_eur=t.price_eur, currency=t.currency,
             leverage=t.leverage, realized_pnl_eur=t.realized_pnl_eur, tp_sl_order_id=t.tp_sl_order_id,
+            is_liquidation=t.is_liquidation,
         ) for t in trades],
         pending_orders=[PendingOrder(
             id=o.id, ticker=o.ticker, name=o.name, action=o.action, quantity=o.quantity,
@@ -113,7 +114,7 @@ def save_portfolio(session: Session, portfolio: Portfolio, user_id: str) -> None
             portfolio_id=portfolio.id, user_id=user_id, date=t.date, ticker=t.ticker, name=t.name,
             side=t.side, action=t.action, quantity=t.quantity, price_eur=t.price_eur,
             currency=t.currency, leverage=t.leverage, realized_pnl_eur=t.realized_pnl_eur,
-            tp_sl_order_id=t.tp_sl_order_id,
+            tp_sl_order_id=t.tp_sl_order_id, is_liquidation=t.is_liquidation,
         ))
     for o in portfolio.pending_orders:
         session.add(PendingOrderRow(

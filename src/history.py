@@ -130,6 +130,7 @@ def get_user_history(user_id: str) -> dict | None:
             "trades": [{
                 "date": t.date, "ticker": t.ticker, "name": t.name, "action": t.action,
                 "quantity": t.quantity, "price_eur": t.price_eur, "tp_sl_order_id": t.tp_sl_order_id,
+                "is_liquidation": t.is_liquidation,
             } for t in trades],
             "metrics": metrics,
         }

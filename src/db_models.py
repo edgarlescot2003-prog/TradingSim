@@ -113,6 +113,11 @@ class TradeRow(Base):
     # par un ordre manuel — sert à l'afficher distinctement dans l'historique
     # (ui_portfolio.py, ui_history.py).
     tp_sl_order_id = Column(UUID(as_uuid=False), ForeignKey("tp_sl_orders.id"), nullable=True)
+    # Vrai uniquement si cette clôture est une liquidation automatique par
+    # marge de maintenance (voir valuation.is_liquidatable,
+    # scripts/check_liquidation.py) — badge "Liquidation auto" distinct de
+    # "Auto (TP/SL)" dans l'historique (ui_portfolio.py, ui_history.py).
+    is_liquidation = Column(Boolean, nullable=False, default=False)
 
 
 class PendingOrderRow(Base):

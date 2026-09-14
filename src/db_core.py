@@ -89,3 +89,6 @@ def ensure_schema(engine: Engine) -> None:
         conn.execute(text(
             "ALTER TABLE trades ADD COLUMN IF NOT EXISTS tp_sl_order_id UUID REFERENCES tp_sl_orders(id)"
         ))
+        conn.execute(text(
+            "ALTER TABLE trades ADD COLUMN IF NOT EXISTS is_liquidation BOOLEAN NOT NULL DEFAULT FALSE"
+        ))

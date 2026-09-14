@@ -58,8 +58,8 @@ plafonnée à son cash disponible) plutôt qu'une quantité brute — la taille 
 position s'en déduit (`montant × levier`, converti en quantité au prix de
 référence choisi, marché ou cours limité). Pour **clôturer** une position
 (Vendre, Racheter), la saisie reste par quantité, inchangée. La formule de
-liquidation estimée ne dépend que du prix et du levier (pas de la quantité),
-donc inchangée elle aussi malgré ce remaniement. Un ordre au marché
+liquidation ne dépend que du prix et du levier (pas de la quantité), donc
+inchangée elle aussi malgré ce remaniement. Un ordre au marché
 d'ouverture peut aussi inclure directement jusqu'à 3 paliers Take Profit /
 Stop Loss (case à cocher dans le formulaire), créés juste après l'exécution
 sur la position fraîchement ouverte — au-delà, ou pour un ordre à cours
@@ -86,6 +86,39 @@ loin. Les ventes/rachats déclenchés automatiquement sont marqués comme tels
 (`TradeRow.tp_sl_order_id`) et affichés avec le badge "Auto (TP/SL)" dans
 l'historique des trades (Portefeuille) et la page Historique (colonne
 "Origine", CSV compris).
+
+**Liquidation automatique par marge de maintenance** : une position à levier
+(leverage > 1 ; jamais une position x1, dont la perte est déjà plafonnée à
+100% de la marge par construction) est fermée automatiquement dès que sa
+perte latente atteint 80% de sa marge engagée (marge de maintenance à 20%,
+formule centralisée dans `src/valuation.py`, `MAINTENANCE_LOSS_RATIO`) :
+`prix_liquidation = prix_entrée × (1 − 0.8/levier)` en long,
+`× (1 + 0.8/levier)` en short. Avant cette fonctionnalité, le "prix de
+liquidation" affiché dans le formulaire d'ordre (`_render_order_summary`)
+n'était qu'indicatif (formule à 100%, jamais vérifiée nulle part) : une
+position pouvait perdre plus que sa marge sans être jamais clôturée, ce qui
+aurait pu fausser le Classement en cas de solde de portefeuille négatif.
+
+**S'exécute même quand personne n'a l'app ouverte**, comme le TP/SL : un
+script dédié (`scripts/check_liquidation.py`) tourne toutes les 15 minutes
+via le même workflow GitHub Actions que le TP/SL
+(`.github/workflows/check-tp-sl.yml`, deux steps séquentiels dans le même
+job) — **le TP/SL est toujours vérifié en premier** (action volontaire de
+l'utilisateur, qui prime), la liquidation en second, pour qu'une position
+qui déclenche les deux au même run sorte via son palier plutôt que par une
+liquidation forcée. Une liquidation clôture TOUJOURS la position en entier
+(pas de notion de palier/pourcentage comme pour le TP/SL). Réutilise
+`Portfolio.sell()`/`cover_short()` (même logique que les clôtures manuelles
+et le TP/SL) ; le trade créé est marqué `TradeRow.is_liquidation=True` et
+affiché avec le badge "Liquidation auto" (distinct de "Auto (TP/SL)") dans
+l'historique des trades et la page Historique. Un prix indisponible au
+moment du check reporte simplement la vérification (jamais de liquidation
+sur une donnée invalide).
+
+Sur la fiche d'une position à levier détenue (onglet Trading), une jauge
+(`ui_trading._render_maintenance_indicator`) affiche en direct le % de la
+marge déjà perdu par rapport à ce seuil de 80%, pour que l'utilisateur
+puisse réagir avant d'être liquidé.
 
 ### Onglet Cours
 Ajout manuel de fiches de révision (pas d'automatisation via API pour
@@ -215,22 +248,28 @@ exécutés par GitHub Actions ou en local) ; `src/db.py` (dépend de
 Streamlit) ajoute par-dessus le repli sur `st.secrets` et la mise en cache
 par processus serveur, pour l'app elle-même. Ne jamais réintroduire un
 `import streamlit` dans un module utilisé par `scripts/backup_db.py`,
-`scripts/restore_db.py` ou `scripts/check_tp_sl.py` — c'est exactement ce
-qui a fait échouer le workflow de sauvegarde une première fois
-(`ModuleNotFoundError: streamlit`, l'environnement GitHub Actions
-n'installant volontairement pas Streamlit) ; même logique pour
-`src/portfolio_repo.py` (chargement/sauvegarde d'UN portefeuille par
-`portfolio_id`, sans dépendance à Streamlit, réutilisé par `storage.py`
-ET par `scripts/check_tp_sl.py`).
+`scripts/restore_db.py`, `scripts/check_tp_sl.py` ou
+`scripts/check_liquidation.py` — c'est exactement ce qui a fait échouer le
+workflow de sauvegarde une première fois (`ModuleNotFoundError: streamlit`,
+l'environnement GitHub Actions n'installant volontairement pas Streamlit) ;
+même logique pour `src/portfolio_repo.py` (chargement/sauvegarde d'UN
+portefeuille par `portfolio_id`, sans dépendance à Streamlit, réutilisé par
+`storage.py`, `scripts/check_tp_sl.py` ET `scripts/check_liquidation.py`) et
+pour `src/valuation.py` (formules de P&L/marge/liquidation, réutilisées par
+`scripts/check_liquidation.py` sans jamais y importer Streamlit).
 
 Deux workflows GitHub Actions tournent sur ce même modèle (`db_core`,
 secret `DATABASE_URL` du dépôt, aucune dépendance à Streamlit) : sauvegarde
-quotidienne (`backup.yml`) et vérification TP/SL toutes les 15 minutes
-(`check-tp-sl.yml`). Contrairement aux scripts de test habituels,
-`scripts/check_tp_sl.py` traite TOUS les paliers actifs de TOUS les
-comptes à chaque exécution (c'est son rôle) : le relancer manuellement en
-local exécute donc pour de vrai n'importe quel palier réel déclenché à ce
-moment-là, pas seulement ceux d'un compte de test.
+quotidienne (`backup.yml`) et vérification TP/SL + liquidation toutes les 15
+minutes (`check-tp-sl.yml`, deux steps séquentiels dans le même job — voir
+"Liquidation automatique par marge de maintenance" ci-dessus pour l'ordre de
+priorité entre les deux). Contrairement aux scripts de test habituels,
+`scripts/check_tp_sl.py` et `scripts/check_liquidation.py` traitent
+respectivement TOUS les paliers actifs et TOUTES les positions à levier de
+TOUS les comptes à chaque exécution (c'est leur rôle) : les relancer
+manuellement en local exécute donc pour de vrai n'importe quel palier ou
+liquidation réel déclenché à ce moment-là, pas seulement ceux d'un compte de
+test.
 
 **Sauvegarde automatique** : chaque nuit, un workflow GitHub Actions
 (`.github/workflows/backup.yml`) exporte toutes les tables en CSV dans

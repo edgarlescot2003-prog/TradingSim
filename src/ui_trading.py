@@ -20,6 +20,7 @@ from . import search_history
 from . import storage
 from . import theme
 from . import tp_sl
+from . import valuation
 
 # -- Univers d'actifs "vitrine" de la page d'accueil -------------------------
 # 5 actifs par encadré (Indices/Top capitalisation) : FTSE 100 et Meta
@@ -446,17 +447,20 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
 def _render_order_summary(price: float, quantity: float, leverage: float, side: str) -> None:
     notional = quantity * price
     margin = notional / leverage if leverage else notional
-    if leverage > 1:
-        liq_price = price * (1 - 1 / leverage) if side == "long" else price * (1 + 1 / leverage)
-    else:
-        liq_price = None
+    liq_price = valuation.liquidation_price_eur(price, leverage, side)
 
     with st.container(key="ts_card_order_summary"):
         st.markdown("###### Récapitulatif")
         c1, c2, c3 = st.columns(3)
         c1.metric("Coût total", f"{notional:,.2f} €")
         c2.metric("Marge requise", f"{margin:,.2f} €")
-        c3.metric("Liquidation estimée", f"{liq_price:,.2f} €" if liq_price else "—")
+        c3.metric("Liquidation auto. estimée", f"{liq_price:,.2f} €" if liq_price else "—")
+        if liq_price:
+            st.caption(
+                f"Position liquidée automatiquement si le prix atteint ce niveau (perte latente = "
+                f"{valuation.MAINTENANCE_LOSS_RATIO * 100:.0f}% de ta marge engagée), vérifié toutes les "
+                "15 minutes même si l'app est fermée."
+            )
 
         st.caption("Simulation de gain/perte si le prix évolue de :")
         scenarios = [-10, -5, 5, 10]
@@ -553,6 +557,32 @@ def _create_tp_sl_tiers(portfolio, ticker: str, tiers: list[tuple[str, float, fl
     return created
 
 
+def _render_maintenance_indicator(position, current_price_eur: float) -> None:
+    """Jauge de proximité de la liquidation automatique par marge de
+    maintenance (voir valuation.MAINTENANCE_LOSS_RATIO,
+    scripts/check_liquidation.py) — rien n'est affiché pour une position sans
+    levier (jamais liquidée automatiquement, voir valuation.is_liquidatable).
+    """
+    pct = valuation.maintenance_margin_pct(position, current_price_eur)
+    if pct is None:
+        return
+
+    leverage = valuation.position_leverage(position)
+    liq_price = valuation.liquidation_price_eur(position.avg_price_eur, leverage, position.side)
+    threshold = valuation.MAINTENANCE_LOSS_RATIO * 100
+    ratio = min(pct / threshold, 1.0) if threshold else 0.0
+    message = (
+        f"Marge de maintenance : {pct:.0f}% de ta marge engagée déjà perdue "
+        f"(liquidation automatique à {threshold:.0f}%, prix ≈ {liq_price:,.2f} €)."
+    )
+    if ratio >= 0.75:
+        st.error(f"⚠️ {message}")
+    elif ratio >= 0.4:
+        st.warning(message)
+    else:
+        st.caption(message)
+
+
 def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: float, currency: str) -> None:
     with st.container(key="ts_card_order"):
         st.markdown("##### Passer un ordre")
@@ -567,10 +597,12 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
         elif existing.side == "long":
             st.caption(f"Position actuelle : {existing.quantity:g} {ticker} en position longue "
                        f"(prix moyen {existing.avg_price_eur:,.2f} €).")
+            _render_maintenance_indicator(existing, price_eur)
             order_type = st.radio("Type d'ordre", ["Acheter plus", "Vendre"], horizontal=True)
         else:
             st.caption(f"Position actuelle : {existing.quantity:g} {ticker} en position courte "
                        f"(prix moyen {existing.avg_price_eur:,.2f} €).")
+            _render_maintenance_indicator(existing, price_eur)
             order_type = st.radio("Type d'ordre", ["Vendre plus à découvert", "Racheter (clôturer)"], horizontal=True)
 
         action = ACTION_BY_ORDER_TYPE[order_type]

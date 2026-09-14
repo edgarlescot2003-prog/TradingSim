@@ -45,6 +45,12 @@ class Trade:
     # palier Take Profit / Stop Loss (voir tp_sl.py, scripts/check_tp_sl.py) :
     # id du TpSlOrderRow d'origine, None pour un ordre manuel.
     tp_sl_order_id: str | None = None
+    # Vrai uniquement si cette clôture est une liquidation automatique par
+    # marge de maintenance (voir valuation.is_liquidatable,
+    # scripts/check_liquidation.py) — mutuellement exclusif avec
+    # tp_sl_order_id en pratique (une position est liquidée ou sortie par un
+    # palier, jamais les deux sur le même trade).
+    is_liquidation: bool = False
 
 
 @dataclass
@@ -135,12 +141,14 @@ class Portfolio:
                          trade_date=trade_dt)
 
     def sell(self, ticker: str, quantity: float, price_eur: float, trade_date: datetime | None = None,
-             tp_sl_order_id: str | None = None) -> float:
+             tp_sl_order_id: str | None = None, is_liquidation: bool = False) -> float:
         """Réduit ou clôture une position longue. Retourne le P&L réalisé (€).
 
         `tp_sl_order_id` : renseigné uniquement quand cette vente est
         déclenchée automatiquement par un palier Take Profit / Stop Loss
         (voir scripts/check_tp_sl.py), pour que le trade en garde la trace.
+        `is_liquidation` : idem pour une liquidation automatique par marge de
+        maintenance (voir scripts/check_liquidation.py).
         """
         existing = self.positions.get(ticker)
         if not existing or existing.side != "long":
@@ -164,7 +172,7 @@ class Portfolio:
 
         self._log_trade(ticker, existing.name, "long", "vente", quantity, price_eur,
                          existing.currency, 1.0, realized_pnl, trade_date=trade_date,
-                         tp_sl_order_id=tp_sl_order_id)
+                         tp_sl_order_id=tp_sl_order_id, is_liquidation=is_liquidation)
         return realized_pnl
 
     # -- Position courte (short) ---------------------------------------------
@@ -211,10 +219,11 @@ class Portfolio:
                          trade_date=trade_dt)
 
     def cover_short(self, ticker: str, quantity: float, price_eur: float,
-                     trade_date: datetime | None = None, tp_sl_order_id: str | None = None) -> float:
+                     trade_date: datetime | None = None, tp_sl_order_id: str | None = None,
+                     is_liquidation: bool = False) -> float:
         """Réduit ou clôture (rachète) une position courte. Retourne le P&L réalisé (€).
 
-        `tp_sl_order_id` : voir sell() ci-dessus.
+        `tp_sl_order_id`, `is_liquidation` : voir sell() ci-dessus.
         """
         existing = self.positions.get(ticker)
         if not existing or existing.side != "short":
@@ -238,7 +247,7 @@ class Portfolio:
 
         self._log_trade(ticker, existing.name, "short", "rachat short", quantity, price_eur,
                          existing.currency, 1.0, realized_pnl, trade_date=trade_date,
-                         tp_sl_order_id=tp_sl_order_id)
+                         tp_sl_order_id=tp_sl_order_id, is_liquidation=is_liquidation)
         return realized_pnl
 
     # -- Ordres à cours limité -------------------------------------------------
@@ -318,12 +327,13 @@ class Portfolio:
 
     def _log_trade(self, ticker, name, side, action, quantity, price_eur, currency,
                     leverage=1.0, realized_pnl_eur=None, trade_date: datetime | None = None,
-                    tp_sl_order_id: str | None = None) -> None:
+                    tp_sl_order_id: str | None = None, is_liquidation: bool = False) -> None:
         trade_dt = trade_date or datetime.now()
         self.history.append(Trade(
             date=trade_dt.isoformat(), ticker=ticker, name=name, side=side,
             action=action, quantity=quantity, price_eur=price_eur, currency=currency,
             leverage=leverage, realized_pnl_eur=realized_pnl_eur, tp_sl_order_id=tp_sl_order_id,
+            is_liquidation=is_liquidation,
         ))
 
     # -- Sérialisation -----------------------------------------------------

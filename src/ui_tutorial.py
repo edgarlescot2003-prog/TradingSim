@@ -81,11 +81,13 @@ Plus le levier est élevé, plus les mouvements de prix ont un impact fort sur t
 
 C'est la somme réellement débitée de ton cash disponible pour ouvrir une position à levier. Dans l'exemple au-dessus (position de 1000€ à levier x10), ta marge est de 100€ : c'est ce qui sort réellement de ton cash, pas les 1000€ complets.
 
-### ⚠️ Un point important à connaître
+### ⚠️ Un point important à connaître : la liquidation automatique
 
-Le simulateur t'affiche un "prix de liquidation estimé" quand tu prépares un ordre. C'est une info **indicative**, pour te donner un repère du niveau de prix qui ferait s'évaporer ta marge. Mais garde en tête : **il n'y a pas d'appel de marge automatique ici**, contrairement à un vrai broker. Concrètement, ça veut dire qu'une position perdante n'est jamais fermée de force automatiquement, même si elle dépasse largement ta marge de départ. C'est toi qui restes maître de tes décisions à tout moment — donc surveille tes positions à effet de levier, c'est toi le capitaine du navire !
+Le simulateur t'affiche un "prix de liquidation auto. estimé" quand tu prépares un ordre à levier. Ce n'est **pas** qu'une info indicative : au-delà de x1, une position est réellement **fermée automatiquement** dès que sa perte latente atteint 80% de la marge engagée (marge de maintenance à 20%, comme sur un vrai broker) — même si tu n'as pas l'application ouverte, vérifié toutes les 15 minutes en arrière-plan. Ta perte reste donc plafonnée à environ 80% de ta marge, elle ne peut pas dépasser 100% de ce que tu as engagé.
 
-C'est justement l'intérêt du simulateur : tu peux expérimenter ces mécaniques sans que ça ait de conséquences réelles. Teste, trompe-toi, comprends — c'est fait pour ça.
+Une position sans levier (x1) n'est en revanche jamais liquidée automatiquement : elle reste ouverte quoi qu'il arrive, c'est toi qui décides quand la clôturer.
+
+Sur la fiche d'une position à levier que tu détiens, une jauge t'indique en direct où tu en es par rapport à ce seuil — surveille-la, surtout à fort levier, pour réagir avant d'être liquidé si tu préfères garder la main sur ta sortie !
 """),
     ("6. Passer un ordre", """
 Une fois sur la fiche d'un actif, tu trouveras un formulaire pour passer ton ordre. Les options proposées changent selon ta situation :
@@ -123,7 +125,7 @@ Tu peux empiler plusieurs paliers sur la même position (ex : Take Profit à +10
 
 ⚠️ Point important : le pourcentage d'un palier est calculé sur la quantité que tu détenais **au moment où tu as créé ce palier**, pas sur ce qu'il te reste au moment où il se déclenche. Si tu vends une partie de ta position entre-temps par un autre moyen, le palier s'ajuste automatiquement à ce qu'il reste réellement disponible plutôt que d'échouer.
 
-Ces paliers sont vérifiés et exécutés automatiquement toutes les 15 minutes, **même si tu n'as pas l'application ouverte** — tu peux fermer ton navigateur, ton palier continuera de fonctionner. Tu peux annuler un palier à tout moment tant qu'il ne s'est pas encore déclenché. Une vente déclenchée ainsi apparaît dans ton historique avec la mention "Auto (TP/SL)", pour bien la distinguer d'une vente que tu as faite toi-même.
+Ces paliers sont vérifiés et exécutés automatiquement toutes les 15 minutes, **même si tu n'as pas l'application ouverte** — tu peux fermer ton navigateur, ton palier continuera de fonctionner. Tu peux annuler un palier à tout moment tant qu'il ne s'est pas encore déclenché. Une vente déclenchée ainsi apparaît dans ton historique avec la mention "Auto (TP/SL)", pour bien la distinguer d'une vente que tu as faite toi-même — à ne pas confondre avec la mention "Liquidation auto" (voir le chapitre précédent), qui signale elle une clôture forcée par manque de marge, pas un palier que tu as posé volontairement.
 """),
     ("7. Le classement", """
 Dans l'onglet **Classement**, tu retrouves tous les participants triés par performance (P&L en euros et en %), recalculé en direct sur les prix actuels du marché. Ta ligne est repérée par "(toi)" pour la retrouver facilement. Si tu as plusieurs portefeuilles, seul ton **portefeuille officiel** (⭐, unique et défini une fois pour toutes) compte pour ton classement — tes éventuels autres portefeuilles fun/test n'y sont jamais comptabilisés. Clique sur un nom (le tien ou celui d'un autre participant) pour voir le détail de ses ordres et ses métriques de performance dans la page **Historique**.
@@ -131,7 +133,7 @@ Dans l'onglet **Classement**, tu retrouves tous les participants triés par perf
     ("Pour résumer en 3 points avant de te lancer", """
 1. **Long** = tu paries à la hausse, **Short** = tu paries à la baisse.
 2. Le **levier** amplifie tes gains ET tes pertes — commence petit (x1 ou x2) le temps de bien comprendre le mécanisme.
-3. Aucun appel de marge automatique ici : reste attentif à tes positions ouvertes, surtout à fort levier.
+3. Une position à levier est **liquidée automatiquement** si sa perte atteint 80% de la marge engagée : reste attentif à tes positions ouvertes, surtout à fort levier.
 
 Le reste, c'est de la pratique. Lance-toi, explore, et n'hésite pas à revenir sur ce tutoriel si un terme te bloque. Bon trade à toi !
 """),

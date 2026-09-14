@@ -284,7 +284,10 @@ def _render_history(portfolio) -> None:
             "price": t.price_eur,
             "leverage": f"x{t.leverage:g}",
             "realized_pnl": t.realized_pnl_eur,
-            "origin": "Auto (TP/SL)" if t.tp_sl_order_id else "Manuel",
+            "origin": (
+                "Liquidation auto" if t.is_liquidation
+                else "Auto (TP/SL)" if t.tp_sl_order_id else "Manuel"
+            ),
         } for i, t in enumerate(reversed(portfolio.history))]
 
         theme.render_table_light(rows, HISTORY_COLUMNS, row_key="_row_id", table_key="history")

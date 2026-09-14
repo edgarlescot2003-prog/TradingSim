@@ -1,10 +1,16 @@
-name: Verification TP/SL
+name: Verification TP/SL et liquidation
 
 # S'execute meme quand aucun utilisateur n'a l'app ouverte : verifie tous les
-# paliers Take Profit / Stop Loss actifs contre le prix courant, et execute
-# ceux qui sont declenches. Meme modele que la sauvegarde nocturne
-# (.github/workflows/backup.yml). Necessite le meme secret DATABASE_URL
-# (deja configure, voir backups/README.md).
+# paliers Take Profit / Stop Loss actifs contre le prix courant et execute
+# ceux qui sont declenches, PUIS verifie la liquidation automatique par marge
+# de maintenance sur toutes les positions a levier (scripts/check_liquidation.py).
+# Meme modele que la sauvegarde nocturne (.github/workflows/backup.yml).
+# Necessite le meme secret DATABASE_URL (deja configure, voir backups/README.md).
+#
+# L'ordre des deux steps est volontaire et fait office de regle de priorite :
+# le TP/SL (action volontaire de l'utilisateur) est toujours verifie avant la
+# liquidation, pour qu'une position qui declenche les deux au meme run sorte
+# d'abord par son palier plutot que par une liquidation forcee.
 #
 # Ne committe rien dans le depot (contrairement a la sauvegarde) : toutes
 # les modifications vont directement dans Supabase.
@@ -40,3 +46,8 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m scripts.check_tp_sl
+
+      - name: Vérifier et exécuter les liquidations automatiques
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m scripts.check_liquidation
