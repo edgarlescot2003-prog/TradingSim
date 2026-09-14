@@ -39,7 +39,7 @@ HISTORY_COLUMNS = [
     {"key": "action", "label": "Action", "kind": "text"},
     {"key": "quantity", "label": "Quantité", "kind": "num", "decimals": 4},
     {"key": "price", "label": "Prix", "kind": "eur"},
-    {"key": "leverage", "label": "Levier", "kind": "text"},
+    {"key": "leverage", "label": "Levier", "kind": "mono_text"},
     {"key": "realized_pnl", "label": "P&L réalisé", "kind": "signed_eur"},
     {"key": "origin", "label": "Origine", "kind": "text"},
 ]

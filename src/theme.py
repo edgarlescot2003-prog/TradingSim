@@ -22,14 +22,14 @@ import streamlit as st
 # génériques : ce sont "les couleurs du thème actuel", pas littéralement
 # "sombre" — inutile de les renommer. Valeurs reprises de la palette claire
 # validée (contraste + daltonisme) par la skill dataviz du projet.
-BG = "#f9f9f7"
-PANEL = "#fcfcfb"
-BORDER = "rgba(11,11,11,0.10)"
-TEXT = "#0b0b0b"
-MUTED = "#52514e"
-GREEN = "#006300"
-RED = "#d03b3b"
-ACCENT = "#2a78d6"  # bleu discret : boutons, liens, onglet actif — jamais le gain/perte (vert/rouge)
+BG = "#FAFAFA"
+PANEL = "#F4F4F5"
+BORDER = "#E4E4E7"
+TEXT = "#18181B"
+MUTED = "#71717A"
+GREEN = "#16A34A"
+RED = "#DC2626"
+ACCENT = "#2563EB"  # bleu discret : boutons, liens, onglet actif — jamais le gain/perte (vert/rouge)
 
 FONT_SANS = "'Inter', -apple-system, sans-serif"
 FONT_MONO = "'JetBrains Mono', 'Courier New', monospace"
@@ -38,46 +38,44 @@ FONT_MONO = "'JetBrains Mono', 'Courier New', monospace"
 # Historiquement une palette séparée le temps que le reste de l'appli restait
 # sombre ; désormais identique à la palette globale ci-dessus, gardée comme
 # alias pour ne pas devoir toucher ui_portfolio.py.
-LIGHT_PAGE = "#f9f9f7"
-LIGHT_SURFACE = "#fcfcfb"
-LIGHT_BORDER = "rgba(11,11,11,0.10)"
-LIGHT_GRIDLINE = "#e1e0d9"
-LIGHT_TEXT = "#0b0b0b"
-LIGHT_MUTED = "#52514e"
-LIGHT_FAINT = "#898781"
-LIGHT_BLUE = "#2a78d6"
-LIGHT_GREEN = "#006300"
-LIGHT_RED = "#d03b3b"
+LIGHT_PAGE = "#FAFAFA"
+LIGHT_SURFACE = "#F4F4F5"
+LIGHT_BORDER = "#E4E4E7"
+LIGHT_GRIDLINE = "#E4E4E7"
+LIGHT_TEXT = "#18181B"
+LIGHT_MUTED = "#71717A"
+LIGHT_FAINT = "#71717A"
+LIGHT_BLUE = "#2563EB"
+LIGHT_GREEN = "#16A34A"
+LIGHT_RED = "#DC2626"
 
+# Palette par classe d'actif (badges/pills de tickers) : fixe et cohérente —
+# deux tickers de la même classe d'actif ont toujours la même couleur, jamais
+# une couleur aléatoire par ticker (voir badge_color ci-dessous). "Indices/ETF"
+# reste le libellé de catégorie utilisé par valuation.category_for (regroupe
+# ETF/indice/fonds) ; "Obligations" n'est pas encore une classe d'actif
+# disponible dans l'app, mais réservée dans la palette pour ce jour-là.
 CATEGORY_COLORS = {
-    "Actions": "#2a78d6",
-    "Crypto": "#eb6834",
-    "Indices/ETF": "#1baf7a",
-    "Autres": LIGHT_FAINT,
+    "Actions": "#2563EB",
+    "Crypto": "#F59E0B",
+    "Indices/ETF": "#7C3AED",
+    "Obligations": "#059669",
 }
 
-# Couleurs de badge par ticker (identité visuelle façon "chip" Google
-# Finance) : vert/rouge volontairement exclus pour ne jamais entrer en
-# conflit visuel avec le code couleur gain/perte utilisé ailleurs sur la page.
-_BADGE_PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa7"]
-_BADGE_DARK_TEXT = {"#eda100", "#e87ba4"}  # contraste insuffisant en texte blanc
+# Contraste insuffisant en texte blanc sur ces fonds de badge (couleurs
+# claires) : texte sombre à la place.
+_BADGE_DARK_TEXT_CATEGORIES = {"Crypto"}
 
 
-def badge_color(ticker: str, category: str | None = None) -> tuple[str, str]:
-    """Couleur de fond + couleur de texte lisible pour le badge d'un ticker.
-
-    Si `category` est fournie (Actions/Crypto/Indices-ETF/Autres, voir
-    CATEGORY_COLORS), le badge reprend la couleur de la catégorie — deux
-    tickers de la même classe d'actif ont alors la même couleur, et NVIDIA
-    n'a plus de raison de partager sa couleur avec le Bitcoin. Sans catégorie
-    connue (tables où elle n'est pas disponible sans appel réseau
-    supplémentaire, ex. historique/ordres en attente), on retombe sur
-    l'ancien calcul déterministe à partir des lettres du ticker."""
-    if category is not None:
-        bg = CATEGORY_COLORS.get(category, LIGHT_FAINT)
-        return bg, "#ffffff"
-    bg = _BADGE_PALETTE[sum(ord(c) for c in ticker) % len(_BADGE_PALETTE)]
-    fg = LIGHT_TEXT if bg in _BADGE_DARK_TEXT else "#ffffff"
+def badge_color(category: str | None) -> tuple[str, str]:
+    """Couleur de fond + couleur de texte lisible pour le badge d'un ticker,
+    déterminée uniquement par sa classe d'actif (voir CATEGORY_COLORS) —
+    deux tickers de la même catégorie partagent toujours la même couleur.
+    Catégorie absente/inconnue (ex. forex, tables où elle n'est pas
+    disponible sans appel réseau supplémentaire) : couleur neutre par défaut,
+    jamais une couleur aléatoire par ticker."""
+    bg = CATEGORY_COLORS.get(category or "", LIGHT_FAINT)
+    fg = LIGHT_TEXT if category in _BADGE_DARK_TEXT_CATEGORIES else "#ffffff"
     return bg, fg
 
 _CSS = f"""
@@ -362,11 +360,11 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     font-variant-numeric: tabular-nums;
 }}
 
-/* Expanders, séparateurs, sidebar */
+/* Expanders, séparateurs, sidebar : pas de cadre — juste de l'espacement, la
+   hiérarchie vient de la typo (voir la direction "fintech épuré" du thème). */
 [data-testid="stExpander"] {{
-    background: var(--ts-panel) !important;
-    border: 1px solid var(--ts-border) !important;
-    border-radius: 3px !important;
+    background: transparent !important;
+    border: none !important;
 }}
 hr {{ border-color: var(--ts-border) !important; }}
 [data-testid="stSidebar"] {{
@@ -374,20 +372,19 @@ hr {{ border-color: var(--ts-border) !important; }}
     border-right: 1px solid var(--ts-border) !important;
 }}
 
-/* Alertes : texte coloré + bordure fine plutôt que pastille pleine */
+/* Alertes : texte coloré, sans cadre ni fond de bloc (l'icône native
+   Streamlit suffit à les distinguer du texte courant). */
 [data-testid="stAlert"] {{
-    background: var(--ts-panel) !important;
-    border: 1px solid var(--ts-border) !important;
-    border-radius: 3px !important;
+    background: transparent !important;
+    border: none !important;
     font-family: {FONT_SANS} !important;
 }}
 
 /* Tableaux (positions, historique) : de vrais st.columns par ligne (pas du
-   HTML brut), pour pouvoir y placer de vrais boutons de navigation. */
+   HTML brut), pour pouvoir y placer de vrais boutons de navigation. Pas de
+   cadre autour du tableau — juste de la marge ; le repère visuel entre
+   lignes reste la fine bordure du en-tête/des lignes ci-dessous. */
 [class*="st-key-tstable_"] {{
-    border: 1px solid var(--ts-border);
-    border-radius: 3px;
-    padding: 0.3rem 0.75rem;
     margin: 0.4rem 0 1rem 0;
 }}
 [class*="st-key-tstable_"] [data-testid="stHorizontalBlock"] {{
@@ -397,7 +394,7 @@ hr {{ border-color: var(--ts-border) !important; }}
     align-items: center;
 }}
 [class*="st-key-tstable_"] [data-testid="stHorizontalBlock"]:hover {{
-    background: rgba(11,11,11,0.025);
+    background: rgba(24,24,27,0.03);
 }}
 .ts-col-label {{
     color: var(--ts-muted);
@@ -649,11 +646,8 @@ _LIGHT_CSS = f"""
    Trading : préfixer un nouveau container par "ts_card_" lui donne
    automatiquement ce style, sans toucher à ce fichier. */
 [class*="st-key-ts_card_"] {{
-    background: {LIGHT_SURFACE};
-    border: 1px solid {LIGHT_BORDER};
-    border-radius: 10px;
-    padding: 1rem 1.25rem;
-    margin-bottom: 1rem;
+    padding: 0.4rem 0;
+    margin-bottom: 1.25rem;
 }}
 
 /* Boutons (pastilles portefeuille, pastilles de période...) */
@@ -889,12 +883,10 @@ _LIGHT_CSS = f"""
 }}
 
 /* Tableau (positions / historique) : mêmes principes que le tableau sombre
-   (de vrais st.columns par ligne pour de vrais boutons de navigation). */
+   (de vrais st.columns par ligne pour de vrais boutons de navigation). Pas de
+   cadre autour du tableau — juste de la marge ; la séparation entre lignes
+   reste la fine bordure ci-dessous (espacement, pas un cadre plein). */
 .st-key-ts_light [class*="st-key-tslight_table_"] {{
-    border: 1px solid {LIGHT_BORDER};
-    border-radius: 10px;
-    padding: 0.3rem 0.9rem;
-    background: {LIGHT_SURFACE};
     margin-bottom: 1rem;
 }}
 .st-key-ts_light [class*="st-key-tslight_table_"] [data-testid="stHorizontalBlock"] {{
@@ -917,7 +909,7 @@ _LIGHT_CSS = f"""
     margin-bottom: 0.4rem !important;
 }}
 .st-key-ts_light [class*="st-key-tslight_table_"] [data-testid="stHorizontalBlock"]:hover {{
-    background: rgba(11,11,11,0.025);
+    background: rgba(24,24,27,0.03);
 }}
 .ts-light-col-label {{
     color: {LIGHT_FAINT};
@@ -961,16 +953,16 @@ _LIGHT_CSS = f"""
     text-decoration: underline;
 }}
 
-/* Expanders (historique, réinitialisation) et alertes */
+/* Expanders (historique, réinitialisation) et alertes : pas de cadre ni de
+   fond de bloc, juste du texte hiérarchisé par la typo (voir direction
+   "fintech épuré" du thème). */
 .st-key-ts_light [data-testid="stExpander"] {{
-    background: {LIGHT_SURFACE} !important;
-    border: 1px solid {LIGHT_BORDER} !important;
-    border-radius: 10px !important;
+    background: transparent !important;
+    border: none !important;
 }}
 .st-key-ts_light [data-testid="stAlert"] {{
-    background: {LIGHT_SURFACE} !important;
-    border: 1px solid {LIGHT_BORDER} !important;
-    border-radius: 8px !important;
+    background: transparent !important;
+    border: none !important;
     color: {LIGHT_TEXT} !important;
 }}
 
@@ -1018,9 +1010,8 @@ _LIGHT_CSS = f"""
        resserré explicitement (paddings de carte, boutons pastille,
        métriques) pour ne plus déborder sur un écran de 375-414px. */
     .st-key-ts_light [class*="st-key-ts_card_"] {{
-        padding: 0.75rem 0.9rem !important;
-        border-radius: 8px !important;
-        margin-bottom: 0.75rem !important;
+        padding: 0.3rem 0 !important;
+        margin-bottom: 0.9rem !important;
     }}
     .st-key-ts_light .stButton > button,
     .st-key-ts_light .stFormSubmitButton > button {{
@@ -1325,6 +1316,10 @@ def _light_cell_content(col: dict, value) -> str:
         return "—"
     if kind == "text":
         return html_lib.escape(str(value))
+    if kind == "mono_text":
+        # Valeur déjà formatée en chaîne (ex : prix avec suffixe "pts"/devise) mais
+        # numérique par nature : police monospace comme les autres colonnes de chiffres.
+        return f'<span class="ts-light-num">{html_lib.escape(str(value))}</span>'
     if kind == "num":
         return f'<span class="ts-light-num">{value:,.{decimals}f}</span>'
     if kind == "eur":
@@ -1376,13 +1371,13 @@ def render_table_light(
     """Équivalent de render_table pour le thème clair (onglet Portefeuille) :
     même technique (de vrais st.columns par ligne, de vrais st.button pour la
     navigation), avec en plus un type de colonne "ticker_badge" qui rend le
-    ticker comme une pastille colorée cliquable (couleur déterministe par
-    ticker, voir badge_color) plutôt qu'un simple lien texte.
+    ticker comme une pastille colorée cliquable (couleur fixe par classe
+    d'actif, voir badge_color/CATEGORY_COLORS) plutôt qu'un simple lien texte.
 
     `show_header=False` masque la ligne d'en-têtes (listes compactes façon
     encadré d'actifs, où les libellés de colonne n'apportent rien).
     """
-    numeric_kinds = {"num", "eur", "signed_eur", "pct", "signed_pct", "signed_eur_pct"}
+    numeric_kinds = {"num", "eur", "signed_eur", "pct", "signed_pct", "signed_eur_pct", "mono_text"}
     widths = [
         col["width"] if "width" in col else (1.3 if col.get("kind") in numeric_kinds else 1.0)
         for col in columns
@@ -1417,7 +1412,7 @@ def render_table_light(
                     name = row.get("nav_name", row.get("name", ticker))
                     label = "—" if value is None else str(value)
                     key = f"tslight_ticker_{table_key}_{rid}"
-                    bg, fg = badge_color(ticker, row.get("category"))
+                    bg, fg = badge_color(row.get("category"))
                     # Sélecteur à 3 classes (ts_light + la clé de ce badge + .stButton) pour
                     # dépasser la spécificité de la règle générique .st-key-ts_light .stButton
                     # > button (2 classes) : à égalité de !important, la spécificité la plus
@@ -1473,7 +1468,7 @@ def render_compact_list(
     """
     with st.container(key=f"tslight_mobile_{table_key}"):
         for row in rows:
-            bg, fg = badge_color(row["ticker"], row.get("category"))
+            bg, fg = badge_color(row.get("category"))
             side = row.get("side")
             side_html = ""
             if side:

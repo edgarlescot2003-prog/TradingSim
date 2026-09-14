@@ -45,13 +45,15 @@ FOREX_COMMODITIES = [
 # séparé plus tard) — voir la vérification dans render().
 NON_TRADABLE_TICKERS = {t for t, _ in FOREX_COMMODITIES}
 # Suggestions par défaut de la recherche quand l'utilisateur n'a pas encore
-# d'historique de recherche.
-DEFAULT_SUGGESTIONS = TOP_CAP[:4] + CRYPTO[:2]
+# d'historique de recherche (ticker, nom, catégorie — pour le badge coloré).
+DEFAULT_SUGGESTIONS = (
+    [(t, n, "Actions") for t, n in TOP_CAP[:4]] + [(t, n, "Crypto") for t, n in CRYPTO[:2]]
+)
 
 ASSET_ROW_COLUMNS = [
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge", "width": 0.9},
     {"key": "name", "label": "Nom", "kind": "link", "width": 1.0},
-    {"key": "price", "label": "Prix", "kind": "text", "width": 1.5},
+    {"key": "price", "label": "Prix", "kind": "mono_text", "width": 1.5},
     {"key": "change_pct", "label": "Var. jour", "kind": "signed_pct", "width": 1.0},
     {"key": "change_30d_pct", "label": "Var. 30j", "kind": "signed_pct", "width": 1.0},
 ]
@@ -181,7 +183,7 @@ def _format_price(ticker: str, price: float, currency: str) -> str:
 
 
 def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
-                       quotes: dict, tradable: bool = True) -> None:
+                       quotes: dict, category: str, tradable: bool = True) -> None:
     with st.container(key=f"ts_card_{card_key}"):
         st.markdown(f"##### {title}")
         rows = []
@@ -190,6 +192,7 @@ def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
             rows.append({
                 "ticker": ticker,
                 "name": name,
+                "category": category,
                 "price": _format_price(ticker, q["price"], q["currency"]) if q else None,
                 "change_pct": q["change_pct"] if q else None,
                 "change_30d_pct": q.get("change_30d_pct") if q else None,
@@ -213,16 +216,17 @@ def _render_home_boxes() -> None:
     with st.container(key="ts_home_grid"):
         row1 = st.columns(2)
         with row1[0]:
-            _render_asset_box("home_indices", "Indices majeurs", INDICES, quotes)
+            _render_asset_box("home_indices", "Indices majeurs", INDICES, quotes, category="Indices/ETF")
         with row1[1]:
-            _render_asset_box("home_topcap", "Top capitalisation", TOP_CAP, quotes)
+            _render_asset_box("home_topcap", "Top capitalisation", TOP_CAP, quotes, category="Actions")
 
         row2 = st.columns(2)
         with row2[0]:
-            _render_asset_box("home_crypto", "Crypto les plus suivies", CRYPTO, quotes)
+            _render_asset_box("home_crypto", "Crypto les plus suivies", CRYPTO, quotes, category="Crypto")
         with row2[1]:
             _render_asset_box(
-                "home_forex", "Forex & Matières premières", FOREX_COMMODITIES, quotes, tradable=False,
+                "home_forex", "Forex & Matières premières", FOREX_COMMODITIES, quotes,
+                category=None, tradable=False,
             )
 
 
@@ -269,6 +273,7 @@ def _render_search() -> None:
                     "ticker": r["symbol"],
                     "name": f"{r['name']} · {r['exchange']}" if r["exchange"] else r["name"],
                     "nav_name": r["name"],  # sans la bourse : c'est ce nom qui atterrit sur les trades/positions
+                    "category": valuation.category_for(r.get("type", "")),
                 } for r in results[:8]]
                 theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
                                           table_key="search_results", show_header=False)
@@ -291,12 +296,15 @@ def _render_search() -> None:
         recent = search_history.get_recent(user_id)
         if recent:
             st.markdown('<div class="ts-light-col-label">Recherches récentes</div>', unsafe_allow_html=True)
-            rows = [{"ticker": r["ticker"], "name": r["name"]} for r in recent]
+            rows = [
+                {"ticker": r["ticker"], "name": r["name"], "category": valuation.category_for(r["quote_type"])}
+                for r in recent
+            ]
             theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
                                       table_key="recent_searches", show_header=False)
         else:
             st.markdown('<div class="ts-light-col-label">Suggestions</div>', unsafe_allow_html=True)
-            rows = [{"ticker": t, "name": n} for t, n in DEFAULT_SUGGESTIONS]
+            rows = [{"ticker": t, "name": n, "category": c} for t, n, c in DEFAULT_SUGGESTIONS]
             theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
                                       table_key="suggested_searches", show_header=False)
 
@@ -868,7 +876,7 @@ def _render_pending_orders(portfolio) -> None:
 
         for row in rows:
             cols = st.columns([1, 2, 1, 1.2, 0.8, 1])
-            bg, fg = theme.badge_color(row["symbol"])
+            bg, fg = theme.badge_color(None)  # catégorie inconnue ici (ordre en attente, pas de quote_type stocké)
             key = f"tslight_ticker_pending_{row['_order_id']}"
             st.markdown(
                 f"<style>.st-key-ts_light .st-key-{key}.stElementContainer .stButton > button "
