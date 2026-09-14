@@ -1053,14 +1053,14 @@ _LIGHT_CSS = f"""
         flex: none !important;
     }}
 
-    /* Graphique + récapitulatif des positions (fiche Trading) : 1 colonne au
-       lieu de 2 — le graphique garde toute la largeur sur mobile, la colonne
-       recap (pensée desktop, pour ne plus que le graphique occupe 100% de
-       la largeur) passe juste en dessous. */
-    .st-key-ts_light [class*="st-key-ts_trading_chart_row"] [data-testid="stHorizontalBlock"] {{
+    /* Graphique + récapitulatif des positions (courbe de performance,
+       Portefeuille) : 1 colonne au lieu de 2 — le graphique garde toute la
+       largeur sur mobile, la colonne recap (pensée desktop, pour ne plus que
+       le graphique occupe 100% de la largeur) passe juste en dessous. */
+    .st-key-ts_light [class*="st-key-ts_portfolio_chart_row"] [data-testid="stHorizontalBlock"] {{
         flex-direction: column !important;
     }}
-    .st-key-ts_light [class*="st-key-ts_trading_chart_row"] [data-testid="stColumn"] {{
+    .st-key-ts_light [class*="st-key-ts_portfolio_chart_row"] [data-testid="stColumn"] {{
         width: 100% !important;
         flex: none !important;
     }}

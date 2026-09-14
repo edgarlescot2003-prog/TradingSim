@@ -201,7 +201,7 @@ with messages_slot.container():
     theme.render_movers_alert(valuation.large_movers(snapshots))
 
 if st.session_state.active_tab == "trading":
-    ui_trading.render(portfolio, snapshots)
+    ui_trading.render(portfolio)
 elif st.session_state.active_tab == "cours":
     ui_tutorial.render()
 elif st.session_state.active_tab == "classement":

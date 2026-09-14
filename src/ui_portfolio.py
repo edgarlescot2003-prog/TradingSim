@@ -31,6 +31,18 @@ LIGHT_POSITION_COLUMNS = [
     {"key": "value", "label": "Valeur", "kind": "eur"},
 ]
 
+# Récapitulatif compact affiché à côté de la courbe de performance (voir
+# _render_positions_summary) : mêmes colonnes que LIGHT_POSITION_COLUMNS,
+# réduites (pas de Nom/Gain du jour/Valeur) pour rester étroit à côté du
+# graphique.
+COMPACT_POSITION_COLUMNS = [
+    {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
+    {"key": "side", "label": "Sens", "kind": "text"},
+    {"key": "price", "label": "Prix", "kind": "eur"},
+    {"key": "quantity", "label": "Quantité", "kind": "num", "decimals": 4},
+    {"key": "total_pnl", "label": "Gain", "kind": "signed_eur_pct", "width": 1.6},
+]
+
 HISTORY_COLUMNS = [
     {"key": "date", "label": "Date", "kind": "text"},
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
@@ -312,94 +324,133 @@ def _filter_value_history(value_history: list[dict], period_label: str) -> list[
     return filtered or value_history
 
 
-def _render_performance(portfolio) -> None:
+def _render_positions_summary(snapshots: list[dict]) -> None:
+    """Récapitulatif compact des positions ouvertes, affiché à côté de la
+    courbe de performance (voir _render_performance) plutôt qu'en dessous —
+    pour que le graphique n'occupe plus toute la largeur disponible sur
+    desktop. Redondant avec le tableau Positions complet plus haut sur la
+    page (voir _render_positions_table) : volontaire, pour un coup d'œil
+    rapide sans avoir à remonter jusqu'au graphique."""
+    with st.container(key="ts_card_portfolio_positions"):
+        st.markdown("##### Positions ouvertes")
+        if not snapshots:
+            st.caption("Aucune position ouverte.")
+            return
+        rows = [{
+            "ticker": s["position"].ticker,
+            "name": s["position"].name,
+            "category": s["category"],
+            "side": "Long" if s["position"].side == "long" else "Short",
+            "price": s["current_price_eur"],
+            "quantity": s["position"].quantity,
+            "total_pnl": (s["pnl_eur"], s["pnl_pct"]),
+        } for s in snapshots]
+        theme.render_table_light(
+            rows, COMPACT_POSITION_COLUMNS, row_key="ticker", table_key="portfolio_chart_positions",
+        )
+
+
+def _render_performance(portfolio, snapshots: list[dict]) -> None:
     with st.container(key="ts_card_performance"):
         st.markdown("##### Évolution de la valeur du portefeuille")
 
-        if len(portfolio.value_history) < 2:
-            st.caption(
-                "Pas encore assez d'historique pour tracer une courbe : un point est enregistré "
-                "par jour d'utilisation de l'application. Reviens après quelques jours d'activité "
-                "pour voir l'évolution se dessiner."
-            )
-            return
+        # Conteneur dédié : ancrage CSS pour repasser en 1 colonne sur mobile
+        # (voir le media query dans theme.py), le graphique gardant alors
+        # toute la largeur — la densité qui justifie la colonne recap n'a de
+        # sens que sur desktop. La colonne recap est rendue en premier : elle
+        # doit s'afficher même si le graphique lui-même n'a pas encore assez
+        # de données (portefeuille tout neuf, ci-dessous).
+        with st.container(key="ts_portfolio_chart_row"):
+            col_chart, col_positions = st.columns([2.3, 1])
+            with col_positions:
+                _render_positions_summary(snapshots)
 
-        period_label = st.session_state.get("ts_portfolio_period", "Tout")
-        with st.container(key="ts_period_pills", horizontal=True):
-            for label, _ in PERIODS:
-                if label == period_label:
-                    st.markdown(f'<div class="ts-period-active">{label}</div>', unsafe_allow_html=True)
-                elif st.button(label, key=f"ts_period_{label}"):
-                    st.session_state.ts_portfolio_period = label
-                    st.rerun()
+            with col_chart:
+                if len(portfolio.value_history) < 2:
+                    st.caption(
+                        "Pas encore assez d'historique pour tracer une courbe : un point est "
+                        "enregistré par jour d'utilisation de l'application. Reviens après "
+                        "quelques jours d'activité pour voir l'évolution se dessiner."
+                    )
+                    return
 
-        filtered_history = _filter_value_history(portfolio.value_history, period_label)
-        if len(filtered_history) < 2:
-            st.caption("Pas assez de points sur cette période pour tracer une courbe.")
-            return
+                period_label = st.session_state.get("ts_portfolio_period", "Tout")
+                with st.container(key="ts_period_pills", horizontal=True):
+                    for label, _ in PERIODS:
+                        if label == period_label:
+                            st.markdown(f'<div class="ts-period-active">{label}</div>', unsafe_allow_html=True)
+                        elif st.button(label, key=f"ts_period_{label}"):
+                            st.session_state.ts_portfolio_period = label
+                            st.rerun()
 
-        benchmark_label = st.selectbox(
-            "Comparer à un indice", ["Aucun"] + list(benchmark.BENCHMARKS.keys()), key="ts_benchmark_select",
-        )
+                filtered_history = _filter_value_history(portfolio.value_history, period_label)
+                if len(filtered_history) < 2:
+                    st.caption("Pas assez de points sur cette période pour tracer une courbe.")
+                    return
 
-        fig = go.Figure()
+                benchmark_label = st.selectbox(
+                    "Comparer à un indice", ["Aucun"] + list(benchmark.BENCHMARKS.keys()),
+                    key="ts_benchmark_select",
+                )
 
-        if benchmark_label == "Aucun":
-            df = pd.DataFrame(filtered_history)
-            df["date"] = pd.to_datetime(df["date"])
-            # Vert si la valeur a progressé sur la période affichée, rouge sinon —
-            # même principe hausse/baisse que partout ailleurs dans l'app.
-            positive = df["value_eur"].iloc[-1] >= df["value_eur"].iloc[0]
-            color = theme.LIGHT_GREEN if positive else theme.LIGHT_RED
-            fig.add_trace(go.Scatter(
-                x=df["date"], y=df["value_eur"], mode="lines", name="Portefeuille",
-                line=dict(color=color, width=2),
-                fill="tozeroy", fillgradient=theme.plotly_area_fillgradient(color),
-            ))
-            fig.update_layout(**theme.plotly_layout(yaxis_title="Valeur (€)"))
-            # autorange=False : sans ça, le remplissage tirerait l'axe jusqu'à 0 et
-            # écraserait la courbe (voir theme.plotly_area_range).
-            fig.update_yaxes(range=theme.plotly_area_range(df["value_eur"]), autorange=False)
-            st.plotly_chart(fig, use_container_width=True, config=theme.PLOTLY_CONFIG)
-            st.caption(theme.PLOTLY_ZOOM_HINT)
-            return
+                fig = go.Figure()
 
-        try:
-            comparison_df = benchmark.build_comparison(filtered_history, benchmark_label)
-        except md.MarketDataError as e:
-            st.warning(f"Comparaison indisponible : {e}")
-            return
+                if benchmark_label == "Aucun":
+                    df = pd.DataFrame(filtered_history)
+                    df["date"] = pd.to_datetime(df["date"])
+                    # Vert si la valeur a progressé sur la période affichée, rouge sinon —
+                    # même principe hausse/baisse que partout ailleurs dans l'app.
+                    positive = df["value_eur"].iloc[-1] >= df["value_eur"].iloc[0]
+                    color = theme.LIGHT_GREEN if positive else theme.LIGHT_RED
+                    fig.add_trace(go.Scatter(
+                        x=df["date"], y=df["value_eur"], mode="lines", name="Portefeuille",
+                        line=dict(color=color, width=2),
+                        fill="tozeroy", fillgradient=theme.plotly_area_fillgradient(color),
+                    ))
+                    fig.update_layout(**theme.plotly_layout(yaxis_title="Valeur (€)"))
+                    # autorange=False : sans ça, le remplissage tirerait l'axe jusqu'à 0 et
+                    # écraserait la courbe (voir theme.plotly_area_range).
+                    fig.update_yaxes(range=theme.plotly_area_range(df["value_eur"]), autorange=False)
+                    st.plotly_chart(fig, use_container_width=True, config=theme.PLOTLY_CONFIG)
+                    st.caption(theme.PLOTLY_ZOOM_HINT)
+                    return
 
-        if comparison_df is None:
-            st.caption("Pas assez de points sur cette période pour comparer à un indice.")
-            return
+                try:
+                    comparison_df = benchmark.build_comparison(filtered_history, benchmark_label)
+                except md.MarketDataError as e:
+                    st.warning(f"Comparaison indisponible : {e}")
+                    return
 
-        # Courbe du portefeuille : même logique vert/rouge que ci-dessus, avec
-        # remplissage. La courbe de comparaison reste nette et neutre (MUTED),
-        # sans remplissage, pour ne pas rivaliser visuellement avec la principale.
-        portfolio_series = comparison_df["Portefeuille"]
-        positive = portfolio_series.iloc[-1] >= portfolio_series.iloc[0]
-        color = theme.LIGHT_GREEN if positive else theme.LIGHT_RED
-        fig.add_trace(go.Scatter(
-            x=comparison_df.index, y=portfolio_series, mode="lines", name="Portefeuille",
-            line=dict(color=color, width=2),
-            fill="tozeroy", fillgradient=theme.plotly_area_fillgradient(color),
-        ))
-        fig.add_trace(go.Scatter(
-            x=comparison_df.index, y=comparison_df[benchmark_label], mode="lines", name=benchmark_label,
-            line=dict(color=theme.LIGHT_MUTED, width=2),
-        ))
-        fig.update_layout(**theme.plotly_layout(yaxis_title="Base 100"))
-        fig.update_yaxes(
-            range=theme.plotly_area_range(portfolio_series, comparison_df[benchmark_label]),
-            autorange=False,
-        )
-        st.plotly_chart(fig, use_container_width=True, config=theme.PLOTLY_CONFIG)
-        st.caption(
-            "Les deux courbes sont indexées à 100 sur leur premier point commun de la période "
-            "sélectionnée, pour comparer leur performance relative."
-        )
-        st.caption(theme.PLOTLY_ZOOM_HINT)
+                if comparison_df is None:
+                    st.caption("Pas assez de points sur cette période pour comparer à un indice.")
+                    return
+
+                # Courbe du portefeuille : même logique vert/rouge que ci-dessus, avec
+                # remplissage. La courbe de comparaison reste nette et neutre (MUTED),
+                # sans remplissage, pour ne pas rivaliser visuellement avec la principale.
+                portfolio_series = comparison_df["Portefeuille"]
+                positive = portfolio_series.iloc[-1] >= portfolio_series.iloc[0]
+                color = theme.LIGHT_GREEN if positive else theme.LIGHT_RED
+                fig.add_trace(go.Scatter(
+                    x=comparison_df.index, y=portfolio_series, mode="lines", name="Portefeuille",
+                    line=dict(color=color, width=2),
+                    fill="tozeroy", fillgradient=theme.plotly_area_fillgradient(color),
+                ))
+                fig.add_trace(go.Scatter(
+                    x=comparison_df.index, y=comparison_df[benchmark_label], mode="lines", name=benchmark_label,
+                    line=dict(color=theme.LIGHT_MUTED, width=2),
+                ))
+                fig.update_layout(**theme.plotly_layout(yaxis_title="Base 100"))
+                fig.update_yaxes(
+                    range=theme.plotly_area_range(portfolio_series, comparison_df[benchmark_label]),
+                    autorange=False,
+                )
+                st.plotly_chart(fig, use_container_width=True, config=theme.PLOTLY_CONFIG)
+                st.caption(
+                    "Les deux courbes sont indexées à 100 sur leur premier point commun de la période "
+                    "sélectionnée, pour comparer leur performance relative."
+                )
+                st.caption(theme.PLOTLY_ZOOM_HINT)
 
 
 def _render_portfolio_actions(portfolio) -> None:
@@ -457,6 +508,6 @@ def render(portfolio, total_value: float, snapshots: list[dict]) -> None:
         _render_contest_progress(portfolio, total_value)
         _render_highlights(portfolio, total_value, snapshots)
         _render_positions_table(snapshots)
-        _render_performance(portfolio)
+        _render_performance(portfolio, snapshots)
         _render_portfolio_actions(portfolio)
         _render_history(portfolio)

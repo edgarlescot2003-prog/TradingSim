@@ -61,16 +61,6 @@ SEARCH_RESULT_COLUMNS = [
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
     {"key": "name", "label": "Nom", "kind": "link"},
 ]
-# Récapitulatif compact affiché à côté du graphique (voir _render_positions_
-# summary) : mêmes colonnes que le tableau Positions du Portefeuille, mais
-# réduites (pas de Nom/Gain du jour/Valeur) pour rester étroit.
-COMPACT_POSITION_COLUMNS = [
-    {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
-    {"key": "side", "label": "Sens", "kind": "text"},
-    {"key": "price", "label": "Prix", "kind": "eur"},
-    {"key": "quantity", "label": "Quantité", "kind": "num", "decimals": 4},
-    {"key": "total_pnl", "label": "Gain", "kind": "signed_eur_pct", "width": 1.6},
-]
 # yfinance renvoie aussi des devises/futures dans ses résultats de recherche :
 # hors périmètre pour l'instant (forex/matières premières restent dans leur
 # encadré dédié, non recherchables ici — voir la demande initiale).
@@ -372,31 +362,6 @@ def _fetch_chart_history(ticker: str, quote_type: str, period_key: str):
 
     hist, effective = md.get_history_with_fallback(ticker, interval, start)
     return hist, effective, "Yahoo Finance"
-
-
-def _render_positions_summary(snapshots: list[dict]) -> None:
-    """Récapitulatif compact des positions ouvertes, affiché à côté du
-    graphique (voir render()) plutôt qu'en dessous — pour que le graphique
-    n'occupe plus toute la largeur disponible sur desktop. Mêmes colonnes
-    que le tableau Positions de l'onglet Portefeuille, réduites (voir
-    COMPACT_POSITION_COLUMNS), calculées à partir des MÊMES snapshots déjà
-    valorisés une fois par app.py pour la page entière : aucun appel API
-    supplémentaire propre à cet encadré."""
-    with st.container(key="ts_card_trading_positions"):
-        st.markdown("##### Positions ouvertes")
-        if not snapshots:
-            st.caption("Aucune position ouverte.")
-            return
-        rows = [{
-            "ticker": s["position"].ticker,
-            "name": s["position"].name,
-            "category": s["category"],
-            "side": "Long" if s["position"].side == "long" else "Short",
-            "price": s["current_price_eur"],
-            "quantity": s["position"].quantity,
-            "total_pnl": (s["pnl_eur"], s["pnl_pct"]),
-        } for s in snapshots]
-        theme.render_table_light(rows, COMPACT_POSITION_COLUMNS, row_key="ticker", table_key="trading_positions")
 
 
 @st.fragment(run_every=30)
@@ -999,7 +964,7 @@ def _render_pending_orders(portfolio) -> None:
 
 # -- Point d'entrée -------------------------------------------------------------
 
-def render(portfolio, snapshots: list[dict]) -> None:
+def render(portfolio) -> None:
     theme.inject_light()
     # À consommer avant de recréer le widget search_query ci-dessous (voir la
     # docstring de theme.go_to_trading : la remise à zéro ne peut pas se faire
@@ -1029,16 +994,7 @@ def render(portfolio, snapshots: list[dict]) -> None:
             st.session_state.selected_ticker = None
             st.rerun()
 
-        # Conteneur dédié : ancrage CSS pour repasser en 1 colonne sur mobile
-        # (voir le media query dans theme.py), le graphique gardant alors
-        # toute la largeur — la densité qui justifie la colonne recap n'a de
-        # sens que sur desktop.
-        with st.container(key="ts_trading_chart_row"):
-            col_chart, col_positions = st.columns([2.3, 1])
-            with col_chart:
-                _render_price_and_chart(ticker, quote_type)
-            with col_positions:
-                _render_positions_summary(snapshots)
+        _render_price_and_chart(ticker, quote_type)
 
         # Déposé en session par le fragment ci-dessus (voir sa docstring) : il a
         # déjà tourné une fois de façon synchrone à ce stade du script, cette
