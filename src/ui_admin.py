@@ -59,13 +59,26 @@ def _render_row(user, current_user_id: str) -> None:
     with st.container(key=f"ts_admin_row_{user.id}"):
         c1, c2, c3, c4, c5, c6 = st.columns([2, 1.4, 1, 1.1, 1.3, 1.3])
 
-        c1.markdown(theme.mono(user.username), unsafe_allow_html=True)
-        c2.write(auth.ROLE_LABELS[user.role])
+        # Libellé mobile (ts-cell-mobile-label, voir _CSS) : invisible en
+        # desktop (l'en-tête ts_admin_header suffit), affiché une fois la
+        # ligne empilée en carte sur petit écran, où l'en-tête est masqué —
+        # même logique que les tableaux tstable_/tslight_table_.
+        c1.markdown(
+            f'<span class="ts-cell-mobile-label">Identifiant</span>{theme.mono(user.username)}',
+            unsafe_allow_html=True,
+        )
+        c2.markdown(
+            f'<span class="ts-cell-mobile-label">Rôle</span>{auth.ROLE_LABELS[user.role]}',
+            unsafe_allow_html=True,
+        )
 
         status_color = theme.GREEN if user.is_active else theme.RED
         status_label = "Actif" if user.is_active else "Désactivé"
-        c3.markdown(f'<span style="color:{status_color};font-weight:600">{status_label}</span>',
-                    unsafe_allow_html=True)
+        c3.markdown(
+            f'<span class="ts-cell-mobile-label">Statut</span>'
+            f'<span style="color:{status_color};font-weight:600">{status_label}</span>',
+            unsafe_allow_html=True,
+        )
 
         if is_admin_row:
             c4.caption("—")
