@@ -11,7 +11,7 @@ def _login_user(user) -> None:
 
 
 def _render_login() -> None:
-    with st.form("login_form"):
+    with st.form("login_form", border=False):
         username = st.text_input("Identifiant")
         password = st.text_input("Mot de passe", type="password")
         submitted = st.form_submit_button("Se connecter", type="primary")
@@ -30,7 +30,7 @@ def _render_login() -> None:
 
 
 def _render_signup() -> None:
-    with st.form("signup_form"):
+    with st.form("signup_form", border=False):
         username = st.text_input("Choisis un identifiant")
         password = st.text_input("Choisis un mot de passe (8 caractères minimum)", type="password")
         password_confirm = st.text_input("Confirme le mot de passe", type="password")

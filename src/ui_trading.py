@@ -503,7 +503,9 @@ def _render_order_summary(price: float, quantity: float, leverage: float, side: 
                     <div style="color:{color};font-weight:700;font-family:{theme.FONT_MONO};font-size:0.95rem;">
                         {pnl_eur:+,.2f} €
                     </div>
-                    <div style="color:{color};font-size:0.72rem;">{pnl_pct_margin:+.1f}% marge</div>
+                    <div style="color:{color};font-size:0.72rem;font-family:{theme.FONT_MONO};">
+                        {pnl_pct_margin:+.1f}% marge
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -712,7 +714,12 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
         if is_opening and quantity > 0:
             _render_order_summary(ref_price, quantity, leverage, side_for_pnl)
         elif not is_opening and quantity > 0:
-            st.caption(f"Exposition : {quantity * ref_price:,.2f} € · Cash disponible : {portfolio.cash:,.2f} €")
+            exposure_str = f"{quantity * ref_price:,.2f} €"
+            cash_str = f"{portfolio.cash:,.2f} €"
+            st.caption(
+                f"Exposition : {theme.mono(exposure_str)} · Cash disponible : {theme.mono(cash_str)}",
+                unsafe_allow_html=True,
+            )
 
         tp_sl_tiers = _render_tp_sl_at_order_form(order_mode, ref_price) if is_opening else []
 
@@ -790,26 +797,42 @@ def _render_tp_sl_section(portfolio, ticker: str) -> None:
         past_orders = [o for o in ticker_orders if o.status != tp_sl.STATUS_ACTIVE]
 
         if active_orders:
-            header_cols = st.columns([1.1, 1, 1.3, 1, 0.8])
-            for col, label in zip(header_cols, ["Type", "Prix cible", "Quantité", "Créé le", ""]):
-                col.markdown(f'<div class="ts-light-col-label">{label}</div>', unsafe_allow_html=True)
-            for o in active_orders:
-                cols = st.columns([1.1, 1, 1.3, 1, 0.8])
-                color = theme.LIGHT_GREEN if o.kind == tp_sl.KIND_TAKE_PROFIT else theme.LIGHT_RED
-                cols[0].markdown(
-                    f'<span style="color:{color};font-weight:600">{tp_sl.KIND_LABELS[o.kind]}</span>',
-                    unsafe_allow_html=True,
-                )
-                cols[1].markdown(f'<span class="ts-light-num">{o.target_price_eur:,.2f} €</span>', unsafe_allow_html=True)
-                cols[2].markdown(
-                    f'<span class="ts-light-num">{o.quantity_pct:g}% ({o.trigger_quantity:g} {ticker})</span>',
-                    unsafe_allow_html=True,
-                )
-                cols[3].caption(o.created_at[:10])
-                if cols[4].button("Annuler", key=f"cancel_tp_sl_{o.id}"):
-                    with db.get_session() as session:
-                        tp_sl.cancel_tp_sl(session, o.id, st.session_state.user_id)
-                    st.rerun()
+            tp_sl_widths = [1.1, 1, 1.3, 1, 0.8]
+            # Mêmes clés de conteneur que render_table_light (theme.py) : même
+            # style de ligne/séparateur ET conversion en cartes empilées sur
+            # mobile, sans quoi ce tableau à la main resterait tassé sur petit
+            # écran (voir le media query dans theme.py).
+            with st.container(key="tslight_table_tpsl"):
+                with st.container(key="tslight_header_tpsl"):
+                    header_cols = st.columns(tp_sl_widths)
+                    for col, label in zip(header_cols, ["Type", "Prix cible", "Quantité", "Créé le", ""]):
+                        col.markdown(f'<div class="ts-light-col-label">{label}</div>', unsafe_allow_html=True)
+                for o in active_orders:
+                    cols = st.columns(tp_sl_widths)
+                    color = theme.LIGHT_GREEN if o.kind == tp_sl.KIND_TAKE_PROFIT else theme.LIGHT_RED
+                    cols[0].markdown(
+                        f'<span class="ts-cell-mobile-label">Type</span>'
+                        f'<span style="color:{color};font-weight:600">{tp_sl.KIND_LABELS[o.kind]}</span>',
+                        unsafe_allow_html=True,
+                    )
+                    cols[1].markdown(
+                        f'<span class="ts-cell-mobile-label">Prix cible</span>'
+                        f'<span class="ts-light-num">{o.target_price_eur:,.2f} €</span>',
+                        unsafe_allow_html=True,
+                    )
+                    cols[2].markdown(
+                        f'<span class="ts-cell-mobile-label">Quantité</span>'
+                        f'<span class="ts-light-num">{o.quantity_pct:g}% ({o.trigger_quantity:g} {ticker})</span>',
+                        unsafe_allow_html=True,
+                    )
+                    cols[3].caption(
+                        f'<span class="ts-cell-mobile-label">Créé le</span>{o.created_at[:10]}',
+                        unsafe_allow_html=True,
+                    )
+                    if cols[4].button("Annuler", key=f"cancel_tp_sl_{o.id}"):
+                        with db.get_session() as session:
+                            tp_sl.cancel_tp_sl(session, o.id, st.session_state.user_id)
+                        st.rerun()
         else:
             st.caption("Aucun palier actif sur cet actif pour l'instant.")
 
@@ -876,30 +899,55 @@ def _render_pending_orders(portfolio) -> None:
             "_order_id": o.id,
         } for o in portfolio.pending_orders]
 
-        for row in rows:
-            cols = st.columns([1, 2, 1, 1.2, 0.8, 1])
-            bg, fg = theme.badge_color(None)  # catégorie inconnue ici (ordre en attente, pas de quote_type stocké)
-            key = f"tslight_ticker_pending_{row['_order_id']}"
-            st.markdown(
-                f"<style>.st-key-ts_light .st-key-{key}.stElementContainer .stButton > button "
-                f"{{ background:{bg} !important; color:{fg} !important; }}</style>",
-                unsafe_allow_html=True,
-            )
-            if cols[0].button(row["symbol"], key=key):
-                theme.go_to_trading(row["symbol"], row["name"])
-            color = theme.LIGHT_GREEN if row["_action_kind"] in buy_side else theme.LIGHT_RED
-            cols[1].markdown(
-                f'<span style="color:{color};font-weight:600">{row["action"]}</span> '
-                f'<span class="ts-light-col-label">{row["name"]}</span>',
-                unsafe_allow_html=True,
-            )
-            cols[2].markdown(f'<span class="ts-light-num">{row["quantity"]:g}</span>', unsafe_allow_html=True)
-            cols[3].markdown(f'<span class="ts-light-num">{row["limit_price"]:,.2f} €</span>', unsafe_allow_html=True)
-            cols[4].markdown(f'<span class="ts-light-num">{row["leverage"]}</span>', unsafe_allow_html=True)
-            if cols[5].button("Annuler", key=f"cancel_{row['_order_id']}"):
-                portfolio.cancel_order(row["_order_id"])
-                storage.save_portfolio(portfolio)
-                st.rerun()
+        widths = [1, 2, 1, 1.2, 0.8, 1]
+        # Conteneurs tslight_table_/tslight_header_ : mêmes clés que
+        # render_table_light (theme.py), pour hériter du même style de ligne/
+        # séparateur ET de la conversion en cartes empilées sur mobile (voir
+        # le media query dans theme.py) — sans quoi ce tableau, à la main,
+        # resterait tassé sur 6 colonnes sur petit écran.
+        with st.container(key="tslight_table_pending"):
+            with st.container(key="tslight_header_pending"):
+                header_cols = st.columns(widths)
+                for col, label in zip(header_cols, ["Symbole", "Action", "Quantité", "Prix limite", "Levier", ""]):
+                    col.markdown(f'<div class="ts-light-col-label">{label}</div>', unsafe_allow_html=True)
+
+            for row in rows:
+                cols = st.columns(widths)
+                bg, fg = theme.badge_color(None)  # catégorie inconnue ici (pas de quote_type stocké)
+                key = f"tslight_ticker_pending_{row['_order_id']}"
+                st.markdown(
+                    f"<style>.st-key-ts_light .st-key-{key}.stElementContainer .stButton > button "
+                    f"{{ background:{bg} !important; color:{fg} !important; }}</style>",
+                    unsafe_allow_html=True,
+                )
+                if cols[0].button(row["symbol"], key=key):
+                    theme.go_to_trading(row["symbol"], row["name"])
+                color = theme.LIGHT_GREEN if row["_action_kind"] in buy_side else theme.LIGHT_RED
+                cols[1].markdown(
+                    f'<span class="ts-cell-mobile-label">Action</span>'
+                    f'<span style="color:{color};font-weight:600">{row["action"]}</span> '
+                    f'<span class="ts-light-col-label">{row["name"]}</span>',
+                    unsafe_allow_html=True,
+                )
+                cols[2].markdown(
+                    f'<span class="ts-cell-mobile-label">Quantité</span>'
+                    f'<span class="ts-light-num">{row["quantity"]:g}</span>',
+                    unsafe_allow_html=True,
+                )
+                cols[3].markdown(
+                    f'<span class="ts-cell-mobile-label">Prix limite</span>'
+                    f'<span class="ts-light-num">{row["limit_price"]:,.2f} €</span>',
+                    unsafe_allow_html=True,
+                )
+                cols[4].markdown(
+                    f'<span class="ts-cell-mobile-label">Levier</span>'
+                    f'<span class="ts-light-num">{row["leverage"]}</span>',
+                    unsafe_allow_html=True,
+                )
+                if cols[5].button("Annuler", key=f"cancel_{row['_order_id']}"):
+                    portfolio.cancel_order(row["_order_id"])
+                    storage.save_portfolio(portfolio)
+                    st.rerun()
 
 
 # -- Point d'entrée -------------------------------------------------------------

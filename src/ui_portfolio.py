@@ -79,7 +79,7 @@ def _render_portfolio_pills(user_id: str) -> None:
             if len(portfolios) >= MAX_PORTFOLIOS_PER_USER:
                 st.caption(f"Limite de {MAX_PORTFOLIOS_PER_USER} portefeuilles par compte atteinte.")
             else:
-                with st.form("ts_new_portfolio_pill_form"):
+                with st.form("ts_new_portfolio_pill_form", border=False):
                     new_name = st.text_input("Nom", value="Nouveau portefeuille")
                     new_capital = st.number_input(
                         "Capital de départ (€)", min_value=1.0, value=10_000.0, step=100.0,
@@ -146,10 +146,12 @@ def _render_contest_progress(active_portfolio, active_total_value: float) -> Non
             f"{sign}{progress['pnl_eur']:,.2f} €", delta=f"{sign}{progress['pnl_pct']:.2f} %",
         )
         with c2:
+            initial_str = f"{progress['initial_capital']:,.2f} €"
+            current_str = f"{progress['current_value']:,.2f} €"
             st.markdown(
-                f"Capital de départ : **{progress['initial_capital']:,.2f} €** → "
+                f"Capital de départ : {theme.mono(initial_str)} → "
                 f"valeur {'actuelle' if progress['live'] else 'au dernier calcul'} : "
-                f"<span style='color:{color};font-weight:600'>{progress['current_value']:,.2f} €</span>",
+                f"{theme.mono(current_str, color=color)}",
                 unsafe_allow_html=True,
             )
             if not progress["live"] and progress["as_of"]:
@@ -215,10 +217,12 @@ def _render_position_detail(row: dict) -> None:
     theme.render_compact_list) : les champs qui n'ont pas leur place dans la
     ligne compacte (Quantité, Gain total, Valeur)."""
     total_color = theme.LIGHT_GREEN if row["total_pnl"][0] >= 0 else theme.LIGHT_RED
+    quantity_str = f"{row['quantity']:g}"
+    value_str = f"{row['value']:,.2f} €"
     st.markdown(
-        f"Quantité : **{row['quantity']:g}**  \n"
-        f"Gain total : <span style='color:{total_color}'>{_signed_eur_pct(*row['total_pnl'])}</span>  \n"
-        f"Valeur : **{row['value']:,.2f} €**",
+        f"Quantité : {theme.mono(quantity_str)}  \n"
+        f"Gain total : {theme.mono(_signed_eur_pct(*row['total_pnl']), color=total_color)}  \n"
+        f"Valeur : {theme.mono(value_str)}",
         unsafe_allow_html=True,
     )
     if st.button("Voir sur Trading", key=f"mobile_goto_position_{row['ticker']}"):

@@ -16,7 +16,7 @@ _CONTENT_PATH = Path(__file__).resolve().parent.parent / "content" / "reglement.
 
 
 def render() -> None:
-    st.title("Règlement du concours")
+    st.subheader("Règlement du concours")
     try:
         content = _CONTENT_PATH.read_text(encoding="utf-8")
     except FileNotFoundError:

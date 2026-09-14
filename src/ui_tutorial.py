@@ -143,6 +143,11 @@ Le reste, c'est de la pratique. Lance-toi, explore, et n'hésite pas à revenir 
 
 
 def render() -> None:
+    # st.title (h1), pas st.subheader : ce texte fait partie du sélecteur CSS
+    # mobile `body:has([data-testid="stExpandSidebarButton"]) h1` (voir
+    # theme.py, testé réellement à 390px) qui évite le chevauchement avec le
+    # bouton de réouverture du panneau latéral quand celui-ci est replié —
+    # un changement de niveau de titre ici casserait ce correctif silencieusement.
     st.title("Bienvenue sur TradingSim")
     st.markdown(INTRO)
     st.divider()
