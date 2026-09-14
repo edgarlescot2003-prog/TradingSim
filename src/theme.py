@@ -559,11 +559,15 @@ hr {{ border-color: var(--ts-border) !important; }}
        (7.5rem, voir plus haut) est disproportionnée sur un écran étroit.
        Nom du portefeuille masqué (superflu, déjà visible dans le panneau
        latéral) et P&L éclaté en deux lignes (montant, puis pourcentage
-       dessous, voir render_topbar) pour que le tout (logo + valeur totale +
-       P&L) tienne sur une seule ligne plutôt que de passer à la ligne. */
+       dessous, voir render_topbar). Avec 3 indicateurs à droite (valeur
+       totale, liquidité disponible, P&L) en plus du logo, tout ne tient
+       plus sur une seule ligne à 375-414px : `flex-wrap` reste sur sa
+       valeur par défaut (`wrap`, voir la règle desktop) plutôt que forcé en
+       `nowrap` comme avant l'ajout de la liquidité — la barre est `sticky`
+       (pas `fixed`, voir plus haut) donc passer sur 2 lignes ne recouvre
+       rien, juste une barre un peu plus haute. */
     .ts-topbar {{
         padding: 0.5rem 3rem 0.5rem 0.9rem !important;
-        flex-wrap: nowrap !important;
     }}
     .ts-topbar-sep, .ts-topbar-portfolio {{ display: none; }}
     .ts-topbar-right {{ gap: 0.75rem; }}
@@ -1085,7 +1089,11 @@ def inject_light() -> None:
     st.markdown(f"<style>{_LIGHT_CSS}</style>", unsafe_allow_html=True)
 
 
-def render_topbar(portfolio_name: str, total_value: float, pnl_eur: float, pnl_pct: float) -> None:
+def render_topbar(portfolio_name: str, total_value: float, pnl_eur: float, pnl_pct: float, cash: float) -> None:
+    """`cash` : liquidité disponible du portefeuille actif (portfolio.cash),
+    la même valeur que le garde-fou déjà utilisé pour vérifier qu'un ordre ne
+    dépasse pas le solde disponible (voir Portfolio.buy/open_short) — pas un
+    nouveau calcul, juste rendue visible en permanence en haut de page."""
     color = GREEN if pnl_eur >= 0 else RED
     sign = "+" if pnl_eur >= 0 else ""
     st.markdown(
@@ -1100,6 +1108,10 @@ def render_topbar(portfolio_name: str, total_value: float, pnl_eur: float, pnl_p
                 <div class="ts-topbar-item">
                     <span class="ts-topbar-label">VALEUR TOTALE</span>
                     <span class="ts-topbar-value">{total_value:,.2f} €</span>
+                </div>
+                <div class="ts-topbar-item">
+                    <span class="ts-topbar-label">LIQUIDITÉ DISPONIBLE</span>
+                    <span class="ts-topbar-value">{cash:,.2f} €</span>
                 </div>
                 <div class="ts-topbar-item">
                     <span class="ts-topbar-label">P&amp;L JOUR</span>

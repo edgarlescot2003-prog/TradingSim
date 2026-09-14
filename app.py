@@ -190,7 +190,7 @@ if executed_messages or (now_ts - last_save_ts) >= _SAVE_THROTTLE_SECONDS:
 pnl_eur, pnl_pct = valuation.daily_pnl(portfolio, total_value)
 
 with topbar_slot.container():
-    theme.render_topbar(portfolio.name, total_value, pnl_eur, pnl_pct)
+    theme.render_topbar(portfolio.name, total_value, pnl_eur, pnl_pct, portfolio.cash)
 
 with messages_slot.container():
     for msg in executed_messages:

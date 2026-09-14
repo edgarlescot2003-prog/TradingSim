@@ -50,7 +50,19 @@ fiche Trading de l'actif.
 Le prix affiché et son graphique se rafraîchissent automatiquement toutes
 les 30 secondes via `@st.fragment(run_every=30)`, isolé du reste de la
 page. Le formulaire d'ordre (hors fragment) lit le prix via
-`st.session_state` sans dupliquer d'appel API.
+`st.session_state` sans dupliquer d'appel API. Zoom à la molette/pinch
+désactivé sur le graphique (`scrollZoom: False`, jugé peu pratique) : le
+sélecteur de période reste le seul moyen de changer l'échelle affichée ;
+survol et double-clic (reset du zoom) restent actifs, gérés par Plotly
+indépendamment de ce réglage.
+
+**Confirmation d'ordre en toast** : le message vert après achat/vente/short/
+ordre à cours limité placé utilise `st.toast(..., duration=6)` (~6 secondes,
+voir `ORDER_CONFIRMATION_TOAST_SECONDS`) plutôt que `st.success()`, qui
+disparaissait quasi instantanément à cause du `st.rerun()` juste après —
+`st.toast` est le seul mécanisme Streamlit qui survit à ce rerun. Contrepartie
+assumée : le message s'affiche désormais en haut à droite (notification
+Streamlit standard) plutôt qu'en bandeau vert inline dans le formulaire.
 
 **Saisie par montant à risquer (crypto uniquement)** : pour ouvrir/renforcer
 une position sur une **crypto** (achat, short), l'utilisateur saisit un
@@ -222,11 +234,24 @@ gains/pertes. Palette pilotée par les constantes de `src/theme.py`
 internes de Streamlit/BaseWeb — menus déroulants, popovers — suivent aussi
 le thème clair).
 
+**Barre de valeur (topbar, `theme.render_topbar`)** : 3 indicateurs à droite
+du logo — valeur totale, **liquidité disponible** (`portfolio.cash`, même
+valeur que le garde-fou déjà utilisé pour refuser un ordre qui dépasserait
+le solde, pas un nouveau calcul) et P&L du jour. Barre en `position: sticky`
+(pas `fixed`), volontairement : passer sur 2 lignes si ça ne tient pas sur
+une (voir Responsive mobile ci-dessous) ne recouvre jamais rien en dessous.
+
 **Responsive mobile** : passe faite (media queries `@media max-width:640px`
 dans `src/theme.py`) — échelle de police/paddings réduite globalement,
 tableaux en cartes empilées sur petit écran, graphiques Trading avec
 toolbar masquée + zoom par défaut sur les 3 derniers mois + sélecteur de
-période en une ligne défilante. Validé sur écran ~375-414px.
+période en une ligne défilante. Validé sur écran ~375-414px **avec 2
+indicateurs dans la topbar** ; depuis l'ajout de la liquidité disponible (3
+indicateurs), la topbar mobile n'est plus forcée en `nowrap` et peut passer
+sur 2 lignes — **pas revérifié sur un vrai écran** (connexion Supabase
+injoignable depuis l'environnement où ce changement a été fait, donc pas
+d'app lancée pour vérifier visuellement) : à confirmer par Edgar à l'usage,
+ajuster le CSS si le rendu à 375-414px n'est pas satisfaisant.
 
 ### Comptes et rôles (3 niveaux)
 - **Admin** (moi) : tous les droits — gestion des comptes, seul à pouvoir

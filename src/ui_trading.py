@@ -66,6 +66,14 @@ _EXCLUDED_SEARCH_TYPES = {"CURRENCY", "FUTURE"}
 
 MAX_LEVERAGE = 20.0
 
+# Durée d'affichage du toast de confirmation d'ordre (st.toast, voir
+# _render_order_form) : un simple st.success() ici disparaîtrait quasi
+# instantanément à cause du st.rerun() qui suit immédiatement pour
+# rafraîchir le reste de la page (positions, cash...) — st.toast est le seul
+# mécanisme Streamlit qui survit à ce rerun et s'efface tout seul après un
+# délai réel, indépendamment de toute interaction utilisateur.
+ORDER_CONFIRMATION_TOAST_SECONDS = 6
+
 # Nombre max de paliers TP/SL proposables directement dans le formulaire
 # d'ordre (voir _render_tp_sl_at_order_form) : garde le formulaire gérable ;
 # des paliers supplémentaires restent ajoutables après coup depuis la fiche
@@ -419,12 +427,12 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
     # Zoom par défaut à l'ouverture : les 3 derniers mois de données
     # chargées (pas tout l'historique compressé façon "1A"/"5A"/"Tout"),
     # façon Kraken/Binance. Les données complètes correspondant à la
-    # période choisie restent chargées : l'utilisateur peut dézoomer
-    # (glisser/pincer) pour les retrouver, seule la fenêtre affichée à
-    # l'ouverture change. Sans effet quand la période sélectionnée est déjà
-    # plus courte que 3 mois (1J/1S/1M) : la fenêtre se cale alors sur les
-    # données disponibles, jamais plus large que ce que l'utilisateur a
-    # explicitement demandé.
+    # période choisie restent chargées : l'utilisateur peut double-cliquer
+    # sur le graphique pour réinitialiser le zoom et les retrouver, seule la
+    # fenêtre affichée à l'ouverture change. Sans effet quand la période
+    # sélectionnée est déjà plus courte que 3 mois (1J/1S/1M) : la fenêtre
+    # se cale alors sur les données disponibles, jamais plus large que ce
+    # que l'utilisateur a explicitement demandé.
     if len(hist.index) > 0:
         data_end = hist.index.max()
         default_start = max(hist.index.min(), data_end - timedelta(days=90))
@@ -434,7 +442,14 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
         # use_container_width) et ignorait la plage demandée ici.
         fig.update_xaxes(range=[default_start.isoformat(), data_end.isoformat()], autorange=False)
 
-    st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True})
+    # scrollZoom=False : désactive le zoom à la molette/pinch (jugé peu
+    # pratique, pas la fenêtre par défaut ci-dessus, mais l'INTERACTION de
+    # zoom continue) — le sélecteur de période reste le seul moyen de
+    # changer l'échelle affichée. Le survol (hover) et le double-clic pour
+    # réinitialiser le zoom restent actifs (gérés par Plotly indépendamment
+    # de ce flag) ; même flag côté Plotly.js pour le pinch tactile, pas de
+    # réglage séparé à faire pour le mobile.
+    st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": False})
 
     fallback_note = "" if effective_interval == PERIOD_INTERVAL[period_key] else " (repli, plage trop longue)"
     st.caption(
@@ -715,7 +730,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                     storage.save_portfolio(portfolio)
                     if created:
                         msg += f" {created} palier(s) TP/SL créé(s)."
-                    st.success(msg)
+                    st.toast(msg, icon="✅", duration=ORDER_CONFIRMATION_TOAST_SECONDS)
                     st.rerun()
 
         else:  # Ordre à cours limité
@@ -732,7 +747,10 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                     st.error(str(e))
                 else:
                     storage.save_portfolio(portfolio)
-                    st.success(f"Ordre à cours limité placé : {quantity:g} x {ticker} à {ref_price:,.2f} €.")
+                    st.toast(
+                        f"Ordre à cours limité placé : {quantity:g} x {ticker} à {ref_price:,.2f} €.",
+                        icon="✅", duration=ORDER_CONFIRMATION_TOAST_SECONDS,
+                    )
                     st.rerun()
 
 
