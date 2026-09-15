@@ -240,15 +240,25 @@ un commit) sans toucher au code Python. Purement informatif : pas de case à
 cocher/validation obligatoire pour utiliser l'app.
 
 ### Esthétique
-Thème clair partout (plus de thème sombre — la démarcation entre un onglet
-clair et le reste en sombre était trop dérangeante) : fond quasi-blanc,
-police monospace pour tous les chiffres, bleu discret pour les éléments
-interactifs (boutons, liens, onglet actif), vert/rouge réservés aux
-gains/pertes. Palette pilotée par les constantes de `src/theme.py`
-(BG/PANEL/BORDER/TEXT/MUTED/GREEN/RED/ACCENT) et par `.streamlit/config.toml`
-(`[theme]`, nécessaire en plus du CSS injecté pour que les composants
-internes de Streamlit/BaseWeb — menus déroulants, popovers — suivent aussi
-le thème clair).
+Thème sombre partout (fond en dégradé fixe teal -> bleu-marine, inspiration
+Revolut — remplace le thème clair des prompts 1 à 7 ; la structure posée par
+ces prompts reste elle inchangée : pas de cases/bordures, séparation par
+espacement, police monospace pour tous les chiffres) : dégradé du haut vers
+le bas de l'écran (`#1B7A8C` -> `#0F4C5C` -> `#0A2A33`, `background-
+attachment: fixed`), texte blanc uniforme (hiérarchie par taille/poids, pas
+par variation de couleur — un blanc atténué en transparence pour le texte
+secondaire), orange (`#F97316`) pour les éléments interactifs (boutons,
+liens, onglet actif) — pas de bleu, trop proche de la teinte du dégradé de
+fond pour bien s'en détacher — vert/rouge éclaircis (variantes 400) réservés
+aux gains/pertes. Palette de badges par catégorie d'actif également
+éclaircie pour rester lisible sur le dégradé (voir `theme.CATEGORY_COLORS`
+et `theme.BADGE_DARK_TEXT`, la plupart des catégories basculant en texte
+sombre sur badge clair avec cette palette). Palette pilotée par les
+constantes de `src/theme.py` (BG/BG_GRADIENT/PANEL/BORDER/TEXT/MUTED/GREEN/
+RED/ACCENT) et par `.streamlit/config.toml` (`[theme]`, `base = "dark"`
+depuis ce changement — nécessaire en plus du CSS injecté pour que les
+composants internes de Streamlit/BaseWeb — menus déroulants, popovers —
+suivent aussi le thème sombre).
 
 **Barre de valeur (topbar, `theme.render_topbar`)** : 3 indicateurs à droite
 du logo — valeur totale, **liquidité disponible** (`portfolio.cash`, même

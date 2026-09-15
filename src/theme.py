@@ -16,20 +16,52 @@ import re
 
 import streamlit as st
 
-# Palette globale de l'appli : claire partout (plus de thème sombre séparé —
-# la démarcation entre un onglet Portefeuille clair et le reste en sombre
-# était jugée trop dérangeante). Les noms de variables (BG/PANEL/...) restent
-# génériques : ce sont "les couleurs du thème actuel", pas littéralement
-# "sombre" — inutile de les renommer. Valeurs reprises de la palette claire
-# validée (contraste + daltonisme) par la skill dataviz du projet.
-BG = "#FAFAFA"
-PANEL = "#F4F4F5"
-BORDER = "#E4E4E7"
-TEXT = "#18181B"
-MUTED = "#71717A"
-GREEN = "#16A34A"
-RED = "#DC2626"
-ACCENT = "#2563EB"  # bleu discret : boutons, liens, onglet actif — jamais le gain/perte (vert/rouge)
+# Palette globale de l'appli : dégradé sombre teal -> bleu-marine (inspiration
+# Revolut), remplace le fond clair des prompts 1 à 7. Les noms de variables
+# (BG/PANEL/...) restent génériques : ce sont "les couleurs du thème actuel",
+# pas littéralement "claires" ou "sombres" — inutile de les renommer à chaque
+# changement de direction esthétique.
+#
+# BG reste une couleur PLEINE (pas le dégradé lui-même, voir BG_GRADIENT
+# ci-dessous) : sert de repli pour tout ce qui ne peut pas afficher un
+# dégradé (.streamlit/config.toml, qui ne supporte que des couleurs unies).
+BG = "#0F4C5C"
+BG_GRADIENT_TOP = "#1B7A8C"
+BG_GRADIENT_MID = "#0F4C5C"
+BG_GRADIENT_BOTTOM = "#0A2A33"
+BG_GRADIENT = f"linear-gradient(180deg, {BG_GRADIENT_TOP} 0%, {BG_GRADIENT_MID} 50%, {BG_GRADIENT_BOTTOM} 100%)"
+# Fond de section légèrement rehaussée (boutons, champs de saisie, popovers,
+# cartes News...) : plus clair que le dégradé mais reste dans la même famille
+# sombre (jamais un fond clair qui trancherait). Couleur pleine (pas de
+# dégradé ici, pour rester utilisable partout sans dépendre de la position
+# verticale de l'élément sur la page).
+PANEL = "#155A6B"
+# Bordures/séparateurs : blanc translucide plutôt qu'une couleur pleine —
+# reste discret quelle que soit la teinte du dégradé en dessous (clair en
+# haut, presque noir en bas), sans avoir à varier selon la position.
+BORDER = "rgba(255,255,255,0.16)"
+TEXT = "#FFFFFF"
+# Texte secondaire : blanc atténué (transparence), jamais un gris sombre —
+# resterait illisible sur un fond lui-même sombre. La hiérarchie visuelle se
+# fait par la taille/le poids de la police, pas par une variation de teinte
+# de texte (voir la doc de conception d'origine de ce changement de fond).
+MUTED = "rgba(255,255,255,0.65)"
+# Vert/rouge éclaircis (variantes 400 plutôt que 600) : les teintes plus
+# sombres utilisées sur fond clair perdaient en lisibilité sur ce nouveau
+# fond sombre, sans changer leur fonction sémantique (vert = hausse,
+# rouge = baisse).
+GREEN = "#4ADE80"
+RED = "#F87171"
+# Orange plutôt que bleu : sur un fond dégradé teal -> bleu-marine (donc
+# lui-même dans la famille des bleus), un accent bleu se fond dans le fond au
+# lieu de s'en détacher. L'orange, complémentaire du teal, reste visible sur
+# TOUTE la hauteur du dégradé (clair en haut, presque noir en bas) — jamais
+# le gain/perte (vert/rouge), ni une des couleurs de catégorie d'actif.
+ACCENT = "#F97316"
+# Texte sombre pour les badges à fond clair (voir badge_color) : réutilise le
+# point le plus sombre du dégradé plutôt qu'un noir pur, pour rester dans la
+# même famille de couleurs que le reste du thème.
+BADGE_DARK_TEXT = BG_GRADIENT_BOTTOM
 
 FONT_SANS = "'Inter', -apple-system, sans-serif"
 FONT_MONO = "'JetBrains Mono', 'Courier New', monospace"
@@ -37,36 +69,46 @@ FONT_MONO = "'JetBrains Mono', 'Courier New', monospace"
 # -- Alias pour l'onglet Portefeuille (theme.inject_light() / render_table_light()) --
 # Historiquement une palette séparée le temps que le reste de l'appli restait
 # sombre ; désormais identique à la palette globale ci-dessus, gardée comme
-# alias pour ne pas devoir toucher ui_portfolio.py.
-LIGHT_PAGE = "#FAFAFA"
-LIGHT_SURFACE = "#F4F4F5"
-LIGHT_BORDER = "#E4E4E7"
-LIGHT_GRIDLINE = "#E4E4E7"
-LIGHT_TEXT = "#18181B"
-LIGHT_MUTED = "#71717A"
-LIGHT_FAINT = "#71717A"
-LIGHT_BLUE = "#2563EB"
-LIGHT_GREEN = "#16A34A"
-LIGHT_RED = "#DC2626"
+# alias pour ne pas devoir toucher ui_portfolio.py. LIGHT_PAGE n'est PLUS
+# utilisée comme fond réel (voir .st-key-ts_light, passé en transparent pour
+# laisser transparaître le dégradé de la page sans à-plat rectangulaire) ;
+# gardée pour compatibilité, au cas où un futur ajout en aurait besoin.
+LIGHT_PAGE = BG
+LIGHT_SURFACE = PANEL
+LIGHT_BORDER = BORDER
+LIGHT_GRIDLINE = BORDER
+LIGHT_TEXT = TEXT
+LIGHT_MUTED = MUTED
+LIGHT_FAINT = MUTED
+LIGHT_BLUE = ACCENT
+LIGHT_GREEN = GREEN
+LIGHT_RED = RED
 
 # Palette par classe d'actif (badges/pills de tickers) : fixe et cohérente —
 # deux tickers de la même classe d'actif ont toujours la même couleur, jamais
 # une couleur aléatoire par ticker (voir badge_color ci-dessous). "Indices/ETF"
 # reste le libellé de catégorie utilisé par valuation.category_for (regroupe
 # ETF/indice/fonds classiques ; "Obligations" couvre spécifiquement les ETF
-# obligataires, voir valuation.BOND_ETF_TICKERS).
+# obligataires, voir valuation.BOND_ETF_TICKERS). Teintes éclaircies par
+# rapport à la palette claire d'origine (variantes 400 plutôt que 600/800) :
+# calibrées pour rester identifiables sur l'ensemble du dégradé de fond, du
+# teal clair en haut au bleu-marine presque noir en bas — la luminosité
+# contraste autant que la teinte, pas seulement une question de choix de
+# couleur (repère utile aussi pour une perception des couleurs réduite).
 CATEGORY_COLORS = {
-    "Actions": "#2563EB",
-    "Crypto": "#F59E0B",
-    "Indices/ETF": "#7C3AED",
-    "Obligations": "#059669",
-    "Forex": "#0891B2",
-    "Matières premières": "#92400E",
+    "Actions": "#3B82F6",
+    "Crypto": "#FBBF24",
+    "Indices/ETF": "#A78BFA",
+    "Obligations": "#2DD4BF",
+    "Forex": "#38BDF8",
+    "Matières premières": "#D97706",
 }
 
 # Contraste insuffisant en texte blanc sur ces fonds de badge (couleurs
-# claires) : texte sombre à la place.
-_BADGE_DARK_TEXT_CATEGORIES = {"Crypto"}
+# claires) : texte sombre à la place (voir BADGE_DARK_TEXT). Presque toutes
+# les catégories sont concernées avec cette palette éclaircie — seule
+# "Actions" reste assez soutenue pour garder du texte blanc.
+_BADGE_DARK_TEXT_CATEGORIES = {"Crypto", "Indices/ETF", "Obligations", "Forex", "Matières premières"}
 
 
 def badge_color(category: str | None) -> tuple[str, str]:
@@ -76,15 +118,17 @@ def badge_color(category: str | None) -> tuple[str, str]:
     Catégorie absente/inconnue (tables où elle n'est pas disponible sans
     appel réseau supplémentaire, ex. historique/ordres en attente) : couleur
     neutre par défaut, jamais une couleur aléatoire par ticker."""
-    bg = CATEGORY_COLORS.get(category or "", LIGHT_FAINT)
-    fg = LIGHT_TEXT if category in _BADGE_DARK_TEXT_CATEGORIES else "#ffffff"
+    # PANEL (couleur pleine) plutôt que MUTED (blanc translucide, illisible
+    # une fois utilisé comme fond de badge avec du texte blanc par-dessus).
+    bg = CATEGORY_COLORS.get(category or "", PANEL)
+    fg = BADGE_DARK_TEXT if category in _BADGE_DARK_TEXT_CATEGORIES else "#ffffff"
     return bg, fg
 
 _CSS = f"""
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 :root {{
-    --ts-bg: {BG};
+    --ts-bg: {BG_GRADIENT};
     --ts-panel: {PANEL};
     --ts-border: {BORDER};
     --ts-text: {TEXT};
@@ -95,14 +139,18 @@ _CSS = f"""
 }}
 
 html, body, .stApp {{
-    /* Sans ça, Streamlit/BaseWeb laisse le navigateur en color-scheme: dark
-       (hérité de son thème par défaut) : les <input> natifs se peignent alors
-       avec le fond sombre propre au navigateur (scrollbars, cases à cocher...
-       idem) MÊME SI leur background-color CSS est transparent — ça ne dépend
-       pas de nos propres règles de couleur, d'où les champs de connexion
-       restés noirs malgré une palette entièrement repassée en clair. */
-    color-scheme: light !important;
-    background-color: var(--ts-bg) !important;
+    /* color-scheme: dark (plutôt que le light forcé des prompts précédents) :
+       le thème est maintenant réellement sombre, on veut que les widgets
+       natifs du navigateur (scrollbars, cases à cocher...) suivent leur
+       propre rendu sombre plutôt que d'entrer en conflit avec lui.
+       background en propriété courte (pas background-color, qui n'accepte
+       pas les dégradés) + background-attachment: fixed pour que le dégradé
+       reste calé sur la hauteur de l'écran plutôt que de s'étirer/se répéter
+       selon la hauteur de contenu de chaque page, qui varie beaucoup d'un
+       onglet à l'autre. */
+    color-scheme: dark !important;
+    background: var(--ts-bg) !important;
+    background-attachment: fixed !important;
     color: var(--ts-text) !important;
     font-family: {FONT_SANS} !important;
 }}
@@ -412,7 +460,7 @@ hr {{ border-color: var(--ts-border) !important; }}
     align-items: center;
 }}
 [class*="st-key-tstable_"] [data-testid="stHorizontalBlock"]:hover {{
-    background: rgba(24,24,27,0.03);
+    background: rgba(255,255,255,0.05);
 }}
 .ts-col-label {{
     color: var(--ts-muted);
@@ -623,7 +671,7 @@ hr {{ border-color: var(--ts-border) !important; }}
        celui-ci est replié — repéré au test réel à 390px. */
     body:has([data-testid="stExpandSidebarButton"]) h1 {{ margin-left: 1.8rem !important; }}
 
-    /* Grille de cartes News (onglet News, hors thème clair scopé) : 1
+    /* Grille de cartes News (onglet News, hors du scope .st-key-ts_light) : 1
        colonne au lieu de 3, quel que soit le comportement natif exact de
        Streamlit sur les st.columns (non garanti pour un nombre fixe). */
     [class*="st-key-ts_news_grid"] [data-testid="stHorizontalBlock"] {{
@@ -646,7 +694,11 @@ def inject() -> None:
 
 _LIGHT_CSS = f"""
 .st-key-ts_light {{
-    background: {LIGHT_PAGE} !important;
+    /* Transparent (pas LIGHT_PAGE) : laisse transparaître le dégradé de la
+       page plutôt que de poser un à-plat rectangulaire dessus, ce qui
+       casserait l'effet de dégradé continu sur les onglets Portefeuille et
+       Trading (voir le prompt "Fond dégradé sombre"). */
+    background: transparent !important;
     border-radius: 12px;
     padding: 1.25rem 1.5rem 1.75rem !important;
     margin: -0.5rem -0.25rem 0 !important;
@@ -747,7 +799,8 @@ _LIGHT_CSS = f"""
    (donc stylable normalement), mais son contenu ouvert (stPopoverBody) est
    téléporté par Streamlit en dehors de .st-key-ts_light (portail au niveau
    du document) — les règles ci-dessous ne l'atteignent donc jamais ; il
-   garde le style clair par défaut de Streamlit, déjà lisible en pratique. */
+   garde le style par défaut de Streamlit (base="dark" dans .streamlit/
+   config.toml, voir CLAUDE.md), déjà cohérent avec le thème sombre. */
 .st-key-ts_light [data-testid="stPopoverButton"] {{
     font-family: {FONT_SANS} !important;
     font-weight: 500 !important;
@@ -948,7 +1001,7 @@ _LIGHT_CSS = f"""
     margin-bottom: 0.4rem !important;
 }}
 .st-key-ts_light [class*="st-key-tslight_table_"] [data-testid="stHorizontalBlock"]:hover {{
-    background: rgba(24,24,27,0.03);
+    background: rgba(255,255,255,0.05);
 }}
 .ts-light-col-label {{
     color: {LIGHT_FAINT};
@@ -1137,8 +1190,12 @@ _LIGHT_CSS = f"""
 
 
 def inject_light() -> None:
-    """Injecte le CSS du thème clair, entièrement scopé sous .st-key-ts_light
-    (voir le commentaire en tête de _LIGHT_CSS). N'a aucun effet tant que le
+    """Injecte le CSS scopé sous .st-key-ts_light (Portefeuille/Trading, voir
+    le commentaire en tête de _LIGHT_CSS) — nom historique de l'époque où ce
+    thème était clair pendant que le reste de l'appli restait sombre ; gardé
+    tel quel plutôt que renommé à chaque changement de direction esthétique
+    (même logique que les constantes BG/PANEL/..., voir plus haut). N'a
+    aucun effet tant que le
     contenu n'est pas rendu à l'intérieur de `with st.container(key="ts_light")`.
     Sans effet sur le thème sombre global ni les autres onglets."""
     st.markdown(f"<style>{_LIGHT_CSS}</style>", unsafe_allow_html=True)
@@ -1449,8 +1506,8 @@ def render_table(rows: list[dict], columns: list[dict], row_key: str = "id", tab
 
 
 def _light_cell_content(col: dict, value) -> str:
-    """Équivalent de _cell_content pour le thème clair (vert/rouge adaptés au
-    contraste sur fond blanc)."""
+    """Équivalent de _cell_content pour le scope .st-key-ts_light (vert/rouge
+    adaptés au contraste sur le fond de ce thème)."""
     kind = col.get("kind", "text")
     decimals = col.get("decimals", 2)
 
@@ -1510,7 +1567,7 @@ def render_table_light(
     rows: list[dict], columns: list[dict], row_key: str = "id", table_key: str = "table",
     show_header: bool = True,
 ) -> None:
-    """Équivalent de render_table pour le thème clair (onglet Portefeuille) :
+    """Équivalent de render_table pour le scope .st-key-ts_light (Portefeuille/Trading) :
     même technique (de vrais st.columns par ligne, de vrais st.button pour la
     navigation), avec en plus un type de colonne "ticker_badge" qui rend le
     ticker comme une pastille colorée cliquable (couleur fixe par classe
