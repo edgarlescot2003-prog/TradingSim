@@ -275,6 +275,26 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     filter: brightness(1.1);
     color: #ffffff !important;
 }}
+/* Décalage vertical de quelques pixels au clic/focus (repéré sur certains
+   boutons) : BaseWeb ajoute par défaut un box-shadow/outline de focus et
+   peut faire varier l'épaisseur de bordure entre états — border/box-shadow
+   explicitement figés ici sur CHAQUE état (normal, survol, focus, actif)
+   pour que la boîte du bouton ne change jamais de taille, quel que soit
+   l'état. */
+.stButton > button:active, .stFormSubmitButton > button:active,
+.stButton > button:focus, .stFormSubmitButton > button:focus {{
+    border: 1px solid var(--ts-accent) !important;
+    box-shadow: none !important;
+    outline: none !important;
+    transform: none !important;
+}}
+.stButton > button[kind="primary"]:active, .stFormSubmitButton > button[kind="primary"]:active,
+.stButton > button[kind="primary"]:focus, .stFormSubmitButton > button[kind="primary"]:focus {{
+    border: 1px solid var(--ts-accent) !important;
+    box-shadow: none !important;
+    outline: none !important;
+    transform: none !important;
+}}
 
 /* Champs de saisie */
 [data-testid="stTextInput"] input,
@@ -368,6 +388,14 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
    ci-dessous (bordure transparente incluse, pour ne pas décaler la ligne
    au clic) : aucun autre repère visuel (pas de soulignement plein, pas de
    letter-spacing différent). */
+/* line-height/box-sizing/display explicites et IDENTIQUES entre .ts-tab
+   (un <div>, l'onglet actif) et [class*="st-key-navtab_"] button (un vrai
+   <button>, les onglets inactifs) : un <div> et un <button> n'ont pas le
+   même line-height/vertical-align navigateur par défaut même à padding et
+   taille de police identiques — l'onglet actif apparaissait décalé
+   verticalement par rapport aux autres, alignés sur la même ligne dans
+   .st-key-ts_tabbar (align-items: center, qui centre chacun sur SA propre
+   hauteur, sans corriger une différence de hauteur entre eux). */
 .ts-tab {{
     font-family: {FONT_SANS};
     font-weight: 600;
@@ -375,6 +403,10 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     color: var(--ts-accent);
     padding: 0.55rem 0.05rem;
     border-bottom: 2px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1.2;
+    box-sizing: border-box;
 }}
 [class*="st-key-navtab_"] button {{
     background: transparent !important;
@@ -386,6 +418,10 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     font-weight: 600 !important;
     font-size: 0.85rem !important;
     width: auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    line-height: 1.2 !important;
+    box-sizing: border-box !important;
 }}
 [class*="st-key-navtab_"] button:hover {{
     color: var(--ts-text) !important;
@@ -761,6 +797,16 @@ _LIGHT_CSS = f"""
     background: {LIGHT_BLUE} !important;
     border-color: {LIGHT_BLUE} !important;
     color: #ffffff !important;
+}}
+/* Même correctif de décalage au clic/focus que dans _CSS (voir plus haut) :
+   border/box-shadow figés sur tous les états pour que la boîte du bouton ne
+   change jamais de taille. */
+.st-key-ts_light .stButton > button:active, .st-key-ts_light .stFormSubmitButton > button:active,
+.st-key-ts_light .stButton > button:focus, .st-key-ts_light .stFormSubmitButton > button:focus {{
+    border: 1px solid {LIGHT_BLUE} !important;
+    box-shadow: none !important;
+    outline: none !important;
+    transform: none !important;
 }}
 .st-key-ts_portfolio_pills, .st-key-ts_period_pills {{
     gap: 0.5rem !important;

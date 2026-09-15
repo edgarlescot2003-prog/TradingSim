@@ -23,7 +23,7 @@ from sqlalchemy import select
 
 from . import db, valuation
 from . import market_data as md
-from .db_models import PortfolioRow, PositionRow, User
+from .db_models import PortfolioRow, PositionRow, User, ValueHistoryRow
 from .portfolio import Portfolio, Position
 
 
@@ -96,3 +96,45 @@ def compute_rankings() -> list[dict]:
 
     rankings.sort(key=lambda r: r["pnl_eur"], reverse=True)
     return rankings
+
+
+def list_official_portfolios(exclude_user_id: str | None = None) -> list[dict]:
+    """Identité des portefeuilles officiels de tous les utilisateurs (pas de
+    valorisation, pas d'appel réseau) : pour peupler un sélecteur, voir la
+    comparaison à un participant sur la page Portefeuille
+    (ui_portfolio._render_performance). `exclude_user_id` : exclut ce compte
+    (typiquement l'utilisateur courant — comparer son propre portefeuille
+    officiel à lui-même n'aurait pas de sens)."""
+    with db.get_session() as session:
+        usernames = {u.id: u.username for u in session.execute(select(User)).scalars().all()}
+        rows = session.execute(
+            select(PortfolioRow).where(PortfolioRow.is_official.is_(True))
+        ).scalars().all()
+
+    result = [
+        {
+            "user_id": r.user_id,
+            "username": usernames.get(r.user_id, "(compte supprimé)"),
+            "portfolio_id": r.id,
+            "portfolio_name": r.name,
+        }
+        for r in rows if r.user_id != exclude_user_id
+    ]
+    result.sort(key=lambda r: r["username"].lower())
+    return result
+
+
+def get_value_history(portfolio_id: str) -> list[dict]:
+    """value_history brut d'UN portefeuille, quel qu'en soit le
+    propriétaire, sans charger positions/trades/ordres (voir
+    portfolio_repo.load_portfolio pour un chargement complet) — utilisé pour
+    la comparaison à un participant (voir benchmark.build_participant_
+    comparison), plus léger qu'un chargement complet quand seule la courbe
+    de valeur est nécessaire."""
+    with db.get_session() as session:
+        rows = session.execute(
+            select(ValueHistoryRow)
+            .where(ValueHistoryRow.portfolio_id == portfolio_id)
+            .order_by(ValueHistoryRow.date)
+        ).scalars().all()
+    return [{"date": r.date, "value_eur": r.value_eur} for r in rows]

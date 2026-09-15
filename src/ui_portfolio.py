@@ -3,7 +3,8 @@ et theme.render_table_light), inspiré de l'interface "portefeuille" de Google
 Finance — pastilles de portefeuille en haut de page, carte "Points clés"
 (gain du jour, gain total, répartition par catégorie d'actif), tableau de
 positions simplifié, courbe de valeur avec filtre de période + comparaison à
-un indice de référence, historique des trades et réinitialisation.
+un indice de référence ou au portefeuille officiel d'un autre participant,
+historique des trades et réinitialisation.
 
 Le sélecteur de portefeuille du panneau latéral (app.py) reste inchangé et
 continue de fonctionner en parallèle : les pastilles ci-dessous ne sont
@@ -17,7 +18,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from . import auth, benchmark, market_data as md, storage, theme, valuation
+from . import auth, benchmark, leaderboard, market_data as md, storage, theme, valuation
 from .portfolio import MAX_PORTFOLIOS_PER_USER, Portfolio
 
 LIGHT_POSITION_COLUMNS = [
@@ -383,8 +384,20 @@ def _render_performance(portfolio, snapshots: list[dict]) -> None:
                     st.caption("Pas assez de points sur cette période pour tracer une courbe.")
                     return
 
+                # Options de comparaison : indices externes + portefeuilles
+                # OFFICIELS des autres participants (jamais leurs éventuels
+                # portefeuilles fun/test, même logique que le Classement —
+                # voir leaderboard.list_official_portfolios). Libellé
+                # distinct ("(participant)") pour les départager des indices
+                # dans le même menu, sans catégorie native dans st.selectbox.
+                other_officials = leaderboard.list_official_portfolios(
+                    exclude_user_id=st.session_state.user_id,
+                )
+                participant_options = {f"{o['username']} (participant)": o for o in other_officials}
+
                 benchmark_label = st.selectbox(
-                    "Comparer à un indice", ["Aucun"] + list(benchmark.BENCHMARKS.keys()),
+                    "Comparer à un indice ou un participant",
+                    ["Aucun"] + list(benchmark.BENCHMARKS.keys()) + list(participant_options.keys()),
                     key="ts_benchmark_select",
                 )
 
@@ -410,14 +423,27 @@ def _render_performance(portfolio, snapshots: list[dict]) -> None:
                     st.caption(theme.PLOTLY_ZOOM_HINT)
                     return
 
-                try:
-                    comparison_df = benchmark.build_comparison(filtered_history, benchmark_label)
-                except md.MarketDataError as e:
-                    st.warning(f"Comparaison indisponible : {e}")
-                    return
+                if benchmark_label in participant_options:
+                    other = participant_options[benchmark_label]
+                    # Pas d'appel réseau ici : juste la courbe déjà en base,
+                    # contrairement à un indice (voir benchmark.build_comparison).
+                    other_value_history = leaderboard.get_value_history(other["portfolio_id"])
+                    comparison_df = benchmark.build_participant_comparison(
+                        filtered_history, other_value_history, other["username"],
+                    )
+                    comparison_label = other["username"]
+                    empty_message = "Pas assez de points communs sur cette période pour comparer à ce participant."
+                else:
+                    try:
+                        comparison_df = benchmark.build_comparison(filtered_history, benchmark_label)
+                    except md.MarketDataError as e:
+                        st.warning(f"Comparaison indisponible : {e}")
+                        return
+                    comparison_label = benchmark_label
+                    empty_message = "Pas assez de points sur cette période pour comparer à un indice."
 
                 if comparison_df is None:
-                    st.caption("Pas assez de points sur cette période pour comparer à un indice.")
+                    st.caption(empty_message)
                     return
 
                 # Courbe du portefeuille : même logique vert/rouge que ci-dessus, avec
@@ -432,12 +458,12 @@ def _render_performance(portfolio, snapshots: list[dict]) -> None:
                     fill="tozeroy", fillgradient=theme.plotly_area_fillgradient(color),
                 ))
                 fig.add_trace(go.Scatter(
-                    x=comparison_df.index, y=comparison_df[benchmark_label], mode="lines", name=benchmark_label,
+                    x=comparison_df.index, y=comparison_df[comparison_label], mode="lines", name=comparison_label,
                     line=dict(color=theme.LIGHT_MUTED, width=2),
                 ))
                 fig.update_layout(**theme.plotly_layout(yaxis_title="Base 100"))
                 fig.update_yaxes(
-                    range=theme.plotly_area_range(portfolio_series, comparison_df[benchmark_label]),
+                    range=theme.plotly_area_range(portfolio_series, comparison_df[comparison_label]),
                     autorange=False,
                 )
                 st.plotly_chart(fig, use_container_width=True, config=theme.PLOTLY_CONFIG)

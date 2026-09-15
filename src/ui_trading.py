@@ -87,6 +87,12 @@ MAX_LEVERAGE = 20.0
 # délai réel, indépendamment de toute interaction utilisateur.
 ORDER_CONFIRMATION_TOAST_SECONDS = 6
 
+# Largeur (px) des champs numériques du formulaire d'ordre (Levier, Montant
+# à risquer, Quantité, Prix cible) : sans elle, st.number_input s'étire par
+# défaut sur toute la largeur de sa colonne, laissant beaucoup de vide
+# inutile autour d'une valeur qui tient sur quelques caractères.
+ORDER_INPUT_WIDTH = 220
+
 # Nombre max de paliers TP/SL proposables directement dans le formulaire
 # d'ordre (voir _render_tp_sl_at_order_form) : garde le formulaire gérable ;
 # des paliers supplémentaires restent ajoutables après coup depuis la fiche
@@ -568,18 +574,22 @@ def _render_tp_sl_at_order_form(order_mode: str, ref_price: float) -> list[tuple
     qu'elle existe — une fois l'ordre limité rempli, la section Take Profit
     / Stop Loss (déjà disponible sur toute position ouverte) permet de le
     faire après coup, sans limite de paliers celle-là.
+
+    Champs toujours visibles et actifs dès l'ouverture du formulaire (pas de
+    case à cocher préalable à activer) : au moins un palier est proposé par
+    défaut, prêt à être rempli directement — prix cible par défaut décalé de
+    10% dans le sens cohérent avec le type de palier (au-dessus du prix de
+    référence pour un Take Profit, en-dessous pour un Stop Loss), plutôt que
+    calé exactement sur le prix de référence : un palier laissé à son
+    défaut sans y toucher se déclencherait alors quasiment tout de suite,
+    ce que la case à cocher (une action volontaire) empêchait de fait.
     """
     if order_mode != "Ordre au marché":
         return []
 
-    if not st.checkbox(
-        "Ajouter un ou plusieurs paliers Take Profit / Stop Loss dès l'ouverture",
-        key="order_add_tp_sl",
-    ):
-        return []
-
     tiers = []
     with st.container(key="ts_card_order_tp_sl"):
+        st.markdown("###### Take Profit / Stop Loss")
         tier_count = st.number_input(
             "Nombre de paliers", min_value=1, max_value=MAX_ORDER_TP_SL_TIERS, value=1, step=1,
             key="order_tp_sl_count",
@@ -591,8 +601,10 @@ def _render_tp_sl_at_order_form(order_mode: str, ref_price: float) -> list[tuple
                 "Type", TP_SL_KIND_LABELS, default=TP_SL_KIND_LABELS[0], required=True,
                 key=f"order_tp_sl_kind_{i}", label_visibility="collapsed",
             )
+            is_take_profit = kind_label == TP_SL_KIND_LABELS[0]
+            default_price = ref_price * 1.10 if is_take_profit else ref_price * 0.90
             target_price = c2.number_input(
-                "Prix cible (€)", min_value=0.01, value=float(round(ref_price, 2)), step=0.5,
+                "Prix cible (€)", min_value=0.01, value=float(round(default_price, 2)), step=0.5,
                 key=f"order_tp_sl_price_{i}",
             )
             quantity_pct = c3.slider(
@@ -654,6 +666,62 @@ def _render_maintenance_indicator(position, current_price_eur: float) -> None:
         st.caption(message)
 
 
+def _render_side_toggle(options: list[str], key: str) -> str:
+    """Remplace st.radio par deux boutons cliquables côte à côte, dans
+    l'esprit Buy/Sell d'un terminal de trading pro (Hyperliquid) — pas de
+    bouton rond à cocher. Couleur déterminée par le SENS de l'action
+    (ACTION_BY_ORDER_TYPE), pas par la position dans la liste : achat/rachat
+    short = vert (GREEN), vente/ouverture short = rouge (RED) — cohérent
+    dans les 3 contextes où ce sélecteur apparaît (aucune position, position
+    longue existante, position courte existante), y compris quand "vendre"
+    sert à clôturer un long plutôt qu'à ouvrir un short. L'option active a un
+    fond plein, l'inactive un simple contour — dans sa propre couleur, pas
+    l'orange ACCENT (seul le sens Long/Short fait exception à la règle des
+    boutons oranges, voir le prompt "Retouches formulaire/benchmark")."""
+    current = st.session_state.get(key)
+    if current not in options:
+        current = options[0]
+
+    # Deux passes : d'abord rendre les boutons et repérer un clic éventuel
+    # (qui met à jour `current` tout de suite), PUIS calculer les styles à
+    # partir de ce `current` final — sinon un clic sur le bouton inactif ne
+    # changeait la couleur qu'au rerun SUIVANT (le style de CETTE passe était
+    # déjà calculé avec l'ancienne sélection avant que le clic soit détecté).
+    cols = st.columns(len(options))
+    btn_keys = [f"{key}_opt_{i}" for i in range(len(options))]
+    for option, btn_key, col in zip(options, btn_keys, cols):
+        if col.button(option, key=btn_key, use_container_width=True):
+            current = option
+    st.session_state[key] = current
+
+    style_rules = []
+    for option, btn_key in zip(options, btn_keys):
+        action = ACTION_BY_ORDER_TYPE[option]
+        color = theme.GREEN if action in ("achat", "rachat short") else theme.RED
+        # :active/:focus répétés explicitement : sinon la règle générique de
+        # theme.py (qui fige la bordure en accent orange au clic/focus pour
+        # éviter un décalage, voir _CSS) l'emporterait sur celle-ci — même
+        # !important des deux côtés, mais sélecteur plus spécifique
+        # (.stButton > button:active, avec le pseudo-classe en plus) sans ce
+        # rappel explicite ici.
+        if option == current:
+            style_rules.append(
+                f'.st-key-{btn_key} button, '
+                f'.st-key-{btn_key} button:active, .st-key-{btn_key} button:focus {{ '
+                f'background:{color} !important; border-color:{color} !important; '
+                f'color:#ffffff !important; }}'
+            )
+        else:
+            style_rules.append(
+                f'.st-key-{btn_key} button, '
+                f'.st-key-{btn_key} button:active, .st-key-{btn_key} button:focus {{ '
+                f'background:transparent !important; border-color:{color} !important; '
+                f'color:{color} !important; }}'
+            )
+    st.markdown(f"<style>{''.join(style_rules)}</style>", unsafe_allow_html=True)
+    return current
+
+
 def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: float, currency: str,
                         quote_type: str = "") -> None:
     with st.container(key="ts_card_order"):
@@ -663,20 +731,22 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
         existing = portfolio.positions.get(ticker)
         if existing is None:
             st.caption(f"Aucune position ouverte sur {ticker}.")
-            order_type = st.radio(
-                "Type d'ordre", ["Acheter (position longue)", "Vendre à découvert (position courte)"],
-                horizontal=True,
+            order_type = _render_side_toggle(
+                ["Acheter (position longue)", "Vendre à découvert (position courte)"],
+                key="order_type_none",
             )
         elif existing.side == "long":
             st.caption(f"Position actuelle : {existing.quantity:g} {ticker} en position longue "
                        f"(prix moyen {existing.avg_price_eur:,.2f} €).")
             _render_maintenance_indicator(existing, price_eur)
-            order_type = st.radio("Type d'ordre", ["Acheter plus", "Vendre"], horizontal=True)
+            order_type = _render_side_toggle(["Acheter plus", "Vendre"], key="order_type_long")
         else:
             st.caption(f"Position actuelle : {existing.quantity:g} {ticker} en position courte "
                        f"(prix moyen {existing.avg_price_eur:,.2f} €).")
             _render_maintenance_indicator(existing, price_eur)
-            order_type = st.radio("Type d'ordre", ["Vendre plus à découvert", "Racheter (clôturer)"], horizontal=True)
+            order_type = _render_side_toggle(
+                ["Vendre plus à découvert", "Racheter (clôturer)"], key="order_type_short",
+            )
 
         action = ACTION_BY_ORDER_TYPE[order_type]
         is_opening = order_type in OPENING_ORDER_TYPES
@@ -697,6 +767,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
         if order_mode == "Ordre à cours limité":
             ref_price = st.number_input(
                 "Prix cible (€)", min_value=0.01, value=float(round(price_eur, 2)), step=0.5, key="limit_price",
+                width=ORDER_INPUT_WIDTH,
             )
         else:
             ref_price = price_eur
@@ -706,7 +777,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
             leverage = col_lev.number_input(
                 "Levier (x)", min_value=1.0, max_value=MAX_LEVERAGE, value=1.0, step=1.0,
                 format="%.0f", key="order_leverage",
-                help=f"De x1 à x{MAX_LEVERAGE:g}.",
+                help=f"De x1 à x{MAX_LEVERAGE:g}.", width=ORDER_INPUT_WIDTH,
             )
         else:
             leverage = 1.0
@@ -728,6 +799,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 "Montant à risquer (€)", min_value=0.0, max_value=float(max(portfolio.cash, 0.0)),
                 value=float(min(1000.0, portfolio.cash)), step=50.0, key="order_amount_at_risk",
                 help="La marge que tu acceptes d'engager sur cet ordre — jamais plus que ton cash disponible.",
+                width=ORDER_INPUT_WIDTH,
             )
             notional = amount_at_risk * leverage
             # Arrondi à 6 décimales : large marge pour les fractions de
@@ -749,11 +821,13 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
             quantity = float(col_qty.number_input(
                 "Quantité", min_value=1, value=1, step=1, format="%d", key="order_qty_shares",
                 help="Nombre entier de titres : une action/ETF ne se fractionne pas.",
+                width=ORDER_INPUT_WIDTH,
             ))
         else:
             default_qty = existing.quantity if order_type in ("Vendre", "Racheter (clôturer)") else 1.0
             quantity = col_qty.number_input(
                 "Quantité", min_value=0.0, value=float(default_qty), step=1.0, key="order_qty",
+                width=ORDER_INPUT_WIDTH,
             )
 
         if is_opening and quantity > 0:
