@@ -1,0 +1,3 @@
+id,portfolio_id,user_id,ticker,name,currency,side,kind,target_price_eur,quantity_pct,initial_quantity,trigger_quantity,status,created_at,executed_at,executed_price_eur
+6dc9ef2c-381f-41f1-a380-905db071b954,924ea457-f336-4f3a-8383-740fc2a584c1,1b51243a-e92d-43fd-950b-2024ff44522f,TTWO,"Take-Two Interactive Software, ",USD,long,stop_loss,160.0,80.0,8.041499,6.4331992,active,2026-09-14T12:00:01.033218+00:00,,
+21446dbc-a19a-42cf-90c1-fc34a6f11e00,924ea457-f336-4f3a-8383-740fc2a584c1,1b51243a-e92d-43fd-950b-2024ff44522f,^FCHI,CAC 40,EUR,long,stop_loss,8115.9,100.0,0.006153,0.006153,executed,2026-09-14T11:36:48.584491+00:00,2026-09-15T07:16:31.869258+00:00,8115.9
