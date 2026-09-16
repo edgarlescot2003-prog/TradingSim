@@ -593,13 +593,19 @@ def _render_tp_sl_at_order_form(order_mode: str, ref_price: float) -> list[tuple
     l'un porte sur le nouvel ordre et l'autre sur la position déjà détenue.
 
     Champs toujours visibles et actifs dès l'ouverture du formulaire (pas de
-    case à cocher préalable à activer) : au moins un palier est proposé par
-    défaut, prêt à être rempli directement — prix cible par défaut décalé de
-    10% dans le sens cohérent avec le type de palier (au-dessus du prix de
+    case à cocher préalable à activer) : un palier est proposé par défaut,
+    prêt à être rempli directement — prix cible par défaut décalé de 10%
+    dans le sens cohérent avec le type de palier (au-dessus du prix de
     référence pour un Take Profit, en-dessous pour un Stop Loss), plutôt que
     calé exactement sur le prix de référence : un palier laissé à son
     défaut sans y toucher se déclencherait alors quasiment tout de suite,
     ce que la case à cocher (une action volontaire) empêchait de fait.
+
+    "Nombre de paliers" descend jusqu'à 0 (pas de minimum à 1) : pour ouvrir
+    une position SANS aucun palier, il suffit de le mettre à 0 avec le "-"
+    — sans ce 0, il était impossible de refuser un palier une fois la case à
+    cocher supprimée (prompt 9), un palier par défaut se retrouvait alors
+    créé silencieusement à chaque ouverture de position (repéré par Edgar).
     """
     if order_mode != "Ordre au marché":
         return []
@@ -608,9 +614,13 @@ def _render_tp_sl_at_order_form(order_mode: str, ref_price: float) -> list[tuple
     with st.container(key="ts_card_order_tp_sl"):
         st.markdown("###### Take Profit / Stop Loss")
         tier_count = st.number_input(
-            "Nombre de paliers", min_value=1, max_value=MAX_ORDER_TP_SL_TIERS, value=1, step=1,
+            "Nombre de paliers", min_value=0, max_value=MAX_ORDER_TP_SL_TIERS, value=1, step=1,
             key="order_tp_sl_count",
+            help="Laisse à 0 si tu ne veux ni Take Profit ni Stop Loss maintenant — tu pourras "
+                 "toujours en ajouter un après coup depuis la section dédiée, sans limite de paliers.",
         )
+        if tier_count == 0:
+            st.caption("Aucun palier ne sera créé avec cet ordre.")
         for i in range(int(tier_count)):
             st.markdown(f"**Palier {i + 1}**")
             c1, c2, c3 = st.columns(3)
