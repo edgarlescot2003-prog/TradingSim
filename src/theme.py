@@ -198,7 +198,14 @@ h1, h2, h3, h4, h5, h6,
     position: sticky;
     top: 0;
     z-index: 100;
-    background: var(--ts-panel);
+    /* Transparent (pas --ts-panel) : ce bloc doit se fondre dans le dégradé
+       général de la page, pas se détacher dessus avec un fond plus foncé —
+       résidu du "fond de section légèrement rehaussée" pensé à l'origine
+       pour le thème clair (prompts 1-7), jamais retiré au passage au fond
+       dégradé sombre (prompt 8). background-attachment:fixed sur html/body
+       (voir plus haut) assure que le dégradé reste continu même une fois la
+       barre sticky au défilement. */
+    background: transparent;
     border-bottom: 1px solid var(--ts-border);
     /* padding-right généreux : réserve la place de la barre d'outils native
        Streamlit (stToolbar, Share/étoile/crayon...) qui flotte au-dessus en
@@ -439,6 +446,19 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
     color: var(--ts-text) !important;
     font-weight: 400 !important;
     width: auto !important;
+    /* min-height:0 (au lieu du min-height ~40px par défaut d'un st.button) :
+       sans ça, cette cellule-bouton restait bien plus haute que les cellules
+       texte voisines (de simples <div>, ~21px), ce qui gonflait toute la
+       ligne du tableau à sa hauteur et laissait les autres cellules
+       centrées dans un espace bien plus grand qu'elles (repéré sur
+       Classement/Historique : lignes trop hautes, texte qui semblait
+       "poussé" dans sa cellule). line-height aligné sur le reste du texte
+       de tableau (.ts-row-cell) plutôt que la valeur par défaut d'un
+       bouton, pour un rendu cohérent quelle que soit la cellule. */
+    min-height: 0 !important;
+    height: auto !important;
+    line-height: 1.4 !important;
+    justify-content: flex-start !important;
 }}
 [class*="st-key-navcell_"] button:hover, [class*="st-key-navorder_"] button:hover,
 [class*="st-key-navuser_"] button:hover {{
@@ -460,6 +480,36 @@ hr {{ border-color: var(--ts-border) !important; }}
 [data-testid="stSidebar"] {{
     background: var(--ts-panel) !important;
     border-right: 1px solid var(--ts-border) !important;
+}}
+/* Icône native de repli/dépli du panneau latéral (">>"/"«") : masquée sur
+   desktop/tablette — la navigation de l'app passe entièrement par sa propre
+   barre d'onglets, ce bouton n'apporte rien et reste juste un résidu visuel
+   de l'interface Streamlit par défaut. Bornée à min-width:641px (pas de
+   media query mobile dédiée ici, contrairement au reste du fichier) car
+   Streamlit replie automatiquement le panneau latéral sous ~640px : sur
+   mobile, le panneau est fermé par défaut et CE bouton (stExpandSidebarButton,
+   pas stSidebarCollapseButton) reste le seul moyen d'atteindre "Se
+   déconnecter"/le sélecteur de portefeuille — le masquer là aussi
+   verrouillerait ces actions hors d'atteinte plutôt que de simplement
+   nettoyer l'UI. */
+@media (min-width: 641px) {{
+    [data-testid="stSidebarCollapseButton"] {{ display: none !important; }}
+}}
+
+/* Page Connexion/Inscription (voir ui_auth.py, st.container(key="ts_login_page")) :
+   centrée au lieu de rester collée en haut à gauche par défaut. Centrage
+   horizontal robuste (margin:auto + max-width) ; le centrage vertical reste
+   approximatif (une marge haute fixe plutôt qu'un vrai centrage flex sur
+   toute la hauteur d'écran, qui demanderait de transformer .block-container
+   en conteneur flex pour TOUTE l'app, bien au-delà de cette seule page) —
+   suffisant pour un rendu nettement plus soigné qu'un bloc aligné en haut à
+   gauche, sans risquer de décaler autre chose. */
+.st-key-ts_login_page {{
+    max-width: 440px;
+    margin: 10vh auto 0 auto !important;
+}}
+@media (max-width: 640px) {{
+    .st-key-ts_login_page {{ margin-top: 4vh !important; }}
 }}
 
 /* Alertes : texte coloré, sans cadre ni fond de bloc (l'icône native
@@ -878,7 +928,18 @@ _LIGHT_CSS = f"""
 }}
 /* Barre de recherche de l'onglet Trading : c'est l'action principale de la
    page, elle doit se voir — plus grande que les champs de saisie habituels
-   du formulaire d'ordre. */
+   du formulaire d'ordre, ET démarquée du reste de la page (elle s'y fondait
+   auparavant, aucun fond/contour propre, seul l'input avait une bordure très
+   proche de celle du fond). Fond légèrement rehaussé (PANEL, cohérent avec
+   les autres "cartes" de l'app) + coin arrondis + une pointe de padding pour
+   que la zone se lise comme un vrai bloc d'action, pas un simple champ posé
+   sur la page. */
+.st-key-ts_card_search {{
+    background: {LIGHT_SURFACE};
+    border: 1px solid {LIGHT_BORDER};
+    border-radius: 12px;
+    padding: 1rem 1.1rem !important;
+}}
 .st-key-ts_card_search [data-testid="stTextInput"] input {{
     font-size: 1.05rem !important;
     padding-top: 0.7rem !important;
@@ -1262,6 +1323,41 @@ _LIGHT_CSS = f"""
     .st-key-ts_light .st-key-chart_period_radio [role="radiogroup"] label p {{
         font-size: 0.72rem !important;
     }}
+
+    /* Sélecteur de période du graphique Portefeuille (1J/1S/.../Tout) : même
+       traitement "une seule ligne défilable au doigt" que chart_period_radio
+       ci-dessus (fiche Trading) — jusqu'ici seul ce dernier l'avait reçu,
+       ts_period_pills passait à la ligne pastille par pastille, empilant
+       9 lignes de boutons au-dessus du graphique (repéré au test réel). */
+    /* Sélecteur au même "poids" que la règle .st-key-ts_portfolio_chart_row
+       [data-testid="stHorizontalBlock"] ci-dessus (3 sélecteurs) : ts_period_pills
+       EST lui-même un stHorizontalBlock (st.container(horizontal=True)) ET un
+       descendant de ts_portfolio_chart_row (imbriqué dans sa colonne de
+       gauche) — il se faisait donc lui aussi repasser en flex-direction:
+       column par cette règle plus générale, malgré flex-wrap:nowrap posé
+       ci-dessous (nowrap ne veut rien dire une fois l'axe principal devenu
+       vertical, les pastilles continuaient de s'empiler une par ligne). */
+    .st-key-ts_light [class*="st-key-ts_portfolio_chart_row"] .st-key-ts_period_pills {{
+        flex-direction: row !important;
+    }}
+    .st-key-ts_light .st-key-ts_period_pills {{
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }}
+    .st-key-ts_light .st-key-ts_period_pills > * {{ flex-shrink: 0 !important; }}
+
+    /* Graphique de valeur du portefeuille (Plotly) sur mobile : purement
+       visuel, non interactif — pas de zoom molette/pinch (déjà le cas, voir
+       PLOTLY_CONFIG) ni de zoom par glisser/pincer ni de double-clic pour
+       réinitialiser (jugés peu pratiques sur un petit écran, cf. la même
+       décision déjà prise pour le zoom molette). `.nsewdrag` est la couche
+       transparente que Plotly pose au-dessus du tracé pour capter TOUTES les
+       interactions de la souris/du doigt (glisser pour zoomer/panner, double-
+       clic pour réinitialiser) : neutraliser ses événements pointeur désactive
+       ces trois comportements d'un coup, sans toucher à la config Python
+       (partagée avec le desktop, où elle doit rester interactive). */
+    .st-key-ts_light .js-plotly-plot .nsewdrag {{ pointer-events: none !important; }}
 }}
 """
 
@@ -1726,7 +1822,7 @@ def render_table_light(
 
 def render_compact_list(
     rows: list[dict], table_key: str,
-    detail: "Callable[[dict], None] | None" = None,
+    detail: "Callable[[dict], None] | None" = None, row_key: str = "ticker",
 ) -> None:
     """Liste compacte façon Kraken/TradingView, pour l'affichage mobile
     (voir le media query dans _LIGHT_CSS — masquée en desktop, où
@@ -1741,6 +1837,11 @@ def render_compact_list(
     `detail` : callable(row) optionnel, appelé à l'intérieur d'un expander
     replié sous chaque ligne — pour les champs secondaires (Quantité, Gain
     total, Valeur...) qui n'ont pas leur place dans la ligne compacte.
+    `row_key` : clé de `row` utilisée pour générer la clé du widget expander
+    de chaque ligne — "ticker" par défaut (une position par ticker, jamais de
+    doublon), mais doit être une clé réellement unique par ligne pour une
+    liste où le même ticker peut apparaître plusieurs fois (ex : historique
+    des trades), sous peine de collision de clé de widget Streamlit.
     """
     with st.container(key=f"tslight_mobile_{table_key}"):
         for row in rows:
@@ -1751,28 +1852,32 @@ def render_compact_list(
                 side_color = LIGHT_GREEN if side == "Long" else LIGHT_RED
                 side_html = f'<span class="ts-compact-side" style="color:{side_color}">{side[0]}</span>'
             secondary_color = row.get("secondary_color", LIGHT_TEXT)
+            # Gabarit compacté sur une seule ligne (pas de retour à la ligne
+            # entre une balise et son contenu) : avec le HTML indenté sur
+            # plusieurs lignes utilisé auparavant, un champ "secondary" (ou
+            # "primary") vide laissait une ligne ne contenant QUE de
+            # l'indentation — que le moteur markdown de Streamlit interprète
+            # alors comme un bloc de code indenté, coupant le rendu HTML en
+            # plein milieu (fermetures de balises affichées en texte brut
+            # dans un encart noir, repéré au test réel sur les listes qui
+            # n'ont pas de valeur secondaire, ex. recherches récentes/
+            # suggestions, sans prix à afficher).
             st.markdown(
-                f"""
-                <div class="ts-compact-row">
-                    <div class="ts-compact-left">
-                        <span class="ts-compact-badge" style="background:{bg};color:{fg}">
-                            {html_lib.escape(row['ticker'])}
-                        </span>
-                        <div class="ts-compact-name-wrap">
-                            <div class="ts-compact-name">{html_lib.escape(row['name'])}{side_html}</div>
-                        </div>
-                    </div>
-                    <div class="ts-compact-right">
-                        <div class="ts-compact-primary">{html_lib.escape(row.get('primary', ''))}</div>
-                        <div class="ts-compact-secondary" style="color:{secondary_color}">
-                            {html_lib.escape(str(row.get('secondary', '')))}
-                        </div>
-                    </div>
-                </div>
-                """,
+                f'<div class="ts-compact-row">'
+                f'<div class="ts-compact-left">'
+                f'<span class="ts-compact-badge" style="background:{bg};color:{fg}">'
+                f'{html_lib.escape(row["ticker"])}</span>'
+                f'<div class="ts-compact-name-wrap">'
+                f'<div class="ts-compact-name">{html_lib.escape(row["name"])}{side_html}</div>'
+                f'</div></div>'
+                f'<div class="ts-compact-right">'
+                f'<div class="ts-compact-primary">{html_lib.escape(row.get("primary", ""))}</div>'
+                f'<div class="ts-compact-secondary" style="color:{secondary_color}">'
+                f'{html_lib.escape(str(row.get("secondary", "")))}</div>'
+                f'</div></div>',
                 unsafe_allow_html=True,
             )
             if detail is not None:
-                with st.container(key=f"tslight_detail_{table_key}_{_safe_key_part(row['ticker'])}"):
+                with st.container(key=f"tslight_detail_{table_key}_{_safe_key_part(row[row_key])}"):
                     with st.expander("Détails"):
                         detail(row)

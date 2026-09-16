@@ -284,6 +284,21 @@ def _render_positions_table(snapshots: list[dict]) -> None:
         theme.render_compact_list(compact_rows, table_key="positions", detail=_render_position_detail)
 
 
+def _render_history_detail(row: dict) -> None:
+    """Contenu de l'expander "Détails" sous une ligne compacte mobile de
+    l'historique (voir theme.render_compact_list) : les champs qui n'ont pas
+    leur place dans la ligne compacte (Date complète, Levier, P&L réalisé,
+    Origine)."""
+    lines = [f"Date : {theme.mono(row['date'])}", f"Levier : {theme.mono(row['leverage'])}"]
+    if row["realized_pnl"] is not None:
+        color = theme.LIGHT_GREEN if row["realized_pnl"] >= 0 else theme.LIGHT_RED
+        sign = "+" if row["realized_pnl"] >= 0 else ""
+        pnl_str = f"{sign}{row['realized_pnl']:,.2f} €"
+        lines.append(f"P&L réalisé : {theme.mono(pnl_str, color=color)}")
+    lines.append(f"Origine : {row['origin']}")
+    st.markdown("  \n".join(lines), unsafe_allow_html=True)
+
+
 def _render_history(portfolio) -> None:
     if not portfolio.history:
         return
@@ -310,7 +325,22 @@ def _render_history(portfolio) -> None:
             ),
         } for i, t in enumerate(reversed(portfolio.history))]
 
-        theme.render_table_light(rows, HISTORY_COLUMNS, row_key="_row_id", table_key="history")
+        # Rendu double (desktop table / mobile liste compacte), même principe
+        # que _render_positions_table : auparavant seul le rendu desktop
+        # existait ici, donc sur mobile chaque trade s'affichait comme une
+        # grosse carte listant ses 10 colonnes à la verticale (repéré au test
+        # réel — "rectangles trop larges et coupés à l'écran").
+        with st.container(key="tslight_desktop_wrap_history"):
+            theme.render_table_light(rows, HISTORY_COLUMNS, row_key="_row_id", table_key="history")
+
+        compact_rows = [{
+            **row,
+            "primary": f"{row['price']:,.2f} €",
+            "secondary": f"{row['action']} · {row['quantity']:g}",
+        } for row in rows]
+        theme.render_compact_list(
+            compact_rows, table_key="history", detail=_render_history_detail, row_key="_row_id",
+        )
 
 
 def _filter_value_history(value_history: list[dict], period_label: str) -> list[dict]:
@@ -341,9 +371,17 @@ def _render_positions_summary(snapshots: list[dict]) -> None:
             "name": s["position"].name,
             "price": s["current_price_eur"],
         } for s in snapshots]
-        theme.render_table_light(
-            rows, COMPACT_POSITION_COLUMNS, row_key="ticker", table_key="portfolio_chart_positions",
-        )
+        table_key = "portfolio_chart_positions"
+        # Rendu double (desktop table / mobile liste compacte) : ce
+        # récapitulatif restait en grosse carte sur mobile (repéré au test
+        # réel), alors que le tableau Positions complet plus haut sur la page
+        # a lui déjà ce traitement (voir _render_positions_table).
+        with st.container(key=f"tslight_desktop_wrap_{table_key}"):
+            theme.render_table_light(
+                rows, COMPACT_POSITION_COLUMNS, row_key="ticker", table_key=table_key,
+            )
+        compact_rows = [{**row, "primary": f"{row['price']:,.2f} €"} for row in rows]
+        theme.render_compact_list(compact_rows, table_key=table_key)
 
 
 def _render_performance(portfolio, snapshots: list[dict]) -> None:
@@ -415,7 +453,14 @@ def _render_performance(portfolio, snapshots: list[dict]) -> None:
                         line=dict(color=color, width=2),
                         fill="tozeroy", fillgradient=theme.plotly_area_fillgradient(color),
                     ))
-                    fig.update_layout(**theme.plotly_layout(yaxis_title="Valeur (€)"))
+                    # Pas de yaxis_title ("Valeur (€)" auparavant) : occupait
+                    # une bonne partie de la largeur sur mobile (légende
+                    # verticale le long de l'axe) pour une information déjà
+                    # évidente (l'unité € est visible partout ailleurs sur la
+                    # page) — retiré aussi bien desktop que mobile, Streamlit
+                    # ne permettant pas de layout Plotly différent par
+                    # largeur d'écran côté serveur.
+                    fig.update_layout(**theme.plotly_layout())
                     # autorange=False : sans ça, le remplissage tirerait l'axe jusqu'à 0 et
                     # écraserait la courbe (voir theme.plotly_area_range).
                     fig.update_yaxes(range=theme.plotly_area_range(df["value_eur"]), autorange=False)

@@ -305,7 +305,14 @@ def _render_card(item: NewsItem, author_name: str, can_delete: bool) -> None:
         if item.link and not _is_tweet_url(item.link):
             _render_link_preview(item.link)
 
-        if truncated:
+        # Le bouton d'ouverture était réservé aux articles dont l'aperçu est
+        # tronqué (_excerpt) : un résumé hebdomadaire automatique (contenu
+        # court et structuré, voir weekly_summary.py) reste presque toujours
+        # sous la limite de troncature, donc n'obtenait jamais ce bouton et
+        # restait de fait impossible à ouvrir en modal, contrairement aux
+        # posts libres habituellement plus longs — toujours proposé pour ces
+        # résumés, tronqué ou non.
+        if truncated or item.is_system:
             if st.button("Lire l'article →", key=f"open_news_{item.id}", use_container_width=True):
                 st.session_state.open_news_id = item.id
                 st.rerun()

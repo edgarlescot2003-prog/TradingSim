@@ -204,6 +204,19 @@ def _format_price(ticker: str, price: float, currency: str) -> str:
     return f"{price:,.2f} {currency}"
 
 
+def _render_asset_detail(row: dict) -> None:
+    """Contenu de l'expander "Détails" sous une ligne compacte mobile d'un
+    encadré d'actifs (voir theme.render_compact_list) : la var. 30j, qui n'a
+    pas sa place dans la ligne compacte (déjà 2 valeurs : prix + var. jour)."""
+    change_30d = row.get("change_30d_pct")
+    if change_30d is None:
+        st.caption("Variation 30j indisponible.")
+        return
+    color = theme.LIGHT_GREEN if change_30d >= 0 else theme.LIGHT_RED
+    sign = "+" if change_30d >= 0 else ""
+    st.markdown(f"Variation 30j : {theme.mono(f'{sign}{change_30d:.2f}%', color=color)}", unsafe_allow_html=True)
+
+
 def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
                        quotes: dict, category: str) -> None:
     with st.container(key=f"ts_card_{card_key}"):
@@ -219,7 +232,27 @@ def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
                 "change_pct": q["change_pct"] if q else None,
                 "change_30d_pct": q.get("change_30d_pct") if q else None,
             })
-        theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key=f"compact_{card_key}")
+
+        table_key = f"compact_{card_key}"
+        # Rendu double (desktop table / mobile liste compacte) : auparavant
+        # seul le rendu desktop existait, donc chaque ligne (5 colonnes)
+        # s'empilait en grosse carte sur mobile plutôt qu'en une ligne
+        # resserrée façon Kraken/TradingView — repéré au test réel ("chiffres
+        # qui se chevauchent" : la var. jour d'une ligne chevauchait le
+        # libellé de prix de la ligne suivante une fois les cartes tassées).
+        with st.container(key=f"tslight_desktop_wrap_{table_key}"):
+            theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key=table_key)
+
+        compact_rows = [{
+            **row,
+            "primary": row["price"] or "—",
+            "secondary": f"{row['change_pct']:+.2f}%" if row["change_pct"] is not None else "—",
+            "secondary_color": (
+                (theme.LIGHT_GREEN if row["change_pct"] >= 0 else theme.LIGHT_RED)
+                if row["change_pct"] is not None else theme.LIGHT_TEXT
+            ),
+        } for row in rows]
+        theme.render_compact_list(compact_rows, table_key=table_key, detail=_render_asset_detail)
 
 
 def _render_home_boxes() -> None:
@@ -266,6 +299,19 @@ def _search_tradable_assets(query: str) -> list[dict]:
     return results
 
 
+def _render_search_result_list(rows: list[dict], table_key: str) -> None:
+    """Rendu double (desktop table / mobile liste compacte) pour une liste à
+    2 colonnes ticker+nom seulement (résultats de recherche, récents,
+    suggestions) : même principe que les encadrés d'actifs (_render_asset_box)
+    et Positions/Historique (ui_portfolio.py) — sans lui, chaque élément
+    s'empilait en grosse carte sur mobile ("gros rectangles peu esthétiques",
+    repéré au test réel) au lieu d'une ligne compacte par élément."""
+    with st.container(key=f"tslight_desktop_wrap_{table_key}"):
+        theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
+                                  table_key=table_key, show_header=False)
+    theme.render_compact_list(rows, table_key=table_key)
+
+
 def _render_search() -> None:
     with st.container(key="ts_card_search"):
         st.markdown("##### Rechercher un actif")
@@ -300,8 +346,7 @@ def _render_search() -> None:
                     "nav_name": r["name"],  # sans la bourse : c'est ce nom qui atterrit sur les trades/positions
                     "category": valuation.category_for(r.get("type", ""), r["symbol"]),
                 } for r in results[:8]]
-                theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
-                                          table_key="compact_search_results", show_header=False)
+                _render_search_result_list(rows, "compact_search_results")
             else:
                 st.caption("Aucun résultat. Tu peux saisir le ticker exact ci-dessous.")
                 with st.form("ts_manual_ticker_form", border=False):
@@ -334,16 +379,14 @@ def _render_search() -> None:
                 }
                 for r in recent
             ]
-            theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
-                                      table_key="compact_recent_searches", show_header=False)
+            _render_search_result_list(rows, "compact_recent_searches")
         else:
             st.markdown(
                 '<div class="ts-light-col-label" style="margin-bottom:0.5rem;">Suggestions</div>',
                 unsafe_allow_html=True,
             )
             rows = [{"ticker": t, "name": n, "category": c} for t, n, c in DEFAULT_SUGGESTIONS]
-            theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
-                                      table_key="compact_suggested_searches", show_header=False)
+            _render_search_result_list(rows, "compact_suggested_searches")
 
 
 # -- Prix + graphique (mécanique inchangée) -----------------------------------
@@ -1182,6 +1225,14 @@ def render(portfolio) -> None:
         if st.button("← Retour à l'accueil", key="back_to_trading_home"):
             st.session_state.selected_ticker = None
             st.rerun()
+
+        # Nom/ticker de l'actif consulté, absent jusqu'ici en haut de la fiche
+        # (seul le prix, plus bas, permettait de confirmer quel actif était
+        # affiché). Nom en titre + ticker à part quand il diffère du nom
+        # (cas courant : "Apple Inc." / AAPL) ; juste le ticker sinon (repli
+        # manuel sans nom connu, voir _render_search).
+        title = f"{name}  ·  `{ticker}`" if name and name != ticker else ticker
+        st.markdown(f"### {title}")
 
         # Layout façon Hyperliquid (desktop) : graphique à gauche (majorité de
         # la largeur), panneau d'ordre à droite — repasse en 1 colonne empilée

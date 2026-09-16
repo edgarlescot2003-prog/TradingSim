@@ -54,11 +54,12 @@ def _render_signup() -> None:
 
 
 def render() -> None:
-    st.title("Trading Simulator")
-    st.caption("Connecte-toi ou crée un compte pour accéder à ton portefeuille.")
+    with st.container(key="ts_login_page"):
+        st.title("Trading Simulator")
+        st.caption("Connecte-toi ou crée un compte pour accéder à ton portefeuille.")
 
-    tab_login, tab_signup = st.tabs(["Connexion", "Inscription"])
-    with tab_login:
-        _render_login()
-    with tab_signup:
-        _render_signup()
+        tab_login, tab_signup = st.tabs(["Connexion", "Inscription"])
+        with tab_login:
+            _render_login()
+        with tab_signup:
+            _render_signup()
