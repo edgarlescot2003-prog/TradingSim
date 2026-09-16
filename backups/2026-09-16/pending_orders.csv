@@ -1,0 +1,2 @@
+id,portfolio_id,user_id,ticker,name,action,quantity,limit_price_eur,currency,leverage,created_at,last_checked_at
+5499fcda-b275-45a1-a9af-0f74dedd1fd3,924ea457-f336-4f3a-8383-740fc2a584c1,1b51243a-e92d-43fd-950b-2024ff44522f,XRP-USD,XRP,achat,338.983051,1.18,USD,2.0,2026-09-14T11:39:48.146267,2026-09-15T13:27:26.214141+00:00
