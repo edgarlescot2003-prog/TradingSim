@@ -481,20 +481,17 @@ hr {{ border-color: var(--ts-border) !important; }}
     background: var(--ts-panel) !important;
     border-right: 1px solid var(--ts-border) !important;
 }}
-/* Icône native de repli/dépli du panneau latéral (">>"/"«") : masquée sur
-   desktop/tablette — la navigation de l'app passe entièrement par sa propre
-   barre d'onglets, ce bouton n'apporte rien et reste juste un résidu visuel
-   de l'interface Streamlit par défaut. Bornée à min-width:641px (pas de
-   media query mobile dédiée ici, contrairement au reste du fichier) car
-   Streamlit replie automatiquement le panneau latéral sous ~640px : sur
-   mobile, le panneau est fermé par défaut et CE bouton (stExpandSidebarButton,
-   pas stSidebarCollapseButton) reste le seul moyen d'atteindre "Se
-   déconnecter"/le sélecteur de portefeuille — le masquer là aussi
-   verrouillerait ces actions hors d'atteinte plutôt que de simplement
-   nettoyer l'UI. */
-@media (min-width: 641px) {{
-    [data-testid="stSidebarCollapseButton"] {{ display: none !important; }}
-}}
+/* Panneau latéral natif : REPLIÉ PAR DÉFAUT sur desktop aussi désormais
+   (voir app.py, initial_sidebar_state="collapsed") plutôt que masqué. Une
+   première version masquait ici l'icône de repli interne au panneau
+   (stSidebarCollapseButton) pour "nettoyer" l'UI sur desktop — mais cette
+   icône est le SEUL moyen de refermer le panneau une fois ouvert : la
+   masquer laissait le panneau coincé ouvert dès qu'il l'était (ce qui
+   arrivait tout le temps, puisqu'il s'ouvrait encore en grand par défaut à
+   l'époque), sans aucun moyen de le refermer — régression bloquante
+   détectée après coup. Le panneau natif Streamlit (icône de repli/dépli
+   comprise) n'est donc plus touché par du CSS ici : entièrement fonctionnel
+   dans les deux sens, juste replié au chargement. */
 
 /* Page Connexion/Inscription (voir ui_auth.py, st.container(key="ts_login_page")) :
    centrée au lieu de rester collée en haut à gauche par défaut. Centrage

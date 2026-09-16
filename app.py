@@ -11,7 +11,14 @@ from src import (
 )
 from src.portfolio import MAX_PORTFOLIOS_PER_USER, Portfolio
 
-st.set_page_config(page_title="Trading Simulator", layout="wide")
+# initial_sidebar_state="collapsed" : replié par défaut sur desktop aussi
+# (pas seulement mobile, déjà replié par défaut nativement) — la navigation
+# de l'app passe par sa propre barre d'onglets, pas par ce panneau natif
+# Streamlit, qui n'a donc plus besoin de s'ouvrir en grand au chargement.
+# Reste entièrement dépliable/repliable via l'icône native (jamais masquée,
+# voir theme.py) : "Se déconnecter" et le sélecteur de portefeuille y
+# vivent toujours, à un clic près.
+st.set_page_config(page_title="Trading Simulator", layout="wide", initial_sidebar_state="collapsed")
 theme.inject()
 
 # Crée les tables manquantes si besoin (mis en cache, ne s'exécute qu'une
