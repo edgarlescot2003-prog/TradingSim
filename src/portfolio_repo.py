@@ -81,8 +81,29 @@ def save_portfolio(session: Session, portfolio: Portfolio, user_id: str) -> None
     (un portefeuille à la fois) — un script qui sauvegarde plusieurs
     portefeuilles dans la même exécution (ex : scripts/check_tp_sl.py) fait
     donc autant de commits indépendants, pas une seule transaction globale.
+
+    `with_for_update=True` verrouille la ligne `portfolios` (si elle existe
+    déjà) jusqu'au commit de CETTE transaction : un second appel concurrent
+    à `save_portfolio` sur le MÊME portefeuille (ex : une session utilisateur
+    et le cron `check-tp-sl.yml`/`check_liquidation.py`, qui tournent toutes
+    les 15 min sur tous les portefeuilles à paliers/positions leviées actifs
+    — voir scripts/check_tp_sl.py, scripts/check_liquidation.py) attend que
+    CETTE transaction se termine avant de commencer la sienne, au lieu de
+    s'exécuter en parallèle. Nécessaire car ce qui suit fait un DELETE puis
+    un ré-INSERT complet de positions/trades/pending_orders : sans ce verrou,
+    deux sauvegardes entrelacées peuvent soit violer la contrainte unique de
+    `positions` (portfolio_id, ticker) — le crash `IntegrityError` détecté au
+    stress test de conditions réelles (prompt 11) —, soit pire, faire
+    disparaître silencieusement des lignes fraîchement insérées par l'autre
+    (le DELETE d'une transaction supprimant l'INSERT déjà commité de
+    l'autre), sans qu'aucune erreur ne soit levée. Un simple upsert
+    `ON CONFLICT` (voir value_history plus bas, qui a le même souci mais une
+    contrainte unique dessus) ne suffit pas seul ici : `trades` et
+    `pending_orders` n'ont pas de contrainte unique naturelle pour cibler un
+    conflit, donc seul un verrou qui sérialise la transaction ENTIÈRE ferme
+    la fenêtre de course pour les 4 tables à la fois.
     """
-    prow = session.get(PortfolioRow, portfolio.id)
+    prow = session.get(PortfolioRow, portfolio.id, with_for_update=True)
     if prow is None:
         session.add(PortfolioRow(
             id=portfolio.id, user_id=user_id, name=portfolio.name,
@@ -103,12 +124,31 @@ def save_portfolio(session: Session, portfolio: Portfolio, user_id: str) -> None
     session.query(PendingOrderRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
     session.query(ValueHistoryRow).filter_by(portfolio_id=portfolio.id).delete(synchronize_session=False)
 
-    for pos in portfolio.positions.values():
-        session.add(PositionRow(
-            portfolio_id=portfolio.id, user_id=user_id, ticker=pos.ticker, name=pos.name,
-            quantity=pos.quantity, avg_price_eur=pos.avg_price_eur, currency=pos.currency,
-            entry_date=pos.entry_date, side=pos.side, margin_eur=pos.margin_eur,
-        ))
+    # INSERT ... ON CONFLICT DO UPDATE (même idiome que value_history plus
+    # bas) : `positions` porte une vraie contrainte unique (portfolio_id,
+    # ticker), donc en plus du verrou ci-dessus (qui protège déjà cette
+    # table), un upsert explicite évite aussi tout conflit résiduel si cette
+    # fonction est un jour appelée hors du chemin verrouillé.
+    if portfolio.positions:
+        stmt = pg_insert(PositionRow).values([
+            {
+                "id": str(uuid.uuid4()), "portfolio_id": portfolio.id, "user_id": user_id,
+                "ticker": pos.ticker, "name": pos.name, "quantity": pos.quantity,
+                "avg_price_eur": pos.avg_price_eur, "currency": pos.currency,
+                "entry_date": pos.entry_date, "side": pos.side, "margin_eur": pos.margin_eur,
+            }
+            for pos in portfolio.positions.values()
+        ])
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_position_portfolio_ticker",
+            set_={
+                "name": stmt.excluded.name, "quantity": stmt.excluded.quantity,
+                "avg_price_eur": stmt.excluded.avg_price_eur, "currency": stmt.excluded.currency,
+                "entry_date": stmt.excluded.entry_date, "side": stmt.excluded.side,
+                "margin_eur": stmt.excluded.margin_eur,
+            },
+        )
+        session.execute(stmt)
     for t in portfolio.history:
         session.add(TradeRow(
             portfolio_id=portfolio.id, user_id=user_id, date=t.date, ticker=t.ticker, name=t.name,
