@@ -582,6 +582,16 @@ def _render_tp_sl_at_order_form(order_mode: str, ref_price: float) -> list[tuple
     / Stop Loss (déjà disponible sur toute position ouverte) permet de le
     faire après coup, sans limite de paliers celle-là.
 
+    Non proposé non plus pour renforcer une position déjà existante (Acheter
+    plus / Vendre plus à découvert) : la section Take Profit / Stop Loss
+    dédiée (_render_tp_sl_section) est alors déjà affichée juste en dessous
+    pour cette même position, avec les mêmes champs (Type/Prix cible/%) —
+    l'appelant restreint donc l'appel à `existing is None`. Sans cette
+    restriction, les deux blocs quasi identiques apparaissaient l'un sous
+    l'autre dans le panneau d'ordre (layout Hyperliquid, prompt 10),
+    donnant l'impression à tort d'une fonctionnalité dupliquée alors que
+    l'un porte sur le nouvel ordre et l'autre sur la position déjà détenue.
+
     Champs toujours visibles et actifs dès l'ouverture du formulaire (pas de
     case à cocher préalable à activer) : au moins un palier est proposé par
     défaut, prêt à être rempli directement — prix cible par défaut décalé de
@@ -847,7 +857,9 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 unsafe_allow_html=True,
             )
 
-        tp_sl_tiers = _render_tp_sl_at_order_form(order_mode, ref_price) if is_opening else []
+        tp_sl_tiers = (
+            _render_tp_sl_at_order_form(order_mode, ref_price) if is_opening and existing is None else []
+        )
 
         if order_mode == "Ordre au marché":
             if st.button("Valider l'ordre", type="primary", key="submit_market_order"):
