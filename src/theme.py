@@ -900,6 +900,24 @@ _LIGHT_CSS = f"""
     color: {LIGHT_FAINT} !important;
 }}
 
+/* Récapitulatif d'ordre (Coût total / Marge requise / Liquidation estimée,
+   voir _render_order_summary) : 3 st.metric côte à côte, désormais dans le
+   panneau d'ordre étroit du layout Hyperliquid (colonne de droite, voir
+   ts_trading_layout_row) — la taille par défaut des métriques (pensée pour
+   toute la largeur de page) débordait et rendait les chiffres illisibles
+   dans un tiers de colonne. Sélecteur plus spécifique que la règle générale
+   ci-dessus (et que celle du media query mobile plus bas) pour l'emporter
+   dans les deux cas : le panneau reste étroit sur mobile aussi (empilé en
+   pleine largeur, mais avec 3 métriques toujours côte à côte). */
+.st-key-ts_light [class*="st-key-ts_card_order_summary"] [data-testid="stMetricValue"] {{
+    font-size: 0.95rem !important;
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
+}}
+.st-key-ts_light [class*="st-key-ts_card_order_summary"] [data-testid="stMetricLabel"] {{
+    font-size: 0.62rem !important;
+}}
+
 /* Répartition par catégorie (points clés) */
 .ts-cat-row {{ display: flex; align-items: center; gap: 0.45rem; margin-top: 0.5rem; }}
 .ts-cat-dot {{ width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }}
