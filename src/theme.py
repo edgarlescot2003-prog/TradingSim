@@ -52,6 +52,11 @@ MUTED = "rgba(255,255,255,0.65)"
 # rouge = baisse).
 GREEN = "#4ADE80"
 RED = "#F87171"
+# Action "Vendre" (clôture d'une position longue existante, prompt 13) :
+# gris-bleu clair plutôt qu'une 3e teinte vive — se distingue nettement
+# d'Acheter (vert) et de Short (rouge), tout en restant neutre plutôt
+# qu'alarmant (ce n'est ni un gain ni une perte en soi, juste une clôture).
+SELL_NEUTRAL = "#94A3B8"
 # Orange plutôt que bleu : sur un fond dégradé teal -> bleu-marine (donc
 # lui-même dans la famille des bleus), un accent bleu se fond dans le fond au
 # lieu de s'en détacher. L'orange, complémentaire du teal, reste visible sur

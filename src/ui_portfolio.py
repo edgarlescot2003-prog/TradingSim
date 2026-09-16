@@ -381,7 +381,12 @@ def _render_positions_summary(snapshots: list[dict]) -> None:
                 rows, COMPACT_POSITION_COLUMNS, row_key="ticker", table_key=table_key,
             )
         compact_rows = [{**row, "primary": f"{row['price']:,.2f} €"} for row in rows]
-        theme.render_compact_list(compact_rows, table_key=table_key)
+
+        def _goto_detail(row: dict) -> None:
+            if st.button("Voir sur Trading", key=f"mobile_goto_chartpos_{row['ticker']}"):
+                theme.go_to_trading(row["ticker"], row["name"])
+
+        theme.render_compact_list(compact_rows, table_key=table_key, detail=_goto_detail)
 
 
 def _render_performance(portfolio, snapshots: list[dict]) -> None:

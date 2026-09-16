@@ -207,14 +207,24 @@ def _format_price(ticker: str, price: float, currency: str) -> str:
 def _render_asset_detail(row: dict) -> None:
     """Contenu de l'expander "Détails" sous une ligne compacte mobile d'un
     encadré d'actifs (voir theme.render_compact_list) : la var. 30j, qui n'a
-    pas sa place dans la ligne compacte (déjà 2 valeurs : prix + var. jour)."""
+    pas sa place dans la ligne compacte (déjà 2 valeurs : prix + var. jour),
+    et un moyen d'ouvrir la fiche de l'actif — sans lui, une ligne compacte
+    mobile (contrairement à sa version desktop, un vrai st.button cliquable)
+    n'a aucune interaction du tout, donc aucun moyen d'atteindre le
+    formulaire d'ordre depuis cette liste sur mobile (repéré en vérifiant le
+    rendu mobile du prompt 13 : impossible d'ouvrir un actif à partir des
+    encadrés d'accueil sur un écran étroit)."""
     change_30d = row.get("change_30d_pct")
-    if change_30d is None:
+    if change_30d is not None:
+        color = theme.LIGHT_GREEN if change_30d >= 0 else theme.LIGHT_RED
+        sign = "+" if change_30d >= 0 else ""
+        st.markdown(
+            f"Variation 30j : {theme.mono(f'{sign}{change_30d:.2f}%', color=color)}", unsafe_allow_html=True,
+        )
+    else:
         st.caption("Variation 30j indisponible.")
-        return
-    color = theme.LIGHT_GREEN if change_30d >= 0 else theme.LIGHT_RED
-    sign = "+" if change_30d >= 0 else ""
-    st.markdown(f"Variation 30j : {theme.mono(f'{sign}{change_30d:.2f}%', color=color)}", unsafe_allow_html=True)
+    if st.button("Voir la fiche →", key=f"mobile_goto_asset_{row['ticker']}", use_container_width=True):
+        theme.go_to_trading(row["ticker"], row.get("nav_name", row["name"]))
 
 
 def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
@@ -299,6 +309,16 @@ def _search_tradable_assets(query: str) -> list[dict]:
     return results
 
 
+def _render_search_result_detail(row: dict) -> None:
+    """Contenu de l'expander "Détails" sous une ligne compacte mobile d'une
+    liste de recherche (voir _render_search_result_list) : pas d'info
+    supplémentaire à afficher ici (ticker+nom seulement, pas de prix), donc
+    uniquement le bouton d'ouverture de la fiche — sans lui, une ligne
+    compacte mobile n'a aucun moyen d'atteindre le formulaire d'ordre."""
+    if st.button("Voir la fiche →", key=f"mobile_goto_search_{row['ticker']}", use_container_width=True):
+        theme.go_to_trading(row["ticker"], row.get("nav_name", row["name"]))
+
+
 def _render_search_result_list(rows: list[dict], table_key: str) -> None:
     """Rendu double (desktop table / mobile liste compacte) pour une liste à
     2 colonnes ticker+nom seulement (résultats de recherche, récents,
@@ -309,7 +329,7 @@ def _render_search_result_list(rows: list[dict], table_key: str) -> None:
     with st.container(key=f"tslight_desktop_wrap_{table_key}"):
         theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
                                   table_key=table_key, show_header=False)
-    theme.render_compact_list(rows, table_key=table_key)
+    theme.render_compact_list(rows, table_key=table_key, detail=_render_search_result_detail)
 
 
 def _render_search() -> None:
@@ -768,23 +788,96 @@ def _render_side_toggle(options: list[str], key: str) -> str:
     for option, btn_key in zip(options, btn_keys):
         action = ACTION_BY_ORDER_TYPE[option]
         color = theme.GREEN if action in ("achat", "rachat short") else theme.RED
-        # :active/:focus répétés explicitement : sinon la règle générique de
-        # theme.py (qui fige la bordure en accent orange au clic/focus pour
-        # éviter un décalage, voir _CSS) l'emporterait sur celle-ci — même
-        # !important des deux côtés, mais sélecteur plus spécifique
-        # (.stButton > button:active, avec le pseudo-classe en plus) sans ce
-        # rappel explicite ici.
+        # Sélecteur à 3 classes (ts_light + la clé du bouton + stElementContainer,
+        # puis .stButton > button) — même technique que badge_color/
+        # _render_action_tabs : la règle générique ".st-key-ts_light .stButton
+        # > button" (2 classes) a une spécificité plus élevée qu'un simple
+        # ".st-key-{btn_key} button" (1 classe) et l'emportait sur la couleur
+        # voulue ici malgré le !important (bug latent découvert en vérifiant
+        # au pixel près le rendu du prompt 13 — les boutons ressortaient tous
+        # dans le même style neutre, sans vert/rouge).
+        selector_base = f'.st-key-ts_light .st-key-{btn_key}.stElementContainer .stButton > button'
         if option == current:
             style_rules.append(
-                f'.st-key-{btn_key} button, '
-                f'.st-key-{btn_key} button:active, .st-key-{btn_key} button:focus {{ '
+                f'{selector_base}, {selector_base}:active, {selector_base}:focus {{ '
                 f'background:{color} !important; border-color:{color} !important; '
                 f'color:#ffffff !important; }}'
             )
         else:
             style_rules.append(
-                f'.st-key-{btn_key} button, '
-                f'.st-key-{btn_key} button:active, .st-key-{btn_key} button:focus {{ '
+                f'{selector_base}, {selector_base}:active, {selector_base}:focus {{ '
+                f'background:transparent !important; border-color:{color} !important; '
+                f'color:{color} !important; }}'
+            )
+    st.markdown(f"<style>{''.join(style_rules)}</style>", unsafe_allow_html=True)
+    return current
+
+
+def _render_action_tabs(key: str, buy_enabled: bool, sell_enabled: bool, short_enabled: bool,
+                         sell_help: str = "", short_help: str = "") -> str:
+    """3 actions distinctes, TOUJOURS affichées (contrairement à l'ancien
+    sélecteur à 2 options dont le libellé changeait selon le contexte, ex.
+    "Acheter (position longue)" puis "Acheter plus") : Acheter / Vendre /
+    Short, chacune avec son propre texte et sa propre couleur (voir prompt
+    "Distinction claire Acheter / Vendre / Short"). Vendre et Short sont
+    DÉSACTIVÉS (pas masqués : la raison reste visible en infobulle) quand
+    l'action n'est pas possible sur la position actuelle — Long et Short
+    sont mutuellement exclusifs sur un même ticker (voir Portfolio.buy/
+    open_short, qui le refusent déjà côté métier ; ce composant ne fait que
+    refléter cette règle existante, jamais l'inverse).
+
+    Retourne "acheter" | "vendre" | "short".
+    """
+    options = [
+        ("acheter", "Acheter", theme.GREEN, buy_enabled, ""),
+        ("vendre", "Vendre", theme.SELL_NEUTRAL, sell_enabled, sell_help),
+        ("short", "Short", theme.RED, short_enabled, short_help),
+    ]
+
+    current = st.session_state.get(key)
+    enabled_by_value = {value: enabled for value, _, _, enabled, _ in options}
+    if current not in enabled_by_value or not enabled_by_value[current]:
+        # Repli sur la première option disponible : ex. après une clôture
+        # totale qui fait passer l'actif de "long" à "aucune position", le
+        # choix "Vendre" n'est plus valide — pas de raison de rester bloqué
+        # dessus (le bouton est de toute façon désactivé, donc plus
+        # cliquable) plutôt que de basculer proprement sur Acheter.
+        current = next((value for value, _, _, enabled, _ in options if enabled), options[0][0])
+
+    cols = st.columns(len(options))
+    btn_keys = [f"{key}_opt_{value}" for value, _, _, _, _ in options]
+    for (value, label, _color, enabled, help_text), btn_key, col in zip(options, btn_keys, cols):
+        if col.button(label, key=btn_key, use_container_width=True, disabled=not enabled,
+                       help=help_text or None):
+            current = value
+    st.session_state[key] = current
+
+    style_rules = []
+    for (value, _label, color, enabled, _help_text), btn_key in zip(options, btn_keys):
+        # Sélecteur à 3 classes (ts_light + la clé du bouton + stElementContainer,
+        # puis .stButton > button) — même technique que badge_color plus haut :
+        # la règle générique ".st-key-ts_light .stButton > button" (2 classes)
+        # a une spécificité plus élevée qu'un simple ".st-key-{btn_key} button"
+        # (1 classe) et l'emportait sur la couleur voulue ici malgré le
+        # !important (à spécificité égale ou supérieure, !important ne suffit
+        # pas à lui seul — repéré au test réel : les 3 boutons ressortaient
+        # tous avec le même style neutre, sans vert/rouge/gris distinctifs).
+        selector_base = f'.st-key-ts_light .st-key-{btn_key}.stElementContainer .stButton > button'
+        if not enabled:
+            style_rules.append(
+                f'{selector_base}, {selector_base}:disabled {{ '
+                f'background:transparent !important; border-color:{theme.BORDER} !important; '
+                f'color:{theme.MUTED} !important; }}'
+            )
+        elif value == current:
+            style_rules.append(
+                f'{selector_base}, {selector_base}:active, {selector_base}:focus {{ '
+                f'background:{color} !important; border-color:{color} !important; '
+                f'color:#ffffff !important; }}'
+            )
+        else:
+            style_rules.append(
+                f'{selector_base}, {selector_base}:active, {selector_base}:focus {{ '
                 f'background:transparent !important; border-color:{color} !important; '
                 f'color:{color} !important; }}'
             )
@@ -799,24 +892,57 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
 
         uses_amount_input = _uses_amount_input(ticker, quote_type)
         existing = portfolio.positions.get(ticker)
-        if existing is None:
-            st.caption(f"Aucune position ouverte sur {ticker}.")
-            order_type = _render_side_toggle(
-                ["Acheter (position longue)", "Vendre à découvert (position courte)"],
-                key="order_type_none",
-            )
-        elif existing.side == "long":
-            st.caption(f"Position actuelle : {existing.quantity:g} {ticker} en position longue "
-                       f"(prix moyen {existing.avg_price_eur:,.2f} €).")
+        has_long = existing is not None and existing.side == "long"
+        has_short = existing is not None and existing.side == "short"
+
+        action_choice = _render_action_tabs(
+            key="order_action_tab",
+            buy_enabled=not has_short,
+            sell_enabled=has_long,
+            short_enabled=not has_long,
+            sell_help=(
+                "" if has_long else f"Aucune position longue détenue sur {ticker} : rien à vendre."
+            ),
+            short_help=(
+                "" if not has_long
+                else f"Position longue déjà ouverte sur {ticker} : vends-la d'abord (onglet Vendre)."
+            ),
+        )
+
+        if action_choice == "acheter":
+            if existing is None:
+                st.caption(f"Aucune position ouverte sur {ticker}.")
+                order_type = "Acheter (position longue)"
+            else:
+                st.caption(f"Position actuelle : {existing.quantity:g} {ticker} en position longue "
+                           f"(prix moyen {existing.avg_price_eur:,.2f} €).")
+                _render_maintenance_indicator(existing, price_eur)
+                order_type = "Acheter plus"
+        elif action_choice == "vendre":
+            # Exigence explicite du prompt "Distinction claire Acheter/Vendre/
+            # Short" : la quantité détenue doit ressortir clairement, pour que
+            # l'utilisateur sache combien il peut vendre au maximum — avant,
+            # cette information était noyée dans une phrase générique
+            # ("Position actuelle : ..."), pas mise en avant comme un plafond.
+            st.caption(f"Tu détiens : {theme.mono(f'{existing.quantity:g} {ticker}')} en position longue "
+                       f"(prix moyen {existing.avg_price_eur:,.2f} €).", unsafe_allow_html=True)
             _render_maintenance_indicator(existing, price_eur)
-            order_type = _render_side_toggle(["Acheter plus", "Vendre"], key="order_type_long")
-        else:
-            st.caption(f"Position actuelle : {existing.quantity:g} {ticker} en position courte "
-                       f"(prix moyen {existing.avg_price_eur:,.2f} €).")
-            _render_maintenance_indicator(existing, price_eur)
-            order_type = _render_side_toggle(
-                ["Vendre plus à découvert", "Racheter (clôturer)"], key="order_type_short",
-            )
+            order_type = "Vendre"
+        else:  # short
+            if existing is None:
+                st.caption(f"Aucune position ouverte sur {ticker}.")
+                order_type = "Vendre à découvert (position courte)"
+            else:
+                st.caption(f"Position actuelle : {existing.quantity:g} {ticker} en position courte "
+                           f"(prix moyen {existing.avg_price_eur:,.2f} €).")
+                _render_maintenance_indicator(existing, price_eur)
+                # Sous-choix propre au short déjà ouvert (renforcer / racheter) :
+                # ce sont deux actions différentes que l'onglet Short doit
+                # toutes les deux couvrir (comportement déjà existant, juste
+                # déplacé ici plutôt que d'être le sélecteur de premier niveau).
+                order_type = _render_side_toggle(
+                    ["Vendre plus à découvert", "Racheter (clôturer)"], key="order_type_short_sub",
+                )
 
         action = ACTION_BY_ORDER_TYPE[order_type]
         is_opening = order_type in OPENING_ORDER_TYPES
