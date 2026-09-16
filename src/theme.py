@@ -1166,6 +1166,19 @@ _LIGHT_CSS = f"""
         flex: none !important;
     }}
 
+    /* Fiche Trading (layout Hyperliquid, voir ui_trading.py) : la disposition
+       2 colonnes (graphique | panneau d'ordre) ne concerne que le desktop —
+       même principe que ts_portfolio_chart_row ci-dessus. Le graphique est
+       rendu en premier dans le code (colonne de gauche), il reste donc
+       naturellement en haut une fois empilé, panneau d'ordre en dessous. */
+    .st-key-ts_light [class*="st-key-ts_trading_layout_row"] [data-testid="stHorizontalBlock"] {{
+        flex-direction: column !important;
+    }}
+    .st-key-ts_light [class*="st-key-ts_trading_layout_row"] [data-testid="stColumn"] {{
+        width: 100% !important;
+        flex: none !important;
+    }}
+
     /* Échelle globale (voir le même principe, plus détaillé, dans le media
        query de _CSS) : la réduction de police racine posée là-bas profite
        déjà à tout ce qui est exprimé en rem ci-dessus (cartes, badges,

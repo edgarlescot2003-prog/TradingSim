@@ -4,6 +4,13 @@ tant qu'aucun actif n'est sélectionné, recherche unifiée avec historique par
 utilisateur, fiche prix/graphique (mécanique inchangée : fragment 30s,
 sélecteur de période), formulaire d'ordre avec récapitulatif (coût/marge/
 liquidation/simulation P&L).
+
+Layout de la fiche d'un actif sélectionné, façon Hyperliquid (voir
+ts_trading_layout_row dans render()) : 2 colonnes sur desktop (graphique à
+gauche, panneau d'ordre + TP/SL à droite, non sticky), 1 colonne empilée sur
+mobile (media query dans theme.py). Les explications pédagogiques
+(_render_explanations) vivent dans une zone séparée sous ce bloc, pas dans le
+panneau d'ordre lui-même.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -1000,6 +1007,57 @@ def _render_tp_sl_section(portfolio, ticker: str) -> None:
                     st.markdown(f"- {line}")
 
 
+# -- Explications pédagogiques ---------------------------------------------
+
+# Contenu condensé à partir de ui_tutorial.py (chapitres 4/5/6 et "Take Profit
+# / Stop Loss") : mêmes notions, reformulées en 2-3 phrases chacune plutôt que
+# reprises telles quelles (le tutoriel détaille avec des exemples chiffrés,
+# cette zone sert de pense-bête rapide pendant que l'utilisateur trade).
+def _render_explanations() -> None:
+    """Zone pédagogique séparée sous le graphique/panneau d'ordre : reprend
+    en version courte les mécanismes déjà détaillés dans l'onglet Tutoriel
+    (Marché/Limite, Long/Short, levier, TP/SL, liquidation) — volontairement
+    hors du panneau d'ordre (point 3 du prompt layout Hyperliquid) pour ne
+    pas l'alourdir pendant que l'utilisateur passe un ordre. Peut être
+    consultée à part, repliée par défaut (st.expander) pour rester discrète.
+    """
+    with st.container(key="ts_card_explanations"):
+        st.markdown("##### Comprendre les mécanismes")
+        with st.expander("Ordre au marché vs ordre à cours limité"):
+            st.markdown(
+                "- **Marché** : exécution immédiate, au prix affiché à l'instant T.\n"
+                "- **Cours limité** : tu fixes un prix cible, l'ordre s'exécute automatiquement "
+                "seulement quand le marché atteint ce niveau (visible et annulable depuis "
+                "\"Ordres en attente\" tant qu'il n'est pas exécuté)."
+            )
+        with st.expander("Position longue (Long) vs position courte (Short)"):
+            st.markdown(
+                "- **Long** : tu achètes en pariant sur une **hausse** du prix — le réflexe classique.\n"
+                "- **Short** : tu paries sur une **baisse**, sans posséder l'actif au départ. Tu gagnes "
+                "si le prix baisse, tu perds s'il monte : c'est l'inverse du Long."
+            )
+        with st.expander("Effet de levier et marge"):
+            st.markdown(
+                "Le **levier** te permet de contrôler une position plus grosse que l'argent réellement "
+                "engagé (la **marge**) : par exemple 100 € engagés à levier x10 contrôlent une position "
+                "de 1000 €. Gains ET pertes sont amplifiés dans les mêmes proportions, dans les deux sens."
+            )
+        with st.expander("Take Profit / Stop Loss"):
+            st.markdown(
+                "Des paliers de sortie automatique posés sur une position détenue : un **prix cible "
+                "exact** et un **% de la position** à vendre une fois ce prix atteint. Vérifiés et "
+                "exécutés automatiquement toutes les 15 minutes, même app fermée — annulables tant "
+                "qu'ils ne se sont pas déclenchés."
+            )
+        with st.expander("Liquidation automatique par marge de maintenance"):
+            st.markdown(
+                f"Une position à levier (x2 ou plus, jamais x1) est fermée automatiquement dès que sa "
+                f"perte latente atteint {valuation.MAINTENANCE_LOSS_RATIO * 100:.0f}% de la marge "
+                "engagée — ta perte ne peut donc jamais dépasser ce seuil, même si tu n'as pas "
+                "l'application ouverte (vérifié toutes les 15 minutes)."
+            )
+
+
 def _render_pending_orders(portfolio) -> None:
     with st.container(key="ts_card_pending"):
         st.markdown("##### Ordres en attente")
@@ -1103,17 +1161,29 @@ def render(portfolio) -> None:
             st.session_state.selected_ticker = None
             st.rerun()
 
-        _render_price_and_chart(ticker, quote_type)
+        # Layout façon Hyperliquid (desktop) : graphique à gauche (majorité de
+        # la largeur), panneau d'ordre à droite — repasse en 1 colonne empilée
+        # (graphique en haut, panneau en dessous) sur mobile, voir le media
+        # query dans theme.py. Panneau volontairement PAS sticky : défile
+        # normalement avec le reste de la page au scroll.
+        with st.container(key="ts_trading_layout_row"):
+            col_chart, col_order = st.columns([2.2, 1])
+            with col_chart:
+                _render_price_and_chart(ticker, quote_type)
 
-        # Déposé en session par le fragment ci-dessus (voir sa docstring) : il a
-        # déjà tourné une fois de façon synchrone à ce stade du script, cette
-        # valeur est donc à jour pour ce rerun.
-        price_eur = st.session_state.get("trading_price_eur")
-        currency = st.session_state.get("trading_currency")
+            # Déposé en session par le fragment ci-dessus (voir sa docstring) :
+            # il a déjà tourné une fois de façon synchrone à ce stade du
+            # script, cette valeur est donc à jour pour ce rerun.
+            price_eur = st.session_state.get("trading_price_eur")
+            currency = st.session_state.get("trading_currency")
+
+            with col_order:
+                if price_eur is not None:
+                    _render_order_form(portfolio, ticker, name, price_eur, currency, quote_type)
+                    _render_tp_sl_section(portfolio, ticker)
+
         if price_eur is None:
             return  # l'erreur a déjà été affichée par le fragment
 
-        _render_order_form(portfolio, ticker, name, price_eur, currency, quote_type)
-        _render_tp_sl_section(portfolio, ticker)
-
+        _render_explanations()
         _render_pending_orders(portfolio)
