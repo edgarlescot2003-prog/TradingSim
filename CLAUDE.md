@@ -320,117 +320,49 @@ le solde, pas un nouveau calcul) et P&L du jour. Barre en `position: sticky`
 (pas `fixed`), volontairement : passer sur 2 lignes si ça ne tient pas sur
 une (voir Responsive mobile ci-dessous) ne recouvre jamais rien en dessous.
 
-**Barre d'onglets sticky en desktop uniquement, topbar NON sticky**
-(`.st-key-ts_tabbar` / `.ts-topbar`, prompt 19) : seule la barre d'onglets
-reste fixée en haut au défilement (`position: sticky; top: 0`) — la topbar
-(Valeur totale/Liquidité/P&L) défile normalement avec le reste du contenu.
-Ce n'était PAS le comportement d'origine du prompt 19 : la topbar avait
-`position: sticky` depuis bien avant ce prompt, et la première version
-gardait ce comportement (les deux sticky, tabbar calée sous la topbar).
-Edgar a demandé cette retouche une fois le sticky réellement fonctionnel
-pour la première fois (voir le bug ci-dessous) : seule la barre d'onglets
-doit rester visible en permanence. Fond de la barre d'onglets **plein**
-(`BG_GRADIENT_TOP`, la teinte du haut du dégradé de fond — pas transparent
-comme la topbar) : demandé par Edgar après avoir vu le texte défiler EN
-TRANSPARENCE derrière les libellés d'onglets une fois réellement collée
-(illisible) ; `BG_GRADIENT_TOP` reste cohérent avec le dégradé fixe de la
-page (`background-attachment: fixed`) puisque c'est déjà la teinte qui s'y
-affiche normalement en haut du viewport. Padding horizontal ajouté en même
-temps (les onglets touchaient les bords du fond plein) — la marge droite
-(7.5rem, comme la topbar) réserve la place de la barre d'outils native
-Streamlit (stToolbar), qui flotte en haut à droite du viewport et peut
-désormais chevaucher la barre d'onglets une fois collée (elle chevauchait
-avant la topbar, qui n'est plus concernée). `position: sticky` (jamais
-`fixed`) : `fixed` s'ancrerait au viewport entier et entrerait en conflit
-de superposition avec le panneau latéral. Repasse en flux normal
-(`position: static`) sur mobile.
+**Barre d'onglets sticky — TENTÉ au prompt 19, ENTIÈREMENT ANNULÉ suite à
+une régression mobile grave, non ré-implémenté depuis.** Comportement
+ACTUEL (inchangé depuis avant le prompt 19) : la topbar reste `position:
+sticky; top: 0` comme elle l'a toujours été, la barre d'onglets défile
+normalement avec le reste du contenu, rien de spécifique au mobile pour
+elle.
 
-**Bug réel découvert (et corrigé) en implémentant la 1ère version de ce
-prompt** : la sticky de `.st-key-ts_tabbar` ne fonctionnait PAS du tout au
-premier essai (repéré par Edgar : "reste toujours en haut" = ne s'accroche
-jamais, défile comme avant). Diagnostic fait avec Playwright + un serveur
-Streamlit local jetable (compte de test, cf. règle habituelle) :
-**`.ts-topbar` était en fait déjà cassée elle aussi**, et l'était
-probablement depuis toujours — jamais repéré faute d'avoir vraiment scrollé
-une page assez longue en conditions réelles pendant les tests visuels
-précédents (prompts 12/13/16, sans doute sur des pages trop courtes pour
-que ça se voie). Cause : Streamlit enveloppe chaque élément dans une chaîne
-de divs intermédiaires (`stElementContainer`, `stMarkdownContainer`,
-`stVerticalBlock`, `stLayoutWrapper`, plus des divs sans `data-testid`)
-entre le contenu réel et `[data-testid="stMainBlockContainer"]` — lui-même
-enfant direct de `[data-testid="stMain"]`, qui est le VRAI conteneur qui
-défile (`overflow: auto` ; `window.scrollY` reste à 0 même en scrollant la
-page, tout se passe dans `stMain.scrollTop`). Une de ces enveloppes
-intermédiaires empêche `position: sticky` de fonctionner pour tout ce
-qu'elle contient, sans qu'aucune propriété individuelle testée isolément
-(display, min-height, align-items, flex-grow/basis) n'ait suffi à elle
-seule à expliquer/corriger le problème — seul un `display: contents` sur la
-TOTALITÉ de la chaîne d'enveloppes (déclarée ou non) entre l'élément et
-`stMainBlockContainer` règle le problème de façon fiable et reproductible.
-Correctif : règle CSS `[data-testid="stMainBlockContainer"] :has(.st-key-ts_tabbar)
-{ display: contents !important; }` (voir `theme.py`, juste après
-`.ts-topbar` — ne cible plus que la barre d'onglets depuis que la topbar
-n'est plus sticky, elle n'a donc plus besoin de ce correctif) — cible
-PRÉCISÉMENT les enveloppes qui contiennent cet élément, quelle que soit
-leur profondeur, sans toucher aux enveloppes identiques ailleurs sur la
-page ; `display: contents` supprime seulement la boîte de l'enveloppe
-(aucun padding/marge/bordure propre à perdre), le contenu reste normalement
-stylé. **Vérifié visuellement avec un vrai Chromium (Playwright,
-screenshots + mesures de position avant/après scroll)**, à chaque étape
-(bug initial, puis retouche demandée par Edgar) : testé aussi bien en
-scrollant à la souris qu'en forçant `scrollTop` directement.
-
-**2ème bug réel découvert en implémentant la retouche ci-dessus** : une fois
-le sticky et le fond bleu en place, Edgar a signalé "visuellement c'est
-top mais les onglets ne sont pas cliquables". Reproduit avec Playwright
-(`elementFromPoint` au centre d'un bouton d'onglet, barre collée après
-scroll) : le clic était intercepté par `[data-testid="stToolbar"]`, la
-barre d'outils native Streamlit (icônes Partager/étoile/crayon, bouton
-replier/déplier le panneau latéral...). Cause : `[data-testid="stHeader"]`
-(son parent) est rendu invisible par nos soins (`background: transparent;
-height: 0`, tout en haut de ce bloc CSS) pour le remplacer visuellement par
-notre topbar — mais `stToolbar` lui-même garde sa taille RÉELLE (~60px de
-haut) et s'étend sur TOUTE la largeur du viewport, à un z-index natif très
-élevé (~999990), avec son propre `pointer-events: auto` explicite dans la
-feuille de style native de Streamlit (donc PAS neutralisé par un
-`pointer-events: none` posé seulement sur son parent stHeader — vérifié :
-`pointer-events` est hérité par défaut, mais une valeur explicite sur
-l'enfant l'emporte toujours sur l'héritage, exactement ce que fait
-Streamlit ici). Cette zone invisible captait donc tous les clics dans cette
-bande, y compris sur nos propres onglets — jamais un problème avant
-puisque rien d'autre de cliquable ne s'y trouvait (le sticky ne
-fonctionnait pas, voir plus haut, et même une fois réparé la topbar sticky
-n'avait rien de cliquable dans cette zone). Correctif : `pointer-events:
-none !important` sur `stToolbar` lui-même (pas seulement stHeader),
-`pointer-events: auto !important` restauré sur ses boutons/liens réels
-(`stExpandSidebarButton` compris, vérifié toujours cliquable après coup) —
-voir `theme.py`, juste après le masquage de `stHeader`. Revérifié avec
-Playwright (`elementFromPoint` ne renvoie plus `stToolbar` mais bien
-l'élément réel visé, clic bout-en-bout fonctionnel sur un onglet après
-scroll, bouton replier/déplier le panneau latéral toujours opérationnel).
-
-**3ème bug réel découvert (grave, régression production) après les 2
-ci-dessus** : Edgar a signalé un écran bleu uni après connexion sur
-téléphone, persistant après reboot de l'app Streamlit Cloud (donc PAS le
-faux problème de cache habituel, voir plus bas dans "Règles impératives").
-Cause suspectée et corrigée par précaution (non reproduite avec certitude
-en local, WebKit desktop de Playwright n'ayant montré aucun problème — la
-build WebKit générique ne reproduit pas forcément un bug spécifique à une
-version d'iOS Safari réelle) : `display: contents` (voir le 1er bug
-ci-dessus) a un lourd historique de bugs de rendu sur Safari/iOS, y compris
-des cas documentés où tout un sous-arbre DOM cesse purement et simplement
-de s'afficher. La règle `:has(.st-key-ts_tabbar) { display: contents }`
-est maintenant restreinte à `@media (min-width: 641px)` (desktop
-uniquement, complément exact du seuil mobile `max-width:640px` déjà utilisé
-partout ailleurs) : aucune perte fonctionnelle sur mobile, la barre
-d'onglets n'y étant de toute façon jamais sticky (`position: static`).
-Padding droit de la barre d'onglets (7.5rem, réservé à la barre d'outils
-native Streamlit desktop) également ramené à 0.9rem sur mobile en même
-temps (comme la topbar) — inutile et disproportionné sur un écran de
-375-414px. **Symptôme non formellement confirmé comme résolu** (pas de
-vrai téléphone/Safari disponible pour vérifier après coup) : à confirmer
-par Edgar après ce déploiement — si l'écran bleu persiste malgré cette
-restriction, la cause est ailleurs et ce correctif est à réévaluer.
+Historique (pour ne pas retenter en aveugle les mêmes pistes) : le prompt
+19 a rendu `.st-key-ts_tabbar` sticky (`position: sticky`), avec plusieurs
+allers-retours suite aux retours d'Edgar — (1) la sticky ne s'accrochait
+PAS du tout au premier essai (la topbar, sticky depuis toujours, ne
+s'accrochait en fait pas non plus, jamais repéré faute d'avoir vraiment
+scrollé une page assez longue en test réel) ; diagnostic Playwright : une
+des nombreuses divs d'enveloppe que Streamlit insère entre chaque élément
+et `[data-testid="stMainBlockContainer"]` (`stElementContainer`,
+`stMarkdownContainer`, `stVerticalBlock`, `stLayoutWrapper`, divs sans
+`data-testid`) empêche `position: sticky` de fonctionner pour tout ce
+qu'elle contient — seul un `display: contents` sur la TOTALITÉ de cette
+chaîne d'enveloppes le corrigeait, vérifié fiable avec Playwright/Chromium.
+(2) Une fois la sticky fonctionnelle, Edgar a demandé que SEULE la barre
+d'onglets reste fixée (pas la topbar) avec un fond plein (le texte défilait
+en transparence derrière, illisible). (3) Les onglets sont alors devenus
+non cliquables une fois la barre collée : `[data-testid="stToolbar"]`
+(barre d'outils native Streamlit, invisible mais pleine largeur, z-index
+~999990, son propre `pointer-events: auto` explicite dans la feuille de
+style native) interceptait les clics — corrigé avec `pointer-events: none`
+ciblé. (4) Edgar a ensuite signalé un **écran bleu uni après connexion sur
+téléphone** (topbar + barre d'onglets visibles, RIEN d'autre, aucune erreur,
+identique sur tous les onglets), persistant après reboot de l'app Streamlit
+Cloud (donc pas le faux problème de cache habituel). `display: contents`
+(étape 1) a un historique connu de bugs de rendu sur Safari/iOS — restreint
+au desktop par précaution (`@media min-width: 641px`), mais **le problème a
+persisté à l'identique malgré cette restriction** : la cause réelle n'a
+donc jamais été formellement identifiée avant l'abandon complet de la
+fonctionnalité. Aucun outil de test sur un vrai téléphone/Safari n'était
+disponible pour diagnostiquer plus loin (WebKit desktop de Playwright,
+essayé en repli, n'a reproduit aucun des 4 symptômes signalés par Edgar, à
+aucune étape). Plutôt que de continuer à deviner en production, `src/theme.py`
+a été intégralement restauré à son état d'avant le prompt 19 (`git checkout
+<commit avant 19> -- src/theme.py`) — la barre d'onglets sticky n'existe
+donc plus du tout dans le code actuel. **À reprendre uniquement avec un
+vrai moyen de tester sur téléphone réel avant tout redéploiement**, pas en
+itérant à l'aveugle contre la prod comme cette tentative.
 
 **Responsive mobile** : passe faite (media queries `@media max-width:640px`
 dans `src/theme.py`) — échelle de police/paddings réduite globalement,
