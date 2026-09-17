@@ -1069,6 +1069,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 else:
                     created = _create_tp_sl_tiers(portfolio, ticker, tp_sl_tiers) if tp_sl_tiers else 0
                     storage.save_portfolio(portfolio)
+                    storage.invalidate_valuation_cache()
                     if created:
                         msg += f" {created} palier(s) TP/SL créé(s)."
                     st.toast(msg, duration=ORDER_CONFIRMATION_TOAST_SECONDS)
@@ -1088,6 +1089,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                     st.error(str(e))
                 else:
                     storage.save_portfolio(portfolio)
+                    storage.invalidate_valuation_cache()
                     st.toast(
                         f"Ordre à cours limité placé : {quantity:g} x {ticker} à {ref_price:,.2f} €.",
                         duration=ORDER_CONFIRMATION_TOAST_SECONDS,

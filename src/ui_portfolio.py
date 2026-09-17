@@ -540,6 +540,7 @@ def _render_portfolio_actions(portfolio) -> None:
             if st.button("Confirmer la réinitialisation", type="primary", key=f"reset_btn_{portfolio.id}"):
                 portfolio.reset()
                 storage.save_portfolio(portfolio)
+                storage.invalidate_valuation_cache()
                 st.session_state[reset_armed_key] = False
                 st.success("Portefeuille réinitialisé.")
                 st.rerun()

@@ -174,8 +174,12 @@ else:
     executed_messages = []
 if executed_messages:
     storage.save_portfolio(portfolio)
+    # Un ordre à cours limité vient de s'exécuter automatiquement (cash/
+    # positions modifiés) : invalide le cache de valorisation pour ne pas
+    # réafficher la valeur d'avant son exécution le temps que le TTL expire.
+    storage.invalidate_valuation_cache()
 
-total_value, snapshots = valuation.total_value(portfolio)
+total_value, snapshots = storage.get_cached_total_value(portfolio)
 portfolio.record_value_snapshot(total_value)
 
 # Sauvegarde Supabase : ne sert ici qu'à persister le point QUOTIDIEN de

@@ -8,10 +8,12 @@ scripts/check_tp_sl.py) qui opèrent sur un `portfolio_id` explicite plutôt
 que sur "l'utilisateur de la session courante".
 """
 
+import time
+
 import streamlit as st
 from sqlalchemy import select
 
-from . import db, portfolio_repo
+from . import db, portfolio_repo, valuation
 from .db_models import PortfolioRow, PositionRow, TradeRow, PendingOrderRow, TpSlOrderRow, User, ValueHistoryRow
 from .portfolio import Portfolio
 
@@ -48,6 +50,44 @@ def save_portfolio(portfolio: Portfolio) -> None:
     user_id = _current_user_id()
     with db.get_session() as session:
         portfolio_repo.save_portfolio(session, portfolio, user_id)
+
+
+# Cache manuel (session_state + timestamp) sur valuation.total_value() :
+# celui-ci revalorise chaque position détenue (appel get_quote par ticker,
+# déjà caché 20s côté market_data mais pas gratuit pour autant, ~0,9s à
+# cache froid pour un portefeuille de plusieurs positions) et tournait
+# jusqu'ici SANS CONDITION à chaque rerun de app.py, y compris vers un
+# onglet qui n'en a pas besoin (Tutoriel, Règlement, News...). st.cache_data
+# est écarté : Portfolio est un objet mutable non hashable nativement, et un
+# cache manuel permet une invalidation explicite et maîtrisée
+# (invalidate_valuation_cache ci-dessous, appelée juste après toute action
+# qui change la valeur du portefeuille — achat/vente/short exécuté,
+# réinitialisation...) plutôt que d'attendre l'expiration du TTL. Vit ici
+# (pas dans app.py) pour rester testable indépendamment du flux de connexion
+# complet, et pour que la clé de session_state (VALUATION_CACHE_SESSION_KEY)
+# n'existe qu'à un seul endroit.
+VALUATION_CACHE_SESSION_KEY = "_valuation_cache"
+_VALUATION_CACHE_TTL_SECONDS = 5
+
+
+def get_cached_total_value(portfolio: Portfolio) -> tuple[float, list[dict]]:
+    now = time.time()
+    cache = st.session_state.get(VALUATION_CACHE_SESSION_KEY)
+    if cache and cache["portfolio_id"] == portfolio.id and now - cache["ts"] < _VALUATION_CACHE_TTL_SECONDS:
+        return cache["total_value"], cache["snapshots"]
+    total_value, snapshots = valuation.total_value(portfolio)
+    st.session_state[VALUATION_CACHE_SESSION_KEY] = {
+        "portfolio_id": portfolio.id, "total_value": total_value, "snapshots": snapshots, "ts": now,
+    }
+    return total_value, snapshots
+
+
+def invalidate_valuation_cache() -> None:
+    """À appeler juste après toute action qui change la valeur du
+    portefeuille actif (ordre exécuté, réinitialisation...), pour ne jamais
+    laisser get_cached_total_value ci-dessus afficher une valeur périmée le
+    temps que son TTL expire."""
+    st.session_state.pop(VALUATION_CACHE_SESSION_KEY, None)
 
 
 def delete_portfolio(portfolio_id: str) -> None:

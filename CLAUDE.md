@@ -444,7 +444,7 @@ directement dans le dépôt — gratuit, aucun service tiers. Voir
   interaction) a été corrigée au prompt 17 (voir diagnostic de lenteur
   ci-dessous) ; si ce bug persiste malgré ça, il est donc isolé au
   fragment du graphique.
-- **Diagnostic de lenteur (prompt 14) fait, 1 correction sur 2 appliquée** :
+- **Diagnostic de lenteur (prompt 14) fait, 2 corrections sur 2 appliquées** :
   2 causes identifiées pour la lenteur signalée au changement d'onglet et
   sur le formulaire d'ordre. (1) `_render_order_form` (`ui_trading.py`)
   n'était pas isolé dans son propre `@st.fragment`, contrairement au
@@ -466,11 +466,27 @@ directement dans le dépôt — gratuit, aucun service tiers. Voir
   graphique) nécessite un test manuel dans un navigateur, non exécuté ici
   faute d'outil de navigation disponible dans cette session — à confirmer
   par Edgar en local à l'occasion. (2) `valuation.total_value(portfolio)`
-  tourne sans condition à CHAQUE rerun (app.py, avant le routage d'onglet),
-  y compris vers un onglet qui n'en a pas besoin (Tutoriel, Règlement...) —
-  **pas encore corrigé, prompt séparé à venir** (cache court sur le
-  résultat, risque de fraîcheur à valider avant d'implémenter puisque
-  `Portfolio` est un objet mutable non hashable nativement). Correction
+  tournait sans condition à CHAQUE rerun (app.py, avant le routage
+  d'onglet), y compris vers un onglet qui n'en a pas besoin (Tutoriel,
+  Règlement...). **Corrigé au prompt 18** : cache manuel en
+  `session_state` + timestamp (`storage.get_cached_total_value`, TTL 5s —
+  `st.cache_data` écarté, `Portfolio` étant un objet mutable non hashable
+  nativement), clé par `portfolio.id` (changer de portefeuille actif
+  invalide naturellement le cache). Vit dans `storage.py` (pas `app.py` ni
+  `valuation.py`) pour rester testable isolément et parce que
+  `storage.py` dépend déjà de Streamlit, contrairement à `valuation.py`
+  qui doit rester réutilisable par `scripts/check_liquidation.py` sans
+  cette dépendance. Invalidation explicite (`storage.invalidate_valuation_cache`)
+  à chaque endroit qui change la valeur du portefeuille actif pendant la
+  session : les 2 points de validation d'ordre dans `_render_order_form`
+  (déjà à côté du `storage.save_portfolio()` du prompt 17), l'exécution
+  automatique d'un ordre à cours limité (`app.py`, `order_engine.process_pending_orders`)
+  et la réinitialisation d'un portefeuille (`ui_portfolio.py`) — jamais après
+  la simple pose/annulation d'un ordre à cours limité, qui ne touche ni le
+  cash ni les positions avant son exécution réelle (`Portfolio.place_limit_order`).
+  Vérifié par `AppTest` (cache chaud sur plusieurs reruns successifs = 1
+  seul appel réel à `valuation.total_value`, fraîcheur immédiate après
+  invalidation, cache manqué au changement de portefeuille actif). Correction
   triviale déjà appliquée en marge (`search_history.get_recent`, cache 10s
   — tournait aussi sans condition à chaque rerun de la page Trading).
 - Audit de charge (stress test) fait sur l'app déployée : isolation
