@@ -283,11 +283,21 @@ h1, h2, h3, h4, h5, h6,
    autre st.markdown) — `display: contents` ne fait que supprimer la boîte
    de l'enveloppe elle-même (elle n'a par ailleurs ni padding/marge/bordure
    propre à perdre), ses enfants restent normalement stylés et disposés.
-   Sans lien avec le media query mobile (agit identiquement desktop/mobile,
-   la barre d'onglets restant simplement en position: static sur mobile
-   malgré ça, voir plus bas). */
-[data-testid="stMainBlockContainer"] :has(.st-key-ts_tabbar) {{
-    display: contents !important;
+
+   RESTREINT AU DESKTOP (@media min-width 641px, complément exact du seuil
+   max-width:640px utilisé partout ailleurs pour le mobile) : `display:
+   contents` a un lourd historique de bugs de rendu sur Safari/iOS
+   (justement le moteur de la quasi-totalité des téléphones), y compris des
+   cas où tout un sous-arbre DOM cesse de s'afficher — provoqué en pratique
+   (écran bleu uni après connexion sur téléphone, aucune autre cause
+   identifiée, reboot de l'app exclu). Aucune perte fonctionnelle sur
+   mobile : la barre d'onglets n'y est de toute façon jamais sticky
+   (`position: static`, voir le media query mobile plus bas), ce correctif
+   n'y sert donc à rien — seulement un risque à écarter. */
+@media (min-width: 641px) {{
+    [data-testid="stMainBlockContainer"] :has(.st-key-ts_tabbar) {{
+        display: contents !important;
+    }}
 }}
 
 .ts-topbar-left {{ display: flex; align-items: center; gap: 0.6rem; }}
@@ -822,9 +832,13 @@ hr {{ border-color: var(--ts-border) !important; }}
     .ts-topbar-sep, .ts-topbar-portfolio {{ display: none; }}
     /* Barre d'onglets NON sticky sur mobile (prompt 19, contrairement à la
        règle desktop plus haut) : repasse en flux normal, défile avec la
-       page comme avant. */
+       page comme avant. Padding droit ramené à 0.9rem (comme la topbar
+       ci-dessus) : le 7.5rem desktop (place réservée à la barre d'outils
+       native Streamlit, jamais pertinente à cette largeur) viderait
+       inutilement une bonne partie d'un écran de 375-414px. */
     .st-key-ts_tabbar {{
         position: static;
+        padding: 0.2rem 0.9rem;
     }}
     /* Les 3 indicateurs passent d'une rangée (label au-dessus de la valeur,
        serrés côte à côte) à une colonne de 3 lignes (label à gauche, valeur

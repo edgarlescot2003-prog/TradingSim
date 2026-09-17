@@ -409,6 +409,29 @@ Playwright (`elementFromPoint` ne renvoie plus `stToolbar` mais bien
 l'élément réel visé, clic bout-en-bout fonctionnel sur un onglet après
 scroll, bouton replier/déplier le panneau latéral toujours opérationnel).
 
+**3ème bug réel découvert (grave, régression production) après les 2
+ci-dessus** : Edgar a signalé un écran bleu uni après connexion sur
+téléphone, persistant après reboot de l'app Streamlit Cloud (donc PAS le
+faux problème de cache habituel, voir plus bas dans "Règles impératives").
+Cause suspectée et corrigée par précaution (non reproduite avec certitude
+en local, WebKit desktop de Playwright n'ayant montré aucun problème — la
+build WebKit générique ne reproduit pas forcément un bug spécifique à une
+version d'iOS Safari réelle) : `display: contents` (voir le 1er bug
+ci-dessus) a un lourd historique de bugs de rendu sur Safari/iOS, y compris
+des cas documentés où tout un sous-arbre DOM cesse purement et simplement
+de s'afficher. La règle `:has(.st-key-ts_tabbar) { display: contents }`
+est maintenant restreinte à `@media (min-width: 641px)` (desktop
+uniquement, complément exact du seuil mobile `max-width:640px` déjà utilisé
+partout ailleurs) : aucune perte fonctionnelle sur mobile, la barre
+d'onglets n'y étant de toute façon jamais sticky (`position: static`).
+Padding droit de la barre d'onglets (7.5rem, réservé à la barre d'outils
+native Streamlit desktop) également ramené à 0.9rem sur mobile en même
+temps (comme la topbar) — inutile et disproportionné sur un écran de
+375-414px. **Symptôme non formellement confirmé comme résolu** (pas de
+vrai téléphone/Safari disponible pour vérifier après coup) : à confirmer
+par Edgar après ce déploiement — si l'écran bleu persiste malgré cette
+restriction, la cause est ailleurs et ce correctif est à réévaluer.
+
 **Responsive mobile** : passe faite (media queries `@media max-width:640px`
 dans `src/theme.py`) — échelle de police/paddings réduite globalement,
 tableaux en cartes empilées sur petit écran, graphiques Trading avec
