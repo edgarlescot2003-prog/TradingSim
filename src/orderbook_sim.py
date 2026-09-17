@@ -20,7 +20,7 @@ mouvement continu sans jamais prétendre à un nouveau tick réel.
 
 import random
 
-LEVELS_PER_SIDE = 8
+LEVELS_PER_SIDE = 6
 
 # Écart symbolique entre le meilleur bid et le meilleur ask (moitié de
 # chaque côté du prix de référence), en points de base (1 bps = 0.01%).
