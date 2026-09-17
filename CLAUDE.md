@@ -380,6 +380,35 @@ screenshots + mesures de position avant/après scroll)**, à chaque étape
 (bug initial, puis retouche demandée par Edgar) : testé aussi bien en
 scrollant à la souris qu'en forçant `scrollTop` directement.
 
+**2ème bug réel découvert en implémentant la retouche ci-dessus** : une fois
+le sticky et le fond bleu en place, Edgar a signalé "visuellement c'est
+top mais les onglets ne sont pas cliquables". Reproduit avec Playwright
+(`elementFromPoint` au centre d'un bouton d'onglet, barre collée après
+scroll) : le clic était intercepté par `[data-testid="stToolbar"]`, la
+barre d'outils native Streamlit (icônes Partager/étoile/crayon, bouton
+replier/déplier le panneau latéral...). Cause : `[data-testid="stHeader"]`
+(son parent) est rendu invisible par nos soins (`background: transparent;
+height: 0`, tout en haut de ce bloc CSS) pour le remplacer visuellement par
+notre topbar — mais `stToolbar` lui-même garde sa taille RÉELLE (~60px de
+haut) et s'étend sur TOUTE la largeur du viewport, à un z-index natif très
+élevé (~999990), avec son propre `pointer-events: auto` explicite dans la
+feuille de style native de Streamlit (donc PAS neutralisé par un
+`pointer-events: none` posé seulement sur son parent stHeader — vérifié :
+`pointer-events` est hérité par défaut, mais une valeur explicite sur
+l'enfant l'emporte toujours sur l'héritage, exactement ce que fait
+Streamlit ici). Cette zone invisible captait donc tous les clics dans cette
+bande, y compris sur nos propres onglets — jamais un problème avant
+puisque rien d'autre de cliquable ne s'y trouvait (le sticky ne
+fonctionnait pas, voir plus haut, et même une fois réparé la topbar sticky
+n'avait rien de cliquable dans cette zone). Correctif : `pointer-events:
+none !important` sur `stToolbar` lui-même (pas seulement stHeader),
+`pointer-events: auto !important` restauré sur ses boutons/liens réels
+(`stExpandSidebarButton` compris, vérifié toujours cliquable après coup) —
+voir `theme.py`, juste après le masquage de `stHeader`. Revérifié avec
+Playwright (`elementFromPoint` ne renvoie plus `stToolbar` mais bien
+l'élément réel visé, clic bout-en-bout fonctionnel sur un onglet après
+scroll, bouton replier/déplier le panneau latéral toujours opérationnel).
+
 **Responsive mobile** : passe faite (media queries `@media max-width:640px`
 dans `src/theme.py`) — échelle de police/paddings réduite globalement,
 tableaux en cartes empilées sur petit écran, graphiques Trading avec

@@ -199,12 +199,40 @@ h1, h2, h3, h4, h5, h6,
 [data-testid="stVerticalBlock"] {{ gap: 0.55rem !important; }}
 [data-testid="stHorizontalBlock"] {{ gap: 0.75rem !important; }}
 
-/* Header natif Streamlit masqué : remplacé par notre barre fixe */
+/* Header natif Streamlit masqué : remplacé par notre barre fixe. Visuellement
+   invisible (background transparent, height:0) mais PAS structurellement
+   supprimé : son enfant stToolbar (icônes Partager/étoile/crayon/menu...)
+   garde sa propre taille réelle (~60px de haut) et s'étend sur TOUTE la
+   largeur du viewport, à un z-index natif Streamlit très élevé (~999990) —
+   invisible à l'œil, mais capte quand même les clics par-dessus tout ce qui
+   se trouve dans cette même zone. Repéré par Edgar au prompt 19 : les
+   onglets de la barre de navigation devenaient injustement injectés dans
+   cette même bande (une fois collés en haut du viewport, prompt 19),
+   cliquables nulle part puisque interceptés par cette zone invisible en
+   premier — jamais un problème avant, rien d'autre de cliquable ne se
+   trouvait dans cette bande. `pointer-events: none` neutralise cette
+   interception (hérité par stToolbar, qui n'a pas de valeur propre) ;
+   `pointer-events: auto` sur ses boutons réels (ci-dessous) les laisse
+   cliquables normalement, où qu'ils soient affichés. */
 [data-testid="stHeader"] {{
     background: transparent !important;
     height: 0 !important;
+    pointer-events: none;
 }}
-[data-testid="stToolbar"] {{ top: 0.4rem !important; }}
+/* stToolbar a son PROPRE `pointer-events: auto` dans la feuille de style
+   native Streamlit (vérifié : hérite pas du `none` posé sur stHeader
+   ci-dessus, qui n'a donc aucun effet sur lui tel quel) — obligé de le
+   neutraliser explicitement ici, avec !important pour l'emporter sur cette
+   règle native. */
+[data-testid="stToolbar"] {{
+    top: 0.4rem !important;
+    pointer-events: none !important;
+}}
+[data-testid="stToolbar"] button,
+[data-testid="stToolbar"] a,
+[data-testid="stToolbar"] [role="button"] {{
+    pointer-events: auto !important;
+}}
 
 /* Barre de valeur : PAS sticky (prompt 19, retouche demandée par Edgar après
    la première version de ce prompt) — seule la barre d'onglets doit rester
