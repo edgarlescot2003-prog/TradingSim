@@ -1187,20 +1187,27 @@ _LIGHT_CSS = f"""
 .ts-ob-wrap {{
     display: flex;
     flex-direction: column;
-    /* Hauteur NATURELLE (pas de height fixe étirant les lignes sur toute la
-       colonne) : un essai précédent calait le carnet sur les 600px du
-       graphique avec justify-content:space-between, mais avec seulement 6
-       paliers/côté (LEVELS_PER_SIDE, voir orderbook_sim.py) l'écartement
-       forcé donnait un carnet trop aéré / trop grand visuellement — retour
-       demandé à une taille compacte, proportionnée au nombre réel de
-       paliers, quitte à laisser du vide en dessous vers le panneau d'ordre.
-       .st-key-ts_card_orderbook garde son margin-top (alignement du SOMMET
-       sur le graphique), seule la hauteur totale n'est plus forcée. */
+    /* Repère demandé par Edgar (avec une position ouverte affichée, qui fait
+       apparaître la section Take Profit/Stop Loss) : le carnet doit couvrir
+       verticalement, dans la colonne du formulaire d'ordre, du début de
+       "Mode d'exécution" jusqu'à la fin de la légende "Vend automatiquement
+       une partie de cette position...". Mesuré au pixel près via Playwright
+       sur le site déployé (1920px, position AAPL ouverte) : de y=635 à
+       y=1180, soit 545px — le margin-top ci-dessous (.st-key-ts_card_orderbook)
+       est calé sur ce même repère. Un compte sans position ouverte n'affiche
+       pas cette section (elle disparaît entièrement, voir
+       ui_trading._render_tp_sl_section) : la valeur reste fixe dans ce cas,
+       purement esthétique comme le reste du carnet. */
+    height: 545px;
 }}
 .ts-ob-side {{
     display: flex;
     flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
 }}
+.ts-ob-asks {{ justify-content: space-between; }}
+.ts-ob-bids {{ justify-content: space-between; }}
 .ts-ob-center {{ flex: 0 0 auto; }}
 .ts-ob-row {{
     position: relative;
@@ -1258,18 +1265,15 @@ _LIGHT_CSS = f"""
 /* Colonne étroite par construction (voir st.columns dans ui_trading.render)
    — largeur maximale posée ici en filet de sécurité, jamais un large
    tableau qui rivaliserait avec le graphique/formulaire d'ordre. */
-/* Décale le carnet vers le bas pour aligner son sommet sur le DÉBUT du
-   graphique (pas le haut de la colonne) : au-dessus du graphique dans
-   col_chart se trouvent le prix (st.metric x2), la légende de rafraîchissement
-   et le sélecteur période/type — le carnet, lui, n'a rien au-dessus. Valeur
-   mesurée au pixel près sur le site déployé (Playwright, bounding box du
-   graphique Plotly vs du carnet) : 216px comble exactement l'écart constaté
-   (chart_box.y=716.6 vs book_box.y=682.1 avec un margin-top de 175px avant
-   ce correctif, soit 34.5px d'écart résiduel -> 175+34.5≈210, arrondi à 216
-   après vérification finale). À revalider si le contenu au-dessus du
-   graphique change un jour (nouvelle ligne ajoutée avant le sélecteur de
-   période, etc.). */
-.st-key-ts_card_orderbook {{ max-width: 230px; margin-top: 216px; }}
+/* Décale le carnet vers le bas pour aligner son sommet sur le début de
+   "Mode d'exécution" dans le panneau d'ordre (repère demandé par Edgar,
+   voir le commentaire de .ts-ob-wrap ci-dessus) plutôt que sur le début du
+   graphique comme dans un essai précédent. Mesuré au pixel près sur le
+   site déployé (Playwright, 1920px) : la colonne carnet démarre nativement
+   à y≈507 (sans margin-top) et "Mode d'exécution" est à y≈635, d'où
+   635-507=128px. À revalider si le contenu au-dessus de "Mode d'exécution"
+   change un jour (nouvelle ligne dans "Passer un ordre", etc.). */
+.st-key-ts_card_orderbook {{ max-width: 230px; margin-top: 128px; }}
 .st-key-ts_light [class*="st-key-tslight_ticker_"] button {{
     border-radius: 999px !important;
     border: none !important;
