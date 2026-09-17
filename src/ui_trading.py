@@ -885,6 +885,13 @@ def _render_action_tabs(key: str, buy_enabled: bool, sell_enabled: bool, short_e
     return current
 
 
+@st.fragment
+def _render_order_panel(portfolio, ticker: str, name: str | None, price_eur: float, currency: str,
+                         quote_type: str = "") -> None:
+    _render_order_form(portfolio, ticker, name, price_eur, currency, quote_type)
+    _render_tp_sl_section(portfolio, ticker)
+
+
 def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: float, currency: str,
                         quote_type: str = "") -> None:
     with st.container(key="ts_card_order"):
@@ -1065,7 +1072,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                     if created:
                         msg += f" {created} palier(s) TP/SL créé(s)."
                     st.toast(msg, duration=ORDER_CONFIRMATION_TOAST_SECONDS)
-                    st.rerun()
+                    st.rerun(scope="app")
 
         else:  # Ordre à cours limité
             trigger_hint = "descend à" if action in ("achat", "rachat short") else "monte à"
@@ -1085,7 +1092,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                         f"Ordre à cours limité placé : {quantity:g} x {ticker} à {ref_price:,.2f} €.",
                         duration=ORDER_CONFIRMATION_TOAST_SECONDS,
                     )
-                    st.rerun()
+                    st.rerun(scope="app")
 
 
 def _render_tp_sl_section(portfolio, ticker: str) -> None:
@@ -1378,8 +1385,7 @@ def render(portfolio) -> None:
 
             with col_order:
                 if price_eur is not None:
-                    _render_order_form(portfolio, ticker, name, price_eur, currency, quote_type)
-                    _render_tp_sl_section(portfolio, ticker)
+                    _render_order_panel(portfolio, ticker, name, price_eur, currency, quote_type)
 
         if price_eur is None:
             return  # l'erreur a déjà été affichée par le fragment

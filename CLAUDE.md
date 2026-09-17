@@ -438,19 +438,34 @@ directement dans le dépôt — gratuit, aucun service tiers. Voir
   (bouton "Retour à l'accueil") peut occasionnellement rester bloqué
   plusieurs dizaines de secondes — probablement lié au fragment
   d'auto-rafraîchissement (`run_every=30`) de cette fiche qui continue de
-  tourner en arrière-plan après en être sorti. Possiblement lié/aggravé par
-  la cause identifiée dans le diagnostic de lenteur ci-dessous (le
-  formulaire d'ordre, hors fragment, force un rerun complet à chaque
-  interaction) — pas confirmé, à garder en tête en le retraitant.
-- **Diagnostic de lenteur (prompt 14) fait, corrections en cours** :
+  tourner en arrière-plan après en être sorti — pas confirmé, à garder en
+  tête en le retraitant. La 2ème cause suspectée initialement (le
+  formulaire d'ordre, hors fragment, forçant un rerun complet à chaque
+  interaction) a été corrigée au prompt 17 (voir diagnostic de lenteur
+  ci-dessous) ; si ce bug persiste malgré ça, il est donc isolé au
+  fragment du graphique.
+- **Diagnostic de lenteur (prompt 14) fait, 1 correction sur 2 appliquée** :
   2 causes identifiées pour la lenteur signalée au changement d'onglet et
   sur le formulaire d'ordre. (1) `_render_order_form` (`ui_trading.py`)
   n'était pas isolé dans son propre `@st.fragment`, contrairement au
   graphique — chaque interaction du formulaire (levier, montant...)
-  reconstruisait et réenvoyait la figure Plotly pour rien. **Correctif en
-  cours d'implémentation au prompt 17** (fragment séparé pour le
-  formulaire+TP/SL, avec `st.rerun(scope="app")` explicite au moment de
-  valider un ordre pour rafraîchir la topbar). (2) `valuation.total_value(portfolio)`
+  reconstruisait et réenvoyait la figure Plotly pour rien. **Corrigé au
+  prompt 17** : `_render_order_form` + `_render_tp_sl_section` vivent
+  maintenant dans leur propre `@st.fragment` (`_render_order_panel`),
+  séparé de celui du graphique (`_render_price_and_chart`) — une
+  interaction sur le formulaire ne reconstruit plus la figure Plotly.
+  `st.rerun(scope="app")` explicite uniquement aux 2 points de validation
+  réussie d'un ordre (marché et cours limité) dans `_render_order_form`,
+  pour que la topbar (valeur totale/liquidité/P&L jour) se rafraîchisse
+  bien malgré l'isolation du fragment — les reruns internes au fragment
+  (paliers TP/SL créés/annulés, ordres en attente annulés) restent volontairement
+  scopés au fragment seul, ces actions ne changeant pas la topbar. Vérifié
+  par `streamlit.testing.v1.AppTest` (changement de levier/montant/mode
+  seuls, validation d'ordre, création de palier TP/SL — aucune exception) ;
+  la mesure de l'amélioration réelle (absence de reconstruction visible du
+  graphique) nécessite un test manuel dans un navigateur, non exécuté ici
+  faute d'outil de navigation disponible dans cette session — à confirmer
+  par Edgar en local à l'occasion. (2) `valuation.total_value(portfolio)`
   tourne sans condition à CHAQUE rerun (app.py, avant le routage d'onglet),
   y compris vers un onglet qui n'en a pas besoin (Tutoriel, Règlement...) —
   **pas encore corrigé, prompt séparé à venir** (cache court sur le
