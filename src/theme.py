@@ -1187,22 +1187,20 @@ _LIGHT_CSS = f"""
 .ts-ob-wrap {{
     display: flex;
     flex-direction: column;
-    /* même hauteur que le graphique lui-même (ui_trading._render_price_and_chart,
-       height=600 depuis le prompt suivant, 450 à l'origine) : le margin-top
-       ci-dessous (.st-key-ts_card_orderbook) ne fait que DÉCALER le carnet
-       vers le bas, il ne "consomme" pas de hauteur — donc pas besoin de la
-       soustraire ici (erreur du premier essai, corrigée après mesure réelle
-       au pixel près via Playwright sur le site déployé). */
-    height: 600px;
+    /* Hauteur NATURELLE (pas de height fixe étirant les lignes sur toute la
+       colonne) : un essai précédent calait le carnet sur les 600px du
+       graphique avec justify-content:space-between, mais avec seulement 6
+       paliers/côté (LEVELS_PER_SIDE, voir orderbook_sim.py) l'écartement
+       forcé donnait un carnet trop aéré / trop grand visuellement — retour
+       demandé à une taille compacte, proportionnée au nombre réel de
+       paliers, quitte à laisser du vide en dessous vers le panneau d'ordre.
+       .st-key-ts_card_orderbook garde son margin-top (alignement du SOMMET
+       sur le graphique), seule la hauteur totale n'est plus forcée. */
 }}
 .ts-ob-side {{
     display: flex;
     flex-direction: column;
-    flex: 1 1 0;
-    min-height: 0;
 }}
-.ts-ob-asks {{ justify-content: space-between; }}
-.ts-ob-bids {{ justify-content: space-between; }}
 .ts-ob-center {{ flex: 0 0 auto; }}
 .ts-ob-row {{
     position: relative;
