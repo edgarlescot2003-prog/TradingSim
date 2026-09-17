@@ -547,7 +547,15 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
             increasing_line_color=theme.LIGHT_GREEN, increasing_fillcolor=theme.LIGHT_GREEN,
             decreasing_line_color=theme.LIGHT_RED, decreasing_fillcolor=theme.LIGHT_RED,
         ))
-    fig.update_layout(**theme.plotly_layout(height=450, margin=dict(l=10, r=10, t=20, b=10),
+    # 600px (au lieu de 450 avant ce correctif) : comble le vide sous le
+    # graphique/carnet, le panneau d'ordre à droite (TP/SL, récapitulatif...)
+    # étant naturellement plus haut que les 2 autres colonnes (mesuré à
+    # ~811px de haut sur une position sans TP/SL existant, contre 450 pour
+    # le graphique) — largeur inchangée, le graphique colle déjà au bord
+    # gauche de la page, rien à gagner de ce côté sans rogner le carnet/le
+    # panneau d'ordre. Voir aussi .ts-ob-wrap dans theme.py (carnet aligné
+    # sur cette même valeur).
+    fig.update_layout(**theme.plotly_layout(height=600, margin=dict(l=10, r=10, t=20, b=10),
                                              xaxis_rangeslider_visible=False))
     if chart_type == "Courbe":
         # autorange=False : sans ça, le remplissage tirerait l'axe jusqu'à 0 et

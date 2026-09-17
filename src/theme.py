@@ -1179,11 +1179,12 @@ _LIGHT_CSS = f"""
     display: flex;
     flex-direction: column;
     /* même hauteur que le graphique lui-même (ui_trading._render_price_and_chart,
-       height=450) : le margin-top ci-dessous (.st-key-ts_card_orderbook) ne
-       fait que DÉCALER le carnet vers le bas, il ne "consomme" pas de hauteur
-       — donc pas besoin de la soustraire ici (erreur du premier essai, corrigée
-       après mesure réelle au pixel près via Playwright sur le site déployé). */
-    height: 450px;
+       height=600 depuis le prompt suivant, 450 à l'origine) : le margin-top
+       ci-dessous (.st-key-ts_card_orderbook) ne fait que DÉCALER le carnet
+       vers le bas, il ne "consomme" pas de hauteur — donc pas besoin de la
+       soustraire ici (erreur du premier essai, corrigée après mesure réelle
+       au pixel près via Playwright sur le site déployé). */
+    height: 600px;
 }}
 .ts-ob-side {{
     display: flex;
