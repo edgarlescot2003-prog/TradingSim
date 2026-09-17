@@ -194,6 +194,15 @@ h1, h2, h3, h4, h5, h6,
 .block-container {{
     padding-top: 1rem !important;
     padding-bottom: 2rem !important;
+    /* padding-left/right réduits (2rem, contre la marge par défaut de
+       Streamlit ~6.5rem à cette largeur) : sur écran large, ça laissait un
+       vide inutile de chaque côté de toute page (pas seulement Trading) —
+       mesuré sur le site déployé (Playwright, 1920px) : ~104px de marge
+       inutilisée par côté avant ce correctif, ramenée à ~32px. Vérifié à
+       1366px (laptop courant) et sur Portefeuille/Classement : aucune
+       régression, uniquement plus d'espace utile pour le contenu. */
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
     max-width: 100% !important;
 }}
 [data-testid="stVerticalBlock"] {{ gap: 0.55rem !important; }}
