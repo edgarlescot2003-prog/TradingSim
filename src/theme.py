@@ -1178,10 +1178,12 @@ _LIGHT_CSS = f"""
 .ts-ob-wrap {{
     display: flex;
     flex-direction: column;
-    /* 450px = hauteur du graphique (ui_trading._render_price_and_chart) moins
-       le décalage du margin-top ci-dessous (.st-key-ts_card_orderbook), pour
-       que le BAS du carnet s'aligne aussi sur le bas du graphique. */
-    height: calc(450px - 175px);
+    /* même hauteur que le graphique lui-même (ui_trading._render_price_and_chart,
+       height=450) : le margin-top ci-dessous (.st-key-ts_card_orderbook) ne
+       fait que DÉCALER le carnet vers le bas, il ne "consomme" pas de hauteur
+       — donc pas besoin de la soustraire ici (erreur du premier essai, corrigée
+       après mesure réelle au pixel près via Playwright sur le site déployé). */
+    height: 450px;
 }}
 .ts-ob-side {{
     display: flex;
@@ -1252,10 +1254,14 @@ _LIGHT_CSS = f"""
    graphique (pas le haut de la colonne) : au-dessus du graphique dans
    col_chart se trouvent le prix (st.metric x2), la légende de rafraîchissement
    et le sélecteur période/type — le carnet, lui, n'a rien au-dessus. Valeur
-   estimée à partir des hauteurs par défaut de ces éléments Streamlit (pas
-   mesurée pixel par pixel en navigateur) : à ajuster si le décalage réel
-   diffère visuellement une fois vérifié par Edgar. */
-.st-key-ts_card_orderbook {{ max-width: 230px; margin-top: 175px; }}
+   mesurée au pixel près sur le site déployé (Playwright, bounding box du
+   graphique Plotly vs du carnet) : 216px comble exactement l'écart constaté
+   (chart_box.y=716.6 vs book_box.y=682.1 avec un margin-top de 175px avant
+   ce correctif, soit 34.5px d'écart résiduel -> 175+34.5≈210, arrondi à 216
+   après vérification finale). À revalider si le contenu au-dessus du
+   graphique change un jour (nouvelle ligne ajoutée avant le sélecteur de
+   période, etc.). */
+.st-key-ts_card_orderbook {{ max-width: 230px; margin-top: 216px; }}
 .st-key-ts_light [class*="st-key-tslight_ticker_"] button {{
     border-radius: 999px !important;
     border: none !important;
