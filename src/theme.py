@@ -1178,7 +1178,10 @@ _LIGHT_CSS = f"""
 .ts-ob-wrap {{
     display: flex;
     flex-direction: column;
-    height: 450px; /* même hauteur que le graphique, voir ui_trading._render_price_and_chart */
+    /* 450px = hauteur du graphique (ui_trading._render_price_and_chart) moins
+       le décalage du margin-top ci-dessous (.st-key-ts_card_orderbook), pour
+       que le BAS du carnet s'aligne aussi sur le bas du graphique. */
+    height: calc(450px - 175px);
 }}
 .ts-ob-side {{
     display: flex;
@@ -1245,7 +1248,14 @@ _LIGHT_CSS = f"""
 /* Colonne étroite par construction (voir st.columns dans ui_trading.render)
    — largeur maximale posée ici en filet de sécurité, jamais un large
    tableau qui rivaliserait avec le graphique/formulaire d'ordre. */
-.st-key-ts_card_orderbook {{ max-width: 230px; }}
+/* Décale le carnet vers le bas pour aligner son sommet sur le DÉBUT du
+   graphique (pas le haut de la colonne) : au-dessus du graphique dans
+   col_chart se trouvent le prix (st.metric x2), la légende de rafraîchissement
+   et le sélecteur période/type — le carnet, lui, n'a rien au-dessus. Valeur
+   estimée à partir des hauteurs par défaut de ces éléments Streamlit (pas
+   mesurée pixel par pixel en navigateur) : à ajuster si le décalage réel
+   diffère visuellement une fois vérifié par Edgar. */
+.st-key-ts_card_orderbook {{ max-width: 230px; margin-top: 175px; }}
 .st-key-ts_light [class*="st-key-tslight_ticker_"] button {{
     border-radius: 999px !important;
     border: none !important;
