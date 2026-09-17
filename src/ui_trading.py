@@ -816,19 +816,21 @@ def _render_action_tabs(key: str, buy_enabled: bool, sell_enabled: bool, short_e
                          sell_help: str = "", short_help: str = "") -> str:
     """3 actions distinctes, TOUJOURS affichées (contrairement à l'ancien
     sélecteur à 2 options dont le libellé changeait selon le contexte, ex.
-    "Acheter (position longue)" puis "Acheter plus") : Acheter / Vendre /
+    "Acheter (position longue)" puis "Acheter plus") : Long / Vendre /
     Short, chacune avec son propre texte et sa propre couleur (voir prompt
-    "Distinction claire Acheter / Vendre / Short"). Vendre et Short sont
-    DÉSACTIVÉS (pas masqués : la raison reste visible en infobulle) quand
-    l'action n'est pas possible sur la position actuelle — Long et Short
-    sont mutuellement exclusifs sur un même ticker (voir Portfolio.buy/
-    open_short, qui le refusent déjà côté métier ; ce composant ne fait que
-    refléter cette règle existante, jamais l'inverse).
+    "Distinction claire Acheter / Vendre / Short", et son renommage en
+    "Long" au prompt 18 — seul le libellé affiché change, la valeur interne
+    retournée reste "acheter" partout ailleurs dans le fichier). Vendre et
+    Short sont DÉSACTIVÉS (pas masqués : la raison reste visible en
+    infobulle) quand l'action n'est pas possible sur la position actuelle —
+    Long et Short sont mutuellement exclusifs sur un même ticker (voir
+    Portfolio.buy/open_short, qui le refusent déjà côté métier ; ce
+    composant ne fait que refléter cette règle existante, jamais l'inverse).
 
     Retourne "acheter" | "vendre" | "short".
     """
     options = [
-        ("acheter", "Acheter", theme.GREEN, buy_enabled, ""),
+        ("acheter", "Long", theme.GREEN, buy_enabled, ""),
         ("vendre", "Vendre", theme.SELL_NEUTRAL, sell_enabled, sell_help),
         ("short", "Short", theme.RED, short_enabled, short_help),
     ]
@@ -840,7 +842,7 @@ def _render_action_tabs(key: str, buy_enabled: bool, sell_enabled: bool, short_e
         # totale qui fait passer l'actif de "long" à "aucune position", le
         # choix "Vendre" n'est plus valide — pas de raison de rester bloqué
         # dessus (le bouton est de toute façon désactivé, donc plus
-        # cliquable) plutôt que de basculer proprement sur Acheter.
+        # cliquable) plutôt que de basculer proprement sur Long.
         current = next((value for value, _, _, enabled, _ in options if enabled), options[0][0])
 
     cols = st.columns(len(options))
@@ -1051,7 +1053,11 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 try:
                     if action == "achat":
                         portfolio.buy(ticker, name or ticker, quantity, price_eur, currency, leverage=leverage)
-                        msg = f"Achat exécuté : {quantity:g} x {ticker} à {price_eur:,.2f} € (levier x{leverage:g})."
+                        # "Position longue ouverte" (pas "Achat exécuté") : même formulation que
+                        # "Position courte ouverte" ci-dessous depuis le renommage du bouton
+                        # Acheter -> Long (prompt 18) ; message inchangé qu'il s'agisse d'une
+                        # ouverture ou d'un renforcement, comme pour le short.
+                        msg = f"Position longue ouverte : {quantity:g} x {ticker} à {price_eur:,.2f} € (levier x{leverage:g})."
                     elif action == "vente":
                         pnl = portfolio.sell(ticker, quantity, price_eur)
                         msg = (f"Vente exécutée : {quantity:g} x {ticker} à {price_eur:,.2f} € "
@@ -1269,7 +1275,7 @@ def _render_pending_orders(portfolio) -> None:
             "ticker": o.id,  # row_key : l'id d'ordre, unique (plusieurs ordres possibles sur le même ticker)
             "symbol": o.ticker,
             "name": o.name,
-            "action": o.action.capitalize(),
+            "action": theme.action_label(o.action),
             "quantity": o.quantity,
             "limit_price": o.limit_price_eur,
             "leverage": f"x{o.leverage:g}",

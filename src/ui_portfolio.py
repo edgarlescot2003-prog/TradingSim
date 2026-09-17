@@ -314,7 +314,7 @@ def _render_history(portfolio) -> None:
             "ticker": t.ticker,
             "name": t.name,
             "side": "Long" if t.side == "long" else "Short",
-            "action": t.action.capitalize(),
+            "action": theme.action_label(t.action),
             "quantity": t.quantity,
             "price": t.price_eur,
             "leverage": f"x{t.leverage:g}",

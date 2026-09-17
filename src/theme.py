@@ -54,8 +54,9 @@ GREEN = "#4ADE80"
 RED = "#F87171"
 # Action "Vendre" (clôture d'une position longue existante, prompt 13) :
 # gris-bleu clair plutôt qu'une 3e teinte vive — se distingue nettement
-# d'Acheter (vert) et de Short (rouge), tout en restant neutre plutôt
-# qu'alarmant (ce n'est ni un gain ni une perte en soi, juste une clôture).
+# de Long (vert, "Acheter" jusqu'au prompt 18) et de Short (rouge), tout en
+# restant neutre plutôt qu'alarmant (ce n'est ni un gain ni une perte en
+# soi, juste une clôture).
 SELL_NEUTRAL = "#94A3B8"
 # Orange plutôt que bleu : sur un fond dégradé teal -> bleu-marine (donc
 # lui-même dans la famille des bleus), un accent bleu se fond dans le fond au
@@ -128,6 +129,22 @@ def badge_color(category: str | None) -> tuple[str, str]:
     bg = CATEGORY_COLORS.get(category or "", PANEL)
     fg = BADGE_DARK_TEXT if category in _BADGE_DARK_TEXT_CATEGORIES else "#ffffff"
     return bg, fg
+
+
+# Libellé affiché pour une valeur de Trade.action / PendingOrder.action
+# (portfolio.py — "achat", "vente", "ouverture short", "rachat short", jamais
+# modifiées : ce sont des clés internes réutilisées telles quelles par
+# order_engine/valuation). Seul "achat" a un libellé dédié ("Long", prompt
+# 18 — le bouton "Acheter" du formulaire d'ordre a été renommé "Long", ce
+# libellé suit partout où l'action est réaffichée telle quelle : historique
+# des trades, ordres en attente, page Historique) ; les 3 autres gardent
+# leur capitalisation par défaut, inchangée.
+ACTION_LABELS = {"achat": "Long"}
+
+
+def action_label(action: str) -> str:
+    return ACTION_LABELS.get(action, action.capitalize())
+
 
 _CSS = f"""
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');

@@ -92,8 +92,8 @@ Sur la fiche d'une position à levier que tu détiens, une jauge t'indique en di
     ("6. Passer un ordre", """
 Une fois sur la fiche d'un actif, tu trouveras un formulaire pour passer ton ordre. Les options proposées changent selon ta situation :
 
-- Tu n'as aucune position sur ce ticker → tu peux **Acheter** (Long) ou **Vendre à découvert** (Short).
-- Tu as déjà une position Longue → tu peux **Acheter plus** (renforcer) ou **Vendre** (clôturer).
+- Tu n'as aucune position sur ce ticker → tu peux **Long** (achat) ou **Vendre à découvert** (Short).
+- Tu as déjà une position Longue → tu peux **Long** (renforcer) ou **Vendre** (clôturer).
 - Tu as déjà une position Courte → tu peux **Vendre plus à découvert** (renforcer) ou **Racheter** (clôturer).
 
 Si tu renforces une position existante, ton prix moyen d'achat est recalculé automatiquement en tenant compte du nouveau prix — pas juste écrasé par le dernier prix payé.

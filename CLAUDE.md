@@ -56,21 +56,33 @@ façon Hyperliquid (desktop) : graphique à gauche, panneau d'ordre + TP/SL
 à droite (empilé sur mobile) — voir `ui_trading._render_price_and_chart`
 (fragment) et `_render_order_form`.
 
-**3 actions distinctes (Acheter/Vendre/Short)** : le formulaire d'ordre
-affiche toujours 3 boutons explicitement labellisés — Acheter (vert),
-Vendre (gris-bleu neutre, `theme.SELL_NEUTRAL`, distinct du vert ET du
-rouge), Short (rouge) — plutôt qu'un sélecteur à 2 options dont le libellé
-changeait selon le contexte (ancien "Long/Short" du prompt 9). Vendre
-n'est actif que si une position longue est détenue sur l'actif consulté
-(désactivé + infobulle sinon, jamais un formulaire vide/une erreur
-technique) ; Acheter est désactivé si une position courte est ouverte, et
-Short si une position longue est ouverte (long et short mutuellement
-exclusifs sur un même ticker, règle déjà imposée par
-`Portfolio.buy`/`open_short`, seulement reflétée dans l'UI). Quand un
-short est déjà ouvert, l'onglet Short affiche un sous-choix
+**3 actions distinctes (Long/Vendre/Short)** : le formulaire d'ordre
+affiche toujours 3 boutons explicitement labellisés — Long (vert, libellé
+"Acheter" jusqu'au prompt 18, renommé "Long" pour cohérence avec la
+terminologie déjà utilisée pour la position elle-même — voir `side`
+"Long"/"Short" dans l'historique des trades — sans revenir au sélecteur à 2
+options `Long`/`Short` du tout premier prompt 9, dont le libellé changeait
+selon le contexte), Vendre (gris-bleu neutre, `theme.SELL_NEUTRAL`, distinct
+du vert ET du rouge), Short (rouge). Vendre n'est actif que si une position
+longue est détenue sur l'actif consulté (désactivé + infobulle sinon,
+jamais un formulaire vide/une erreur technique) ; Long est désactivé si une
+position courte est ouverte, et Short si une position longue est ouverte
+(long et short mutuellement exclusifs sur un même ticker, règle déjà
+imposée par `Portfolio.buy`/`open_short`, seulement reflétée dans l'UI).
+Quand un short est déjà ouvert, l'onglet Short affiche un sous-choix
 Renforcer/Racheter (mêmes 2 actions qu'avant, déplacées sous cet onglet).
 Voir `ui_trading._render_action_tabs` (nouveau sélecteur à 3) et
-`_render_side_toggle` (sous-choix Renforcer/Racheter, réutilisé).
+`_render_side_toggle` (sous-choix Renforcer/Racheter, réutilisé). Valeur
+interne inchangée ("acheter", utilisée par `ACTION_BY_ORDER_TYPE`,
+`Trade.action`...) : seul le libellé AFFICHÉ a changé, y compris dans
+l'historique des trades/ordres en attente/page Historique, qui réaffichaient
+cette valeur interne telle quelle via `.capitalize()` (donc "Achat") avant
+le prompt 18 — passés par `theme.action_label()` désormais, seul point qui
+sait que "achat" s'affiche "Long" (les 3 autres valeurs gardent leur
+capitalisation par défaut). Une ligne "Long" (achat) affiche donc désormais
+le même mot dans ses colonnes Sens ET Action — redondance visuelle assumée,
+pas corrigée dans ce prompt (renommage demandé, pas une refonte de ce
+tableau).
 Attention CSS : la coloration de ces boutons (et de l'ancien sélecteur à 2)
 demande un sélecteur à 3 classes (`.st-key-ts_light .st-key-{clé}.stElementContainer
 .stButton > button`, même technique que `theme.badge_color`) — un simple

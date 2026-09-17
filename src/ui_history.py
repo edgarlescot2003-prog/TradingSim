@@ -68,7 +68,7 @@ def _order_rows(trades: list[dict]) -> list[dict]:
             "_row_id": f"{i}_{t['date']}",
             "date": t["date"][:16].replace("T", " "),
             "asset": f"{t['ticker']} · {t['name']}",
-            "action": t["action"].capitalize(),
+            "action": theme.action_label(t["action"]),
             "quantity": t["quantity"],
             "price": t["price_eur"],
             "total": t["quantity"] * t["price_eur"],
