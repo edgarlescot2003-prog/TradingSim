@@ -65,10 +65,59 @@ extension pure du système existant (même marge/levier/liquidation/TP-SL/
 short, aucune règle spécifique type horaires 24/5 ou taille de contrat) et
 suivent la même détection de catégorie que Crypto pour le formulaire d'ordre
 (voir "Saisie par montant à risquer" ci-dessous). Effet de levier, ordres
-au marché et à cours limité. Layout de la fiche d'un actif en 2 colonnes
-façon Hyperliquid (desktop) : graphique à gauche, panneau d'ordre + TP/SL
-à droite (empilé sur mobile) — voir `ui_trading._render_price_and_chart`
+au marché et à cours limité. Layout de la fiche d'un actif façon Hyperliquid
+(desktop) : graphique à gauche, **carnet d'ordre simulé** (colonne fine,
+voir ci-dessous) au centre, panneau d'ordre + TP/SL à droite (empilé sur
+mobile, carnet masqué) — voir `ui_trading._render_price_and_chart`
 (fragment) et `_render_order_form`.
+
+**Carnet d'ordre simulé (prompt 20)** : colonne fine entre le graphique et
+le formulaire d'ordre, style Hyperliquid (asks rouges empilés au-dessus du
+centre — du plus loin en haut au plus proche juste au-dessus —, prix
+courant + spread au centre, bids verts en dessous — du plus proche juste en
+dessous au plus loin en bas —, barre de profondeur en arrière-plan de
+chaque ligne). **PUREMENT DÉCORATIF, AUCUNE VRAIE DONNÉE DE MARCHÉ** : ce
+n'est PAS un vrai order book (l'app n'a et n'aura jamais accès à cette
+donnée), seulement un effet visuel pour donner l'impression d'un marché
+vivant — un futur prompt ne doit JAMAIS tenter de le "corriger" en le
+connectant à une vraie source.
+
+Logique dans `src/orderbook_sim.py` (aucune dépendance à Streamlit ni au
+réseau, testable isolément) : `generate_snapshot` régénère les niveaux
+autour du prix quand celui-ci change (nouveau tick réel), avec un léger
+biais directionnel cosmétique (prix en hausse -> profondeur bid légèrement
+accentuée, ask atténuée, et inversement) ; `apply_noise` anime seulement
+les quantités par un random walk léger entre deux vrais ticks, sans jamais
+toucher aux prix. Rendu dans `ui_trading._render_order_book`, son propre
+`@st.fragment(run_every=1.5)` — **totalement découplé** du timer du
+fragment prix (30s, `_render_price_and_chart`) : son rafraîchissement ne
+déclenche jamais le moindre appel réseau, quelle que soit sa fréquence,
+puisqu'il ne fait que LIRE `st.session_state.trading_price_eur` déjà
+déposé par ce dernier. **Règle impérative** : ce fragment ne doit JAMAIS
+appeler `get_quote`/`get_history_with_fallback`/`_fetch_chart_history` ni
+aucune fonction réseau, sous aucun prétexte — garde explicite dans
+`tests/test_orderbook_no_network.py` (mocke ces fonctions avec un
+"tripwire" qui fait échouer le test si l'une d'elles est appelée pendant le
+rendu ou le rafraîchissement du carnet, sur plusieurs ticks simulés) à
+exécuter (`python tests/test_orderbook_no_network.py`) après toute
+modification de ce fragment ou de `orderbook_sim.py`. Tests fonctionnels de
+la logique pure dans `tests/test_orderbook_sim.py`.
+
+Priorité d'espace stricte (le graphique et le formulaire d'ordre restent
+les 2 éléments prioritaires, jamais compressés pour lui faire de la place) :
+carnet masqué (`display: none`, jamais `display: contents` — voir
+l'incident du prompt 19) en dessous de 1100px de largeur, pas seulement sur
+mobile (max-width 640px, où graphique + formulaire s'empilent déjà) mais
+aussi sur les largeurs intermédiaires (tablette, petit laptop) où graphique
++ formulaire restent côte à côte mais où une 3e colonne les compresserait
+trop. `st.columns([2.0, 0.55, 1])` dans `ui_trading.render` ; le masquage
+CSS de la colonne du carnet (`[data-testid="stColumn"]:has(.st-key-ts_card_orderbook)`)
+laisse les deux autres colonnes se redistribuer normalement l'espace libéré
+(vérifié visuellement : pas de vide résiduel). Vérifié avec Playwright
+(Chromium ET WebKit, desktop/medium/mobile) et un test de charge de ~25s
+(le carnet continue de s'animer sans erreur console) — pas de vraie mesure
+de charge CPU sur une session très longue, à surveiller si un jour signalé
+comme perceptible en usage réel.
 
 **3 actions distinctes (Long/Vendre/Short)** : le formulaire d'ordre
 affiche toujours 3 boutons explicitement labellisés — Long (vert, libellé

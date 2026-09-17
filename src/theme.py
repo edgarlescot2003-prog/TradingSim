@@ -1165,6 +1165,73 @@ _LIGHT_CSS = f"""
     font-variant-numeric: tabular-nums;
     text-align: right;
 }}
+
+/* Carnet d'ordre simulé (prompt 20, voir src/orderbook_sim.py et
+   ui_trading._render_order_book) : PUREMENT DÉCORATIF, aucune vraie donnée
+   de marché — colonne fine entre le graphique et le formulaire d'ordre.
+   .ts-ob-row : une ligne de palier (prix/quantité/total cumulé), avec une
+   barre de profondeur en arrière-plan (.ts-ob-depth, largeur posée en
+   inline style par ligne, proportionnelle au cumulé) — position:relative/
+   absolute + z-index pour que le texte reste lisible par-dessus. opacity
+   (pas une couleur rgba dédiée) pour l'atténuer à ~50% : plus simple, la
+   barre n'a de toute façon aucun contenu texte propre à en pâtir. */
+.ts-ob-row {{
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.1rem 0.3rem;
+    font-family: {FONT_MONO};
+    font-size: 0.66rem;
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    border-radius: 2px;
+    white-space: nowrap;
+}}
+.ts-ob-depth {{
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 0;
+    opacity: 0.5;
+}}
+.ts-ob-ask .ts-ob-depth {{ background: {LIGHT_RED}; }}
+.ts-ob-bid .ts-ob-depth {{ background: {LIGHT_GREEN}; }}
+.ts-ob-price, .ts-ob-qty, .ts-ob-total {{
+    position: relative;
+    z-index: 1;
+    flex: 1;
+}}
+.ts-ob-qty, .ts-ob-total {{ color: {LIGHT_MUTED}; text-align: right; }}
+.ts-ob-price {{ text-align: left; font-weight: 600; }}
+.ts-ob-ask .ts-ob-price {{ color: {LIGHT_RED}; }}
+.ts-ob-bid .ts-ob-price {{ color: {LIGHT_GREEN}; }}
+.ts-ob-center {{
+    text-align: center;
+    padding: 0.35rem 0;
+    margin: 0.15rem 0;
+    border-top: 1px solid {LIGHT_BORDER};
+    border-bottom: 1px solid {LIGHT_BORDER};
+}}
+.ts-ob-center-price {{
+    font-family: {FONT_MONO};
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: {LIGHT_TEXT};
+}}
+.ts-ob-center-spread {{
+    font-family: {FONT_MONO};
+    font-size: 0.65rem;
+    color: {LIGHT_MUTED};
+    margin-left: 0.4rem;
+}}
+/* Colonne étroite par construction (voir st.columns dans ui_trading.render)
+   — largeur maximale posée ici en filet de sécurité, jamais un large
+   tableau qui rivaliserait avec le graphique/formulaire d'ordre. */
+.st-key-ts_card_orderbook {{ max-width: 230px; }}
 .st-key-ts_light [class*="st-key-tslight_ticker_"] button {{
     border-radius: 999px !important;
     border: none !important;
@@ -1375,6 +1442,26 @@ _LIGHT_CSS = f"""
        (voir theme.plotly_layout, prompt 18) — réglage Python indépendant du
        double-clic côté Plotly.js, donc applicable sans ce contournement CSS
        ni effet de bord sur le double-clic. */
+}}
+
+/* Carnet d'ordre simulé (prompt 20) masqué en dessous de 1100px — PAS
+   seulement sur mobile (max-width:640px ci-dessus, où le graphique et le
+   formulaire d'ordre s'empilent déjà en 1 colonne) mais aussi sur les
+   largeurs intermédiaires (tablette, petit laptop) où graphique + formulaire
+   restent côte à côte mais où une 3e colonne les compresserait trop.
+   Consigne du prompt : "si l'espace est insuffisant, le masquer plutôt que
+   de compresser les deux autres éléments" — jamais l'inverse. `display:
+   none` (jamais `display: contents`, qui a un lourd historique de bugs sur
+   Safari/iOS — voir le prompt 19 et son annulation complète suite à un
+   écran bleu en production) : propriété CSS parmi les plus anciennes et les
+   mieux supportées, aucun risque de compatibilité connu. `:has()` cible la
+   colonne (stColumn) qui contient la carte du carnet, sans avoir besoin
+   d'une clé Streamlit dédiée sur la colonne elle-même (st.columns() n'en
+   permet pas) — même technique déjà utilisée pour stExpandSidebarButton. */
+@media (max-width: 1099px) {{
+    [data-testid="stColumn"]:has(.st-key-ts_card_orderbook) {{
+        display: none !important;
+    }}
 }}
 """
 
