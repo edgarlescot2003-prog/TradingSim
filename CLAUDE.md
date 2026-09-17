@@ -50,9 +50,36 @@ avec le système de marge/P&L/liquidation). Ces 3 dernières classes sont une
 extension pure du système existant (même marge/levier/liquidation/TP-SL/
 short, aucune règle spécifique type horaires 24/5 ou taille de contrat) et
 suivent la même détection de catégorie que Crypto pour le formulaire d'ordre
-(voir "Saisie par montant à risquer" ci-dessous). Positions
-longues et courtes (short), effet de levier, ordres au marché et à cours
-limité. Graphiques avec sélecteur d'échelle temporelle progressif
+(voir "Saisie par montant à risquer" ci-dessous). Effet de levier, ordres
+au marché et à cours limité. Layout de la fiche d'un actif en 2 colonnes
+façon Hyperliquid (desktop) : graphique à gauche, panneau d'ordre + TP/SL
+à droite (empilé sur mobile) — voir `ui_trading._render_price_and_chart`
+(fragment) et `_render_order_form`.
+
+**3 actions distinctes (Acheter/Vendre/Short)** : le formulaire d'ordre
+affiche toujours 3 boutons explicitement labellisés — Acheter (vert),
+Vendre (gris-bleu neutre, `theme.SELL_NEUTRAL`, distinct du vert ET du
+rouge), Short (rouge) — plutôt qu'un sélecteur à 2 options dont le libellé
+changeait selon le contexte (ancien "Long/Short" du prompt 9). Vendre
+n'est actif que si une position longue est détenue sur l'actif consulté
+(désactivé + infobulle sinon, jamais un formulaire vide/une erreur
+technique) ; Acheter est désactivé si une position courte est ouverte, et
+Short si une position longue est ouverte (long et short mutuellement
+exclusifs sur un même ticker, règle déjà imposée par
+`Portfolio.buy`/`open_short`, seulement reflétée dans l'UI). Quand un
+short est déjà ouvert, l'onglet Short affiche un sous-choix
+Renforcer/Racheter (mêmes 2 actions qu'avant, déplacées sous cet onglet).
+Voir `ui_trading._render_action_tabs` (nouveau sélecteur à 3) et
+`_render_side_toggle` (sous-choix Renforcer/Racheter, réutilisé).
+Attention CSS : la coloration de ces boutons (et de l'ancien sélecteur à 2)
+demande un sélecteur à 3 classes (`.st-key-ts_light .st-key-{clé}.stElementContainer
+.stButton > button`, même technique que `theme.badge_color`) — un simple
+`.st-key-{clé} button` se fait écraser par la règle générique
+`.st-key-ts_light .stButton > button` (spécificité plus élevée), malgré le
+`!important` des deux côtés. Piège déjà tombé dedans une fois, à ne pas
+reproduire sur un futur bouton coloré dans `.st-key-ts_light`.
+
+Graphiques avec sélecteur d'échelle temporelle progressif
 (1J/1S/1M/3M/6M/YTD/1A/5A/Tout), granularité maximale à chaque échelle.
 Tickers cliquables depuis le Portefeuille pour rejoindre directement la
 fiche Trading de l'actif.
@@ -274,10 +301,46 @@ toolbar masquée + zoom par défaut sur les 3 derniers mois + sélecteur de
 période en une ligne défilante. Validé sur écran ~375-414px **avec 2
 indicateurs dans la topbar** ; depuis l'ajout de la liquidité disponible (3
 indicateurs), la topbar mobile n'est plus forcée en `nowrap` et peut passer
-sur 2 lignes — **pas revérifié sur un vrai écran** (connexion Supabase
-injoignable depuis l'environnement où ce changement a été fait, donc pas
-d'app lancée pour vérifier visuellement) : à confirmer par Edgar à l'usage,
-ajuster le CSS si le rendu à 375-414px n'est pas satisfaisant.
+sur 2 lignes. Depuis validé visuellement (serveur local + Playwright,
+prompts 12/13/16) : rendu correct.
+
+**Listes compactes mobile** (`theme.render_compact_list`) : Positions,
+Historique des trades, récap "Positions ouvertes" (Portefeuille), recherche
+d'actifs/récents/suggestions et encadrés d'accueil Trading (Indices
+majeurs, Top capitalisation...) basculent tous en 1 ligne HTML compacte
+par élément sur mobile plutôt qu'en grosse carte empilée (rendu desktop
+`render_table_light` masqué en contrepartie, voir le media query dans
+`theme.py`). **Toujours passer `detail=` avec un `st.button` de navigation
+(`theme.go_to_trading`)** à chaque appel de `render_compact_list` — sans
+lui, la ligne compacte n'a strictement aucune interaction possible sur
+mobile (bug réel vécu au prompt 12, corrigé au prompt 13 : impossible
+d'ouvrir un actif depuis ces listes sur petit écran, plusieurs mois avant
+qu'un vrai écran mobile ne le révèle si non testé explicitement).
+
+**Panneau latéral natif Streamlit** : replié par défaut au chargement,
+desktop compris (`st.set_page_config(..., initial_sidebar_state="collapsed")`,
+`app.py`) — la navigation de l'app passe par sa propre barre d'onglets, pas
+par ce panneau, qui n'a donc plus besoin de s'ouvrir en grand par défaut.
+Reste entièrement dépliable/repliable via ses icônes natives (jamais
+masquées côté CSS) : "Se déconnecter" et le sélecteur de portefeuille n'ont
+pas d'autre point d'accès dans l'app, à un clic près derrière l'icône `»`.
+**Piège déjà tombé dedans une fois** (régression du prompt 12, corrigée au
+prompt 16) : masquer l'icône de repli INTERNE au panneau (au lieu de
+forcer l'état initial replié) le laisse coincé ouvert dès qu'il s'ouvre,
+sans aucun moyen de le refermer — ne jamais masquer
+`stSidebarCollapseButton`/`stExpandSidebarButton` en CSS, seul
+`initial_sidebar_state` doit piloter l'état par défaut.
+
+Page Connexion/Inscription centrée (horizontalement de façon robuste,
+verticalement de façon approximative — `st.container(key="ts_login_page")`
+dans `ui_auth.py` + CSS dans `theme.py`) plutôt que collée en haut à
+gauche. Bandeau de valeur (topbar) en fond transparent (se fond dans le
+dégradé) plutôt que le fond plus sombre résiduel du thème clair d'origine.
+Barre de recherche (Trading) avec fond/contour propres pour se détacher de
+la page. Titre (nom + ticker) affiché en haut de la fiche d'un actif
+consulté. Résumés hebdomadaires automatiques (News) ouvrables en modal
+comme un article normal (le bouton dépendait d'un seuil de troncature à
+280 caractères que ces résumés courts n'atteignaient presque jamais).
 
 ### Comptes et rôles (3 niveaux)
 - **Admin** (moi) : tous les droits — gestion des comptes, seul à pouvoir
@@ -328,6 +391,26 @@ manuellement en local exécute donc pour de vrai n'importe quel palier ou
 liquidation réel déclenché à ce moment-là, pas seulement ceux d'un compte de
 test.
 
+**Concurrence sur `portfolio_repo.save_portfolio`** : verrouille la ligne
+`portfolios` (`session.get(PortfolioRow, portfolio.id, with_for_update=True)`)
+pour toute la durée de la transaction, avant le DELETE-puis-INSERT complet
+de positions/trades/pending_orders/value_history. Nécessaire car une
+session utilisateur et le cron `check-tp-sl.yml` (toutes les 15 min sur
+tous les portefeuilles à paliers/positions leviées actifs) peuvent
+sauvegarder le MÊME portefeuille en même temps — sans ce verrou, repéré en
+conditions réelles (stress test, prompt 11) : crash `IntegrityError` sur
+la contrainte unique de `positions` (portfolio_id, ticker), le panneau
+Trading restant inutilisable jusqu'à résolution spontanée. `positions` a
+en plus un upsert `ON CONFLICT` explicite (même idiome que `value_history`,
+qui avait déjà ce correctif avant `positions`) ; `trades`/`pending_orders`
+n'ont pas de contrainte unique exploitable pour un upsert, d'où le besoin
+du verrou (qui protège les 4 tables à la fois, pas seulement `positions`).
+**Limite connue, non corrigée** : le verrou évite le crash mais pas la
+perte silencieuse d'une modification si deux écritures concurrentes
+touchent des éléments DIFFÉRENTS du même portefeuille (chacune remplace
+tout l'état, pas seulement ses propres changements) — risque résiduel
+accepté, hors périmètre de ce correctif (prompt 15).
+
 **Sauvegarde automatique** : chaque nuit, un workflow GitHub Actions
 (`.github/workflows/backup.yml`) exporte toutes les tables en CSV dans
 `backups/AAAA-MM-JJ/` (rotation : 14 sauvegardes conservées), commité
@@ -355,7 +438,26 @@ directement dans le dépôt — gratuit, aucun service tiers. Voir
   (bouton "Retour à l'accueil") peut occasionnellement rester bloqué
   plusieurs dizaines de secondes — probablement lié au fragment
   d'auto-rafraîchissement (`run_every=30`) de cette fiche qui continue de
-  tourner en arrière-plan après en être sorti.
+  tourner en arrière-plan après en être sorti. Possiblement lié/aggravé par
+  la cause identifiée dans le diagnostic de lenteur ci-dessous (le
+  formulaire d'ordre, hors fragment, force un rerun complet à chaque
+  interaction) — pas confirmé, à garder en tête en le retraitant.
+- **Diagnostic de lenteur (prompt 14) fait, corrections en cours** :
+  2 causes identifiées pour la lenteur signalée au changement d'onglet et
+  sur le formulaire d'ordre. (1) `_render_order_form` (`ui_trading.py`)
+  n'était pas isolé dans son propre `@st.fragment`, contrairement au
+  graphique — chaque interaction du formulaire (levier, montant...)
+  reconstruisait et réenvoyait la figure Plotly pour rien. **Correctif en
+  cours d'implémentation au prompt 17** (fragment séparé pour le
+  formulaire+TP/SL, avec `st.rerun(scope="app")` explicite au moment de
+  valider un ordre pour rafraîchir la topbar). (2) `valuation.total_value(portfolio)`
+  tourne sans condition à CHAQUE rerun (app.py, avant le routage d'onglet),
+  y compris vers un onglet qui n'en a pas besoin (Tutoriel, Règlement...) —
+  **pas encore corrigé, prompt séparé à venir** (cache court sur le
+  résultat, risque de fraîcheur à valider avant d'implémenter puisque
+  `Portfolio` est un objet mutable non hashable nativement). Correction
+  triviale déjà appliquée en marge (`search_history.get_recent`, cache 10s
+  — tournait aussi sans condition à chaque rerun de la page Trading).
 - Audit de charge (stress test) fait sur l'app déployée : isolation
   multi-comptes, cohérence Supabase (pas de ligne orpheline), portefeuille
   officiel, cache API sous charge légère (5 comptes) — tout validé. Pas
@@ -388,3 +490,10 @@ directement dans le dépôt — gratuit, aucun service tiers. Voir
   l'UI d'inscription) puis les supprimer via `auth.delete_user(...)` une
   fois fini — jamais tester sur les comptes réels d'Edgar/participants
   sans le dire explicitement.
+- Le Session Pooler Supabase limite à **15 connexions simultanées**
+  (`EMAXCONNSESSION`). Un enchaînement de scripts de test/serveur local qui
+  ouvrent chacun leur propre `create_engine_from_env()` sans le disposer
+  peut épuiser ce quota (vécu plusieurs fois lors de sessions de test
+  intensives) — l'erreur se résout seule après quelques secondes/dizaines
+  de secondes (connexions recyclées), pas la peine de chercher un bug
+  ailleurs si ce message précis apparaît pendant une série de tests.
