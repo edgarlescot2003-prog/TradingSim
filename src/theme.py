@@ -1175,6 +1175,20 @@ _LIGHT_CSS = f"""
    absolute + z-index pour que le texte reste lisible par-dessus. opacity
    (pas une couleur rgba dédiée) pour l'atténuer à ~50% : plus simple, la
    barre n'a de toute façon aucun contenu texte propre à en pâtir. */
+.ts-ob-wrap {{
+    display: flex;
+    flex-direction: column;
+    height: 450px; /* même hauteur que le graphique, voir ui_trading._render_price_and_chart */
+}}
+.ts-ob-side {{
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+}}
+.ts-ob-asks {{ justify-content: space-between; }}
+.ts-ob-bids {{ justify-content: space-between; }}
+.ts-ob-center {{ flex: 0 0 auto; }}
 .ts-ob-row {{
     position: relative;
     display: flex;

@@ -670,13 +670,22 @@ def _render_order_book_rows(snapshot: dict, reference_price: float) -> None:
     best_ask, best_bid = asks[0]["price"], bids[0]["price"]
     spread_bps = (best_ask - best_bid) / reference_price * 10_000 if reference_price else 0.0
 
+    # .ts-ob-wrap force la hauteur totale du carnet à coller à celle du
+    # graphique (450px, voir _render_price_and_chart ligne ~550) ; .ts-ob-side
+    # étire chaque groupe (asks/bids) en flex column avec justify-content
+    # pour répartir les paliers sur toute la hauteur dispo plutôt que de
+    # laisser un vide en bas de colonne (carnet visuellement trop petit avant
+    # ce correctif). Div propre (pas une enveloppe Streamlit), donc aucun
+    # risque du piège display:contents déjà rencontré ailleurs (prompt 19).
     st.markdown(
-        f'{asks_html}'
+        f'<div class="ts-ob-wrap">'
+        f'<div class="ts-ob-side ts-ob-asks">{asks_html}</div>'
         f'<div class="ts-ob-center">'
         f'<span class="ts-ob-center-price">{reference_price:,.2f} €</span>'
         f'<span class="ts-ob-center-spread">spread {spread_bps:.1f} bps</span>'
         f'</div>'
-        f'{bids_html}',
+        f'<div class="ts-ob-side ts-ob-bids">{bids_html}</div>'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
