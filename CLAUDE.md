@@ -320,57 +320,65 @@ le solde, pas un nouveau calcul) et P&L du jour. Barre en `position: sticky`
 (pas `fixed`), volontairement : passer sur 2 lignes si ça ne tient pas sur
 une (voir Responsive mobile ci-dessous) ne recouvre jamais rien en dessous.
 
-**Barre d'onglets sticky en desktop uniquement** (`.st-key-ts_tabbar`, prompt
-19) : reste fixée en haut au défilement, juste sous la topbar (`top: var(--ts-topbar-height)`,
-une estimation de la hauteur de la topbar sur 1 ligne — pas de moyen CSS
-natif de caler `top` sur la hauteur RÉELLE d'un élément sticky précédent ;
-à ajuster dans `:root` si un écart apparaît en test réel). `position: sticky`
-comme la topbar, jamais `fixed`, même raison (conflit de superposition avec
-le panneau latéral). Repasse en flux normal (`position: static`) sur mobile,
-où la topbar elle-même peut s'étaler sur 2-3 lignes (indicateurs empilés) :
-un décalage fixe n'y aurait plus de sens. `z-index: 99` (topbar : 100) —
-au-dessus du contenu de page qui défile dessous, jamais au-dessus de la
-topbar ni des notifications/toasts (couche native Streamlit, z-index déjà
-bien plus élevé).
+**Barre d'onglets sticky en desktop uniquement, topbar NON sticky**
+(`.st-key-ts_tabbar` / `.ts-topbar`, prompt 19) : seule la barre d'onglets
+reste fixée en haut au défilement (`position: sticky; top: 0`) — la topbar
+(Valeur totale/Liquidité/P&L) défile normalement avec le reste du contenu.
+Ce n'était PAS le comportement d'origine du prompt 19 : la topbar avait
+`position: sticky` depuis bien avant ce prompt, et la première version
+gardait ce comportement (les deux sticky, tabbar calée sous la topbar).
+Edgar a demandé cette retouche une fois le sticky réellement fonctionnel
+pour la première fois (voir le bug ci-dessous) : seule la barre d'onglets
+doit rester visible en permanence. Fond de la barre d'onglets **plein**
+(`BG_GRADIENT_TOP`, la teinte du haut du dégradé de fond — pas transparent
+comme la topbar) : demandé par Edgar après avoir vu le texte défiler EN
+TRANSPARENCE derrière les libellés d'onglets une fois réellement collée
+(illisible) ; `BG_GRADIENT_TOP` reste cohérent avec le dégradé fixe de la
+page (`background-attachment: fixed`) puisque c'est déjà la teinte qui s'y
+affiche normalement en haut du viewport. Padding horizontal ajouté en même
+temps (les onglets touchaient les bords du fond plein) — la marge droite
+(7.5rem, comme la topbar) réserve la place de la barre d'outils native
+Streamlit (stToolbar), qui flotte en haut à droite du viewport et peut
+désormais chevaucher la barre d'onglets une fois collée (elle chevauchait
+avant la topbar, qui n'est plus concernée). `position: sticky` (jamais
+`fixed`) : `fixed` s'ancrerait au viewport entier et entrerait en conflit
+de superposition avec le panneau latéral. Repasse en flux normal
+(`position: static`) sur mobile.
 
-**Bug réel découvert ET corrigé en implémentant ce prompt** : la sticky de
-`.st-key-ts_tabbar` ne fonctionnait PAS du tout au premier essai (repéré par
-Edgar : "reste toujours en haut" = ne s'accroche jamais, défile comme avant).
-Diagnostic fait avec Playwright + un serveur Streamlit local jetable
-(compte de test, cf. règle habituelle) : **`.ts-topbar` était en fait déjà
-cassée elle aussi**, et l'était probablement depuis toujours — jamais
-repéré faute d'avoir vraiment scrollé une page assez longue en conditions
-réelles pendant les tests visuels précédents (prompts 12/13/16, sans doute
-sur des pages trop courtes pour que ça se voie). Cause : Streamlit enveloppe
-chaque élément dans une chaîne de divs intermédiaires
-(`stElementContainer`, `stMarkdownContainer`, `stVerticalBlock`,
-`stLayoutWrapper`, plus des divs sans `data-testid`) entre le contenu réel
-et `[data-testid="stMainBlockContainer"]` — lui-même enfant direct de
-`[data-testid="stMain"]`, qui est le VRAI conteneur qui défile
-(`overflow: auto` ; `window.scrollY` reste à 0 même en scrollant la page,
-tout se passe dans `stMain.scrollTop`). Une de ces enveloppes intermédiaires
-empêche `position: sticky` de fonctionner pour tout ce qu'elle contient,
-sans qu'aucune propriété individuelle testée isolément (display,
-min-height, align-items, flex-grow/basis) n'ait suffi à elle seule à
-expliquer/corriger le problème — seul un `display: contents` sur la
+**Bug réel découvert (et corrigé) en implémentant la 1ère version de ce
+prompt** : la sticky de `.st-key-ts_tabbar` ne fonctionnait PAS du tout au
+premier essai (repéré par Edgar : "reste toujours en haut" = ne s'accroche
+jamais, défile comme avant). Diagnostic fait avec Playwright + un serveur
+Streamlit local jetable (compte de test, cf. règle habituelle) :
+**`.ts-topbar` était en fait déjà cassée elle aussi**, et l'était
+probablement depuis toujours — jamais repéré faute d'avoir vraiment scrollé
+une page assez longue en conditions réelles pendant les tests visuels
+précédents (prompts 12/13/16, sans doute sur des pages trop courtes pour
+que ça se voie). Cause : Streamlit enveloppe chaque élément dans une chaîne
+de divs intermédiaires (`stElementContainer`, `stMarkdownContainer`,
+`stVerticalBlock`, `stLayoutWrapper`, plus des divs sans `data-testid`)
+entre le contenu réel et `[data-testid="stMainBlockContainer"]` — lui-même
+enfant direct de `[data-testid="stMain"]`, qui est le VRAI conteneur qui
+défile (`overflow: auto` ; `window.scrollY` reste à 0 même en scrollant la
+page, tout se passe dans `stMain.scrollTop`). Une de ces enveloppes
+intermédiaires empêche `position: sticky` de fonctionner pour tout ce
+qu'elle contient, sans qu'aucune propriété individuelle testée isolément
+(display, min-height, align-items, flex-grow/basis) n'ait suffi à elle
+seule à expliquer/corriger le problème — seul un `display: contents` sur la
 TOTALITÉ de la chaîne d'enveloppes (déclarée ou non) entre l'élément et
 `stMainBlockContainer` règle le problème de façon fiable et reproductible.
-Correctif : règle CSS `[data-testid="stMainBlockContainer"] :has(.ts-topbar),
-[data-testid="stMainBlockContainer"] :has(.st-key-ts_tabbar) { display:
-contents !important; }` (voir `theme.py`, juste après `.ts-topbar`) — cible
-PRÉCISÉMENT les enveloppes qui contiennent l'un de ces deux éléments, quelle
-que soit leur profondeur, sans toucher aux enveloppes identiques ailleurs
-sur la page ; `display: contents` supprime seulement la boîte de
-l'enveloppe (aucun padding/marge/bordure propre à perdre), le contenu reste
-normalement stylé. **Vérifié visuellement avec un vrai Chromium (Playwright,
-screenshots + mesures de position avant/après scroll)** : les deux barres
-restent bien épinglées, testé aussi bien en scrollant à la souris qu'en
-forçant `scrollTop` directement. Point resté à améliorer plus tard (hors
-scope de ce prompt) : fond transparent des deux barres (cohérent avec le
-choix déjà fait pour la topbar) → le texte qui défile est visible EN
-TRANSPARENCE derrière elles une fois collées, potentiellement gênant pour
-la lisibilité — jamais visible avant puisque le sticky ne fonctionnait pas
-du tout.
+Correctif : règle CSS `[data-testid="stMainBlockContainer"] :has(.st-key-ts_tabbar)
+{ display: contents !important; }` (voir `theme.py`, juste après
+`.ts-topbar` — ne cible plus que la barre d'onglets depuis que la topbar
+n'est plus sticky, elle n'a donc plus besoin de ce correctif) — cible
+PRÉCISÉMENT les enveloppes qui contiennent cet élément, quelle que soit
+leur profondeur, sans toucher aux enveloppes identiques ailleurs sur la
+page ; `display: contents` supprime seulement la boîte de l'enveloppe
+(aucun padding/marge/bordure propre à perdre), le contenu reste normalement
+stylé. **Vérifié visuellement avec un vrai Chromium (Playwright,
+screenshots + mesures de position avant/après scroll)**, à chaque étape
+(bug initial, puis retouche demandée par Edgar) : testé aussi bien en
+scrollant à la souris qu'en forçant `scrollTop` directement.
 
 **Responsive mobile** : passe faite (media queries `@media max-width:640px`
 dans `src/theme.py`) — échelle de police/paddings réduite globalement,

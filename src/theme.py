@@ -158,18 +158,6 @@ _CSS = f"""
     --ts-green: {GREEN};
     --ts-red: {RED};
     --ts-accent: {ACCENT};
-    /* Hauteur estimée de .ts-topbar sur 1 ligne (desktop) : padding vertical
-       0.65rem*2 + libellé (0.62rem) et valeur (1.15rem) empilés à
-       line-height 1.25, voir .ts-topbar-item. Sert de décalage `top` à la
-       barre d'onglets sticky (.st-key-ts_tabbar, prompt 19) pour qu'elle se
-       cale juste sous la topbar plutôt que de la recouvrir ou de laisser un
-       vide — CSS n'a pas de moyen natif de caler `top` sur la hauteur RÉELLE
-       d'un élément sticky précédent, cette valeur est donc une estimation à
-       ajuster ici si un écart visible apparaît en test manuel (topbar sur
-       une seule ligne, desktop uniquement : sur mobile la barre d'onglets
-       n'est pas sticky, voir le media query mobile, donc cette variable n'y
-       est pas utilisée). */
-    --ts-topbar-height: 3.5rem;
 }}
 
 html, body, .stApp {{
@@ -218,27 +206,15 @@ h1, h2, h3, h4, h5, h6,
 }}
 [data-testid="stToolbar"] {{ top: 0.4rem !important; }}
 
-/* Barre de valeur : `position: sticky` (pas `fixed`) et confinée au volet de
-   contenu principal (elle est injectée à l'intérieur de stMain, à droite du
-   panneau latéral dans la mise en page de Streamlit) plutôt qu'ancrée au
-   viewport entier. Avec `fixed`, la barre s'étend sur toute la largeur et
-   entre en conflit de superposition avec le panneau latéral : soit elle le
-   recouvre (bouton pour le replier inutilisable), soit elle passe dessous et
-   c'est le panneau (opaque) qui la recouvre à son tour (logo/nom de
-   portefeuille invisibles quand le panneau est ouvert). `sticky` reste
-   épinglée en haut au défilement sans jamais se superposer géométriquement
-   au panneau, donc plus besoin de bataille de z-index avec lui. */
+/* Barre de valeur : PAS sticky (prompt 19, retouche demandée par Edgar après
+   la première version de ce prompt) — seule la barre d'onglets doit rester
+   fixée au défilement, la topbar (Valeur totale/Liquidité/P&L) doit défiler
+   normalement avec le reste du contenu. Elle avait `position: sticky`
+   depuis l'origine de cette barre (bien avant le prompt 19), mais Edgar ne
+   voulait pas ce comportement une fois qu'il a pu le voir fonctionner pour
+   de vrai (voir le bug réel de sticky cassé, corrigé puis cette demande de
+   retouche dans la foulée). */
 .ts-topbar {{
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    /* Transparent (pas --ts-panel) : ce bloc doit se fondre dans le dégradé
-       général de la page, pas se détacher dessus avec un fond plus foncé —
-       résidu du "fond de section légèrement rehaussée" pensé à l'origine
-       pour le thème clair (prompts 1-7), jamais retiré au passage au fond
-       dégradé sombre (prompt 8). background-attachment:fixed sur html/body
-       (voir plus haut) assure que le dégradé reste continu même une fois la
-       barre sticky au défilement. */
     background: transparent;
     border-bottom: 1px solid var(--ts-border);
     /* padding-right généreux : réserve la place de la barre d'outils native
@@ -252,39 +228,36 @@ h1, h2, h3, h4, h5, h6,
     row-gap: 0.35rem;
 }}
 
-/* CORRECTIF STICKY (prompt 19, régression découverte en le corrigeant) :
-   .ts-topbar était en fait déjà cassé — jamais visible avant faute d'avoir
-   vraiment scrollé une page assez longue en conditions réelles — et
-   .st-key-ts_tabbar (nouvellement sticky) l'était tout autant. Diagnostic
-   fait via Playwright en local (voir la session qui a introduit ce
-   correctif) : Streamlit enveloppe chaque élément dans une chaîne de divs
-   intermédiaires (stElementContainer, stMarkdownContainer, stVerticalBlock,
+/* CORRECTIF STICKY (prompt 19) : .st-key-ts_tabbar (et à l'origine
+   .ts-topbar aussi, avant qu'Edgar ne demande à ce qu'elle redevienne non-
+   sticky juste au-dessus) ne collait PAS du tout au défilement malgré
+   `position: sticky` posé sur l'élément lui-même. Diagnostic fait via
+   Playwright en local (voir la session qui a introduit ce correctif) :
+   Streamlit enveloppe chaque élément dans une chaîne de divs intermédiaires
+   (stElementContainer, stMarkdownContainer, stVerticalBlock,
    stLayoutWrapper, plus des divs sans data-testid) entre le vrai contenu et
    [data-testid="stMainBlockContainer"] — qui est lui-même l'enfant direct de
    [data-testid="stMain"], le VRAI conteneur qui défile (overflow:auto, pas
    la fenêtre : window.scrollY reste à 0 même en scrollant la page, tout se
-   passe dans stMain.scrollTop). Une de ces enveloppes intermédiaires (a
-   priori liée à son propre `min-height`, mais le correctif ciblé sur cette
-   seule propriété n'a pas suffi empiriquement) empêche `position: sticky`
-   de fonctionner pour tout ce qu'elle contient, sans qu'aucune des
-   propriétés individuellement testées (display, min-height, align-items,
-   flex-grow/basis) ne suffise à elle seule à expliquer/corriger le
-   problème. Seul un `display: contents` sur la totalité de la chaîne
-   d'enveloppes (déclarée ou non, testid ou non) entre l'élément et
-   stMainBlockContainer résout le problème de façon fiable, vérifié
-   empiriquement : le supprimer casse à nouveau le sticky, même en ne
-   retirant qu'UN SEUL maillon de la chaîne. `:has()` (déjà utilisé plus
-   bas pour stExpandSidebarButton) permet de cibler PRÉCISÉMENT et
-   UNIQUEMENT les enveloppes qui contiennent .ts-topbar ou .st-key-ts_tabbar
-   quelle que soit leur profondeur, sans toucher aux enveloppes identiques
-   ailleurs sur la page (ex. stElementContainer d'un autre st.markdown) —
-   `display: contents` ne fait que supprimer la boîte de l'enveloppe elle-
-   même (elle n'a par ailleurs ni padding/marge/bordure propre à perdre),
-   ses enfants restent normalement stylés et disposés. Sans lien avec le
-   media query mobile (agit identiquement desktop/mobile, la barre
-   d'onglets restant simplement en position: static sur mobile malgré ça,
-   voir plus bas). */
-[data-testid="stMainBlockContainer"] :has(.ts-topbar),
+   passe dans stMain.scrollTop). Une de ces enveloppes intermédiaires
+   empêche `position: sticky` de fonctionner pour tout ce qu'elle contient,
+   sans qu'aucune propriété individuelle testée isolément (display,
+   min-height, align-items, flex-grow/basis) n'ait suffi seule à
+   expliquer/corriger le problème. Seul un `display: contents` sur la
+   totalité de la chaîne d'enveloppes (déclarée ou non, testid ou non)
+   entre l'élément et stMainBlockContainer résout le problème de façon
+   fiable, vérifié empiriquement : le supprimer casse à nouveau le sticky,
+   même en ne retirant qu'UN SEUL maillon de la chaîne. `:has()` (déjà
+   utilisé plus bas pour stExpandSidebarButton) permet de cibler
+   PRÉCISÉMENT et UNIQUEMENT les enveloppes qui contiennent
+   .st-key-ts_tabbar, quelle que soit leur profondeur, sans toucher aux
+   enveloppes identiques ailleurs sur la page (ex. stElementContainer d'un
+   autre st.markdown) — `display: contents` ne fait que supprimer la boîte
+   de l'enveloppe elle-même (elle n'a par ailleurs ni padding/marge/bordure
+   propre à perdre), ses enfants restent normalement stylés et disposés.
+   Sans lien avec le media query mobile (agit identiquement desktop/mobile,
+   la barre d'onglets restant simplement en position: static sur mobile
+   malgré ça, voir plus bas). */
 [data-testid="stMainBlockContainer"] :has(.st-key-ts_tabbar) {{
     display: contents !important;
 }}
@@ -459,24 +432,39 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
    DESKTOP uniquement (prompt 19) — repassée en flux normal sur mobile par
    le media query mobile ci-dessous, qui l'emporte à l'affichage (règle plus
    spécifique/déclarée après). `position: sticky` (pas `fixed`), même
-   raisonnement que .ts-topbar plus haut : `fixed` s'ancrerait au viewport
-   entier et entrerait en conflit de superposition avec le panneau latéral.
-   `top` calé juste sous la topbar (voir --ts-topbar-height) pour ne pas la
-   recouvrir ; z-index sous celui de la topbar (100) mais largement au-dessus
-   du contenu de page qui défile dessous (graphique, formulaire d'ordre en
-   fragment...), qui reste à son z-index par défaut (auto/0). Fond
-   transparent comme .ts-topbar : le dégradé de fond (background-attachment:
-   fixed sur html/body) reste continu au défilement, aucun aplat de couleur
-   propre à créer/maintenir ici. */
+   raisonnement que .ts-topbar plus haut à l'époque où elle l'était encore :
+   `fixed` s'ancrerait au viewport entier et entrerait en conflit de
+   superposition avec le panneau latéral. `top: 0` (pas décalée sous la
+   topbar : celle-ci n'est plus sticky, donc plus rien de fixe au-dessus une
+   fois le défilement engagé). z-index largement au-dessus du contenu de
+   page qui défile dessous (graphique, formulaire d'ordre en fragment...),
+   qui reste à son z-index par défaut (auto/0).
+
+   Fond BG_GRADIENT_TOP plein (pas transparent, contrairement à .ts-topbar
+   plus haut) : repéré par Edgar au premier essai (fond transparent + barre
+   réellement collée au défilement pour la première fois, voir le correctif
+   sticky ci-dessous) — le texte qui défile restait visible en transparence
+   derrière les libellés d'onglets, illisible. `BG_GRADIENT_TOP` (teinte du
+   HAUT du dégradé de fond) plutôt que `--ts-panel` : une fois collée en
+   haut du viewport, c'est justement la teinte que `background-attachment:
+   fixed` y affiche déjà normalement, donc aucune coupure visible avec le
+   reste de la page au-dessus/around (marges gauche/droite du contenu). */
 .st-key-ts_tabbar {{
     gap: 1.75rem !important;
     border-bottom: 1px solid var(--ts-border);
     margin-bottom: 0.9rem;
     align-items: center !important;
     position: sticky;
-    top: var(--ts-topbar-height);
+    top: 0;
     z-index: 99;
-    background: transparent;
+    background: {BG_GRADIENT_TOP};
+    /* Padding horizontal : les onglets touchaient les bords du fond plein
+       ci-dessus sans ça (pas besoin quand le fond était transparent). À
+       droite, réserve aussi la place de la barre d'outils native Streamlit
+       (stToolbar, voir .ts-topbar plus haut) — désormais potentiellement
+       superposée à CETTE barre une fois collée en haut après défilement
+       (la topbar, elle, ne l'est plus). */
+    padding: 0.2rem 7.5rem 0.2rem 1.75rem;
 }}
 /* Seule la couleur du texte distingue l'onglet actif des autres — même
    taille, même graisse, même position que [class*="st-key-navtab_"] button
@@ -797,19 +785,16 @@ hr {{ border-color: var(--ts-border) !important; }}
        totale, liquidité disponible, P&L) en plus du logo, tout ne tient
        plus sur une seule ligne à 375-414px : `flex-wrap` reste sur sa
        valeur par défaut (`wrap`, voir la règle desktop) plutôt que forcé en
-       `nowrap` comme avant l'ajout de la liquidité — la barre est `sticky`
-       (pas `fixed`, voir plus haut) donc passer sur 2 lignes ne recouvre
-       rien, juste une barre un peu plus haute. */
+       `nowrap` comme avant l'ajout de la liquidité — la topbar n'est de
+       toute façon plus sticky (voir plus haut, prompt 19) donc passer sur
+       2 lignes n'a aucun effet sur le reste de la page. */
     .ts-topbar {{
         padding: 0.5rem 3rem 0.5rem 0.9rem !important;
     }}
     .ts-topbar-sep, .ts-topbar-portfolio {{ display: none; }}
     /* Barre d'onglets NON sticky sur mobile (prompt 19, contrairement à la
        règle desktop plus haut) : repasse en flux normal, défile avec la
-       page comme avant. La topbar peut ici s'étaler sur 2-3 lignes selon le
-       nombre d'indicateurs (voir plus haut) — sa hauteur n'est plus fixe,
-       le décalage --ts-topbar-height (pensé pour 1 seule ligne desktop) n'y
-       serait plus valable de toute façon. */
+       page comme avant. */
     .st-key-ts_tabbar {{
         position: static;
     }}
