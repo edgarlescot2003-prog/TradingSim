@@ -29,6 +29,20 @@ complète (P&L €/%, prix moyen d'achat, date d'entrée, poids %), graphique
 de performance dans le temps, comparaison à un indice de référence (CAC40,
 S&P500...).
 
+**Répartition par catégorie** (carte "Points clés", `ui_portfolio._allocation_by_category`) :
+basée sur la **marge engagée** de chaque position (montant investi / levier),
+pas l'exposition brute (prix × quantité) — avant le prompt 18.4, une
+position à levier gonflait sa part bien au-delà de sa taille réelle en
+capital (x10 sur 500 € de marge affichait 50 000 € d'exposition), faisant
+dépasser 100% la somme des parts. Dénominateur : cash + Σ marges des
+positions ouvertes — volontairement PAS `valuation.total_value` (qui inclut
+le P&L latent via `equity_contribution_eur`) : cette répartition montre
+comment le CAPITAL est engagé, pas la valeur courante après gains/pertes.
+`valuation.total_value` (topbar, Classement...) utilisait déjà cette même
+logique de marge (`equity_contribution_eur = margin_eur + pnl_eur`), donc
+aucun second bug à corriger là — seule la répartition par catégorie avait
+la régression (exposition brute).
+
 **Portefeuille officiel** : parmi ses portefeuilles, un seul est désigné
 "officiel" (badge ⭐) — c'est le seul compté pour le Classement, les autres
 sont purement fun/test. Désigné automatiquement au tout premier portefeuille

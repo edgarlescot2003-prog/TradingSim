@@ -170,6 +170,37 @@ def _render_contest_progress(active_portfolio, active_total_value: float) -> Non
                 )
 
 
+def _allocation_by_category(portfolio, snapshots: list[dict]) -> dict[str, float]:
+    """Répartition du CAPITAL engagé par catégorie d'actif, en % (utilisé par
+    la carte "Points clés" ci-dessous). Basée sur la marge engagée (montant
+    investi / levier) par position, PAS l'exposition brute (prix × quantité)
+    : avec du levier, l'exposition dépasse largement le cash réellement
+    immobilisé (une position x10 à 1000 € de marge affiche 10 000 €
+    d'exposition), ce qui faisait dépasser 100% la somme des parts dès
+    qu'une position à levier était ouverte (prompt 18.4). Dénominateur
+    cohérent : cash + Σ marges (PAS `valuation.total_value`, qui inclut
+    aussi le P&L latent via `equity_contribution_eur` — cette répartition
+    montre comment le CAPITAL engagé est alloué, pas la valeur courante
+    après gains/pertes, donc ne bouge pas au fil des variations de prix).
+    Repli sur le coût d'achat (quantité × prix moyen) pour une position
+    héritée de la Phase 2 sans marge enregistrée (margin_eur nul, short sans
+    levier), même convention que `valuation.position_snapshot` (pnl_base).
+
+    Fonction pure (aucun appel Streamlit) pour rester testable directement,
+    sans avoir à parser le HTML généré par _render_highlights."""
+    by_category: dict[str, float] = {}
+    allocation_total = portfolio.cash
+    for s in snapshots:
+        pos = s["position"]
+        margin = pos.margin_eur if pos.margin_eur > 1e-9 else pos.quantity * pos.avg_price_eur
+        by_category[s["category"]] = by_category.get(s["category"], 0.0) + margin
+        allocation_total += margin
+
+    if not by_category or not allocation_total:
+        return {}
+    return {label: amount / allocation_total * 100 for label, amount in by_category.items() if amount > 0}
+
+
 def _render_highlights(portfolio, total_value: float, snapshots: list[dict]) -> None:
     day_pnl_eur, day_pnl_pct = valuation.daily_pnl(portfolio, total_value)
     total_pnl_eur = sum(s["pnl_eur"] for s in snapshots)
@@ -187,21 +218,18 @@ def _render_highlights(portfolio, total_value: float, snapshots: list[dict]) -> 
                 '<div class="ts-light-col-label">Répartition par catégorie</div>',
                 unsafe_allow_html=True,
             )
-            by_category: dict[str, float] = {}
-            for s in snapshots:
-                by_category[s["category"]] = by_category.get(s["category"], 0.0) + s["current_exposure_eur"]
+            shares_by_category = _allocation_by_category(portfolio, snapshots)
 
-            if not by_category or not total_value:
+            if not shares_by_category:
                 st.caption("Pas encore de position.")
             else:
                 # Toutes les catégories connues (voir theme.CATEGORY_COLORS)
                 # plus "Autres" en repli : pas de liste figée à maintenir à
                 # chaque nouvelle classe d'actif ajoutée à la palette.
                 for label in (*theme.CATEGORY_COLORS.keys(), "Autres"):
-                    amount = by_category.get(label, 0.0)
-                    if amount <= 0:
+                    pct = shares_by_category.get(label, 0.0)
+                    if pct <= 0:
                         continue
-                    pct = amount / total_value * 100
                     color = theme.CATEGORY_COLORS.get(label, theme.LIGHT_FAINT)
                     st.markdown(
                         f"""
