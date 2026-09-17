@@ -158,6 +158,18 @@ _CSS = f"""
     --ts-green: {GREEN};
     --ts-red: {RED};
     --ts-accent: {ACCENT};
+    /* Hauteur estimée de .ts-topbar sur 1 ligne (desktop) : padding vertical
+       0.65rem*2 + libellé (0.62rem) et valeur (1.15rem) empilés à
+       line-height 1.25, voir .ts-topbar-item. Sert de décalage `top` à la
+       barre d'onglets sticky (.st-key-ts_tabbar, prompt 19) pour qu'elle se
+       cale juste sous la topbar plutôt que de la recouvrir ou de laisser un
+       vide — CSS n'a pas de moyen natif de caler `top` sur la hauteur RÉELLE
+       d'un élément sticky précédent, cette valeur est donc une estimation à
+       ajuster ici si un écart visible apparaît en test manuel (topbar sur
+       une seule ligne, desktop uniquement : sur mobile la barre d'onglets
+       n'est pas sticky, voir le media query mobile, donc cette variable n'y
+       est pas utilisée). */
+    --ts-topbar-height: 3.5rem;
 }}
 
 html, body, .stApp {{
@@ -405,12 +417,28 @@ body:has([data-testid="stExpandSidebarButton"]) .ts-topbar-left {{
 }}
 
 /* Barre d'onglets custom (de vrais st.button pilotés par session_state,
-   pas des liens : voir le commentaire en tête de fichier) */
+   pas des liens : voir le commentaire en tête de fichier). Sticky en
+   DESKTOP uniquement (prompt 19) — repassée en flux normal sur mobile par
+   le media query mobile ci-dessous, qui l'emporte à l'affichage (règle plus
+   spécifique/déclarée après). `position: sticky` (pas `fixed`), même
+   raisonnement que .ts-topbar plus haut : `fixed` s'ancrerait au viewport
+   entier et entrerait en conflit de superposition avec le panneau latéral.
+   `top` calé juste sous la topbar (voir --ts-topbar-height) pour ne pas la
+   recouvrir ; z-index sous celui de la topbar (100) mais largement au-dessus
+   du contenu de page qui défile dessous (graphique, formulaire d'ordre en
+   fragment...), qui reste à son z-index par défaut (auto/0). Fond
+   transparent comme .ts-topbar : le dégradé de fond (background-attachment:
+   fixed sur html/body) reste continu au défilement, aucun aplat de couleur
+   propre à créer/maintenir ici. */
 .st-key-ts_tabbar {{
     gap: 1.75rem !important;
     border-bottom: 1px solid var(--ts-border);
     margin-bottom: 0.9rem;
     align-items: center !important;
+    position: sticky;
+    top: var(--ts-topbar-height);
+    z-index: 99;
+    background: transparent;
 }}
 /* Seule la couleur du texte distingue l'onglet actif des autres — même
    taille, même graisse, même position que [class*="st-key-navtab_"] button
@@ -738,6 +766,15 @@ hr {{ border-color: var(--ts-border) !important; }}
         padding: 0.5rem 3rem 0.5rem 0.9rem !important;
     }}
     .ts-topbar-sep, .ts-topbar-portfolio {{ display: none; }}
+    /* Barre d'onglets NON sticky sur mobile (prompt 19, contrairement à la
+       règle desktop plus haut) : repasse en flux normal, défile avec la
+       page comme avant. La topbar peut ici s'étaler sur 2-3 lignes selon le
+       nombre d'indicateurs (voir plus haut) — sa hauteur n'est plus fixe,
+       le décalage --ts-topbar-height (pensé pour 1 seule ligne desktop) n'y
+       serait plus valable de toute façon. */
+    .st-key-ts_tabbar {{
+        position: static;
+    }}
     /* Les 3 indicateurs passent d'une rangée (label au-dessus de la valeur,
        serrés côte à côte) à une colonne de 3 lignes (label à gauche, valeur
        à droite, sur la même ligne) : avec 3 libellés dont un long

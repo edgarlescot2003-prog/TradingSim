@@ -320,6 +320,22 @@ le solde, pas un nouveau calcul) et P&L du jour. Barre en `position: sticky`
 (pas `fixed`), volontairement : passer sur 2 lignes si ça ne tient pas sur
 une (voir Responsive mobile ci-dessous) ne recouvre jamais rien en dessous.
 
+**Barre d'onglets sticky en desktop uniquement** (`.st-key-ts_tabbar`, prompt
+19) : reste fixée en haut au défilement, juste sous la topbar (`top: var(--ts-topbar-height)`,
+une estimation de la hauteur de la topbar sur 1 ligne — pas de moyen CSS
+natif de caler `top` sur la hauteur RÉELLE d'un élément sticky précédent ;
+à ajuster dans `:root` si un écart apparaît en test réel). `position: sticky`
+comme la topbar, jamais `fixed`, même raison (conflit de superposition avec
+le panneau latéral). Repasse en flux normal (`position: static`) sur mobile,
+où la topbar elle-même peut s'étaler sur 2-3 lignes (indicateurs empilés) :
+un décalage fixe n'y aurait plus de sens. `z-index: 99` (topbar : 100) —
+au-dessus du contenu de page qui défile dessous, jamais au-dessus de la
+topbar ni des notifications/toasts (couche native Streamlit, z-index déjà
+bien plus élevé). **Vérification visuelle manuelle non faite** (pas d'outil
+de navigateur dans la session qui a implémenté ce prompt) : à confirmer par
+Edgar en local — en particulier l'alignement exact sous la topbar (le
+décalage `--ts-topbar-height` est une estimation, pas une mesure réelle).
+
 **Responsive mobile** : passe faite (media queries `@media max-width:640px`
 dans `src/theme.py`) — échelle de police/paddings réduite globalement,
 tableaux en cartes empilées sur petit écran, graphiques Trading avec
