@@ -251,6 +251,44 @@ h1, h2, h3, h4, h5, h6,
     flex-wrap: wrap;
     row-gap: 0.35rem;
 }}
+
+/* CORRECTIF STICKY (prompt 19, régression découverte en le corrigeant) :
+   .ts-topbar était en fait déjà cassé — jamais visible avant faute d'avoir
+   vraiment scrollé une page assez longue en conditions réelles — et
+   .st-key-ts_tabbar (nouvellement sticky) l'était tout autant. Diagnostic
+   fait via Playwright en local (voir la session qui a introduit ce
+   correctif) : Streamlit enveloppe chaque élément dans une chaîne de divs
+   intermédiaires (stElementContainer, stMarkdownContainer, stVerticalBlock,
+   stLayoutWrapper, plus des divs sans data-testid) entre le vrai contenu et
+   [data-testid="stMainBlockContainer"] — qui est lui-même l'enfant direct de
+   [data-testid="stMain"], le VRAI conteneur qui défile (overflow:auto, pas
+   la fenêtre : window.scrollY reste à 0 même en scrollant la page, tout se
+   passe dans stMain.scrollTop). Une de ces enveloppes intermédiaires (a
+   priori liée à son propre `min-height`, mais le correctif ciblé sur cette
+   seule propriété n'a pas suffi empiriquement) empêche `position: sticky`
+   de fonctionner pour tout ce qu'elle contient, sans qu'aucune des
+   propriétés individuellement testées (display, min-height, align-items,
+   flex-grow/basis) ne suffise à elle seule à expliquer/corriger le
+   problème. Seul un `display: contents` sur la totalité de la chaîne
+   d'enveloppes (déclarée ou non, testid ou non) entre l'élément et
+   stMainBlockContainer résout le problème de façon fiable, vérifié
+   empiriquement : le supprimer casse à nouveau le sticky, même en ne
+   retirant qu'UN SEUL maillon de la chaîne. `:has()` (déjà utilisé plus
+   bas pour stExpandSidebarButton) permet de cibler PRÉCISÉMENT et
+   UNIQUEMENT les enveloppes qui contiennent .ts-topbar ou .st-key-ts_tabbar
+   quelle que soit leur profondeur, sans toucher aux enveloppes identiques
+   ailleurs sur la page (ex. stElementContainer d'un autre st.markdown) —
+   `display: contents` ne fait que supprimer la boîte de l'enveloppe elle-
+   même (elle n'a par ailleurs ni padding/marge/bordure propre à perdre),
+   ses enfants restent normalement stylés et disposés. Sans lien avec le
+   media query mobile (agit identiquement desktop/mobile, la barre
+   d'onglets restant simplement en position: static sur mobile malgré ça,
+   voir plus bas). */
+[data-testid="stMainBlockContainer"] :has(.ts-topbar),
+[data-testid="stMainBlockContainer"] :has(.st-key-ts_tabbar) {{
+    display: contents !important;
+}}
+
 .ts-topbar-left {{ display: flex; align-items: center; gap: 0.6rem; }}
 /* Quand le panneau latéral est replié, Streamlit affiche un bouton pour le
    rouvrir (stExpandSidebarButton) en haut à gauche, au même endroit que notre

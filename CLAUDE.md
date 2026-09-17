@@ -331,10 +331,46 @@ où la topbar elle-même peut s'étaler sur 2-3 lignes (indicateurs empilés) :
 un décalage fixe n'y aurait plus de sens. `z-index: 99` (topbar : 100) —
 au-dessus du contenu de page qui défile dessous, jamais au-dessus de la
 topbar ni des notifications/toasts (couche native Streamlit, z-index déjà
-bien plus élevé). **Vérification visuelle manuelle non faite** (pas d'outil
-de navigateur dans la session qui a implémenté ce prompt) : à confirmer par
-Edgar en local — en particulier l'alignement exact sous la topbar (le
-décalage `--ts-topbar-height` est une estimation, pas une mesure réelle).
+bien plus élevé).
+
+**Bug réel découvert ET corrigé en implémentant ce prompt** : la sticky de
+`.st-key-ts_tabbar` ne fonctionnait PAS du tout au premier essai (repéré par
+Edgar : "reste toujours en haut" = ne s'accroche jamais, défile comme avant).
+Diagnostic fait avec Playwright + un serveur Streamlit local jetable
+(compte de test, cf. règle habituelle) : **`.ts-topbar` était en fait déjà
+cassée elle aussi**, et l'était probablement depuis toujours — jamais
+repéré faute d'avoir vraiment scrollé une page assez longue en conditions
+réelles pendant les tests visuels précédents (prompts 12/13/16, sans doute
+sur des pages trop courtes pour que ça se voie). Cause : Streamlit enveloppe
+chaque élément dans une chaîne de divs intermédiaires
+(`stElementContainer`, `stMarkdownContainer`, `stVerticalBlock`,
+`stLayoutWrapper`, plus des divs sans `data-testid`) entre le contenu réel
+et `[data-testid="stMainBlockContainer"]` — lui-même enfant direct de
+`[data-testid="stMain"]`, qui est le VRAI conteneur qui défile
+(`overflow: auto` ; `window.scrollY` reste à 0 même en scrollant la page,
+tout se passe dans `stMain.scrollTop`). Une de ces enveloppes intermédiaires
+empêche `position: sticky` de fonctionner pour tout ce qu'elle contient,
+sans qu'aucune propriété individuelle testée isolément (display,
+min-height, align-items, flex-grow/basis) n'ait suffi à elle seule à
+expliquer/corriger le problème — seul un `display: contents` sur la
+TOTALITÉ de la chaîne d'enveloppes (déclarée ou non) entre l'élément et
+`stMainBlockContainer` règle le problème de façon fiable et reproductible.
+Correctif : règle CSS `[data-testid="stMainBlockContainer"] :has(.ts-topbar),
+[data-testid="stMainBlockContainer"] :has(.st-key-ts_tabbar) { display:
+contents !important; }` (voir `theme.py`, juste après `.ts-topbar`) — cible
+PRÉCISÉMENT les enveloppes qui contiennent l'un de ces deux éléments, quelle
+que soit leur profondeur, sans toucher aux enveloppes identiques ailleurs
+sur la page ; `display: contents` supprime seulement la boîte de
+l'enveloppe (aucun padding/marge/bordure propre à perdre), le contenu reste
+normalement stylé. **Vérifié visuellement avec un vrai Chromium (Playwright,
+screenshots + mesures de position avant/après scroll)** : les deux barres
+restent bien épinglées, testé aussi bien en scrollant à la souris qu'en
+forçant `scrollTop` directement. Point resté à améliorer plus tard (hors
+scope de ce prompt) : fond transparent des deux barres (cohérent avec le
+choix déjà fait pour la topbar) → le texte qui défile est visible EN
+TRANSPARENCE derrière elles une fois collées, potentiellement gênant pour
+la lisibilité — jamais visible avant puisque le sticky ne fonctionnait pas
+du tout.
 
 **Responsive mobile** : passe faite (media queries `@media max-width:640px`
 dans `src/theme.py`) — échelle de police/paddings réduite globalement,
