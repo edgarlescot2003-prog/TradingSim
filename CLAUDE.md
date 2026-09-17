@@ -304,6 +304,30 @@ indicateurs), la topbar mobile n'est plus forcée en `nowrap` et peut passer
 sur 2 lignes. Depuis validé visuellement (serveur local + Playwright,
 prompts 12/13/16) : rendu correct.
 
+**Zoom/pan par glisser désactivé sur tous les graphiques Plotly (desktop ET
+mobile)**, `dragmode=False` dans `theme.plotly_layout` + `scrollZoom: False`
+dans `theme.PLOTLY_CONFIG` (avant prompt 18 : seul le graphique Trading avait
+`scrollZoom` désactivé, en config ad hoc à son appel ; le graphique
+Portefeuille avait lui son zoom/pan/double-clic totalement neutralisés sur
+mobile uniquement via une règle CSS `pointer-events: none` sur `.nsewdrag`,
+la couche Plotly qui capte ces interactions — un blocage large qui cassait
+aussi le double-clic de réinitialisation du zoom, alors qu'il devait rester
+utilisable). Le sélecteur de période reste le seul moyen normal de changer
+l'échelle affichée. Double-clic (reset du zoom) conservé partout, y compris
+mobile désormais : indépendant de `dragmode` côté Plotly.js, c'est justement
+ce qui permet de couper le premier sans le second — impossible à faire
+sélectivement en CSS pur (`pointer-events` est tout ou rien sur un même
+élément), d'où le passage par la config Python (uniforme desktop/mobile,
+Streamlit ne permettant pas de config Plotly différente par largeur d'écran
+côté serveur). Effet de bord assumé sur desktop : le clic-glisser direct
+pour dessiner un rectangle de zoom (dragmode par défaut de Plotly) ne
+fonctionne plus tel quel ; la modebar (visible desktop uniquement, boutons
+Zoom/Pan/Reset) reste le chemin normal pour ça, cohérent avec le sélecteur
+de période déjà présenté comme le moyen principal de changer l'échelle.
+Vérifié par `AppTest` (rendu sans exception) ; le comportement visuel réel
+du double-clic sur un vrai écran tactile reste à confirmer manuellement par
+Edgar, faute d'outil de navigateur mobile disponible dans cette session.
+
 **Listes compactes mobile** (`theme.render_compact_list`) : Positions,
 Historique des trades, récap "Positions ouvertes" (Portefeuille), recherche
 d'actifs/récents/suggestions et encadrés d'accueil Trading (Indices

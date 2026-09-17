@@ -1349,17 +1349,15 @@ _LIGHT_CSS = f"""
     }}
     .st-key-ts_light .st-key-ts_period_pills > * {{ flex-shrink: 0 !important; }}
 
-    /* Graphique de valeur du portefeuille (Plotly) sur mobile : purement
-       visuel, non interactif — pas de zoom molette/pinch (déjà le cas, voir
-       PLOTLY_CONFIG) ni de zoom par glisser/pincer ni de double-clic pour
-       réinitialiser (jugés peu pratiques sur un petit écran, cf. la même
-       décision déjà prise pour le zoom molette). `.nsewdrag` est la couche
-       transparente que Plotly pose au-dessus du tracé pour capter TOUTES les
-       interactions de la souris/du doigt (glisser pour zoomer/panner, double-
-       clic pour réinitialiser) : neutraliser ses événements pointeur désactive
-       ces trois comportements d'un coup, sans toucher à la config Python
-       (partagée avec le desktop, où elle doit rester interactive). */
-    .st-key-ts_light .js-plotly-plot .nsewdrag {{ pointer-events: none !important; }}
+    /* Ancien blocage total des interactions Plotly sur mobile (pointer-events:
+       none sur .nsewdrag, la couche transparente que Plotly pose au-dessus du
+       tracé) retiré au prompt 18 : il neutralisait le zoom/pan par glisser ET
+       le double-clic de réinitialisation d'un seul coup, alors que seul le
+       premier devait rester désactivé (le double-clic était utile et a été
+       redemandé). Le zoom/pan par glisser reste désactivé via dragmode=False
+       (voir theme.plotly_layout, prompt 18) — réglage Python indépendant du
+       double-clic côté Plotly.js, donc applicable sans ce contournement CSS
+       ni effet de bord sur le double-clic. */
 }}
 """
 
@@ -1517,10 +1515,19 @@ def plotly_layout(**overrides) -> dict:
     grille discrète (LIGHT_GRIDLINE, à peine plus marquée que le fond — jamais
     un gris franc), graduations en police mono (cohérent avec le reste des
     chiffres de l'app) et atténuées (LIGHT_MUTED, ce sont des repères, pas la
-    donnée principale)."""
+    donnée principale).
+
+    dragmode=False (prompt 18) : désactive le zoom/pan par clic-glisser (et
+    tap-glisser sur mobile) — le sélecteur de période reste le moyen normal
+    de changer l'échelle affichée. Sans effet sur le double-clic (reset du
+    zoom), qui reste actif indépendamment de dragmode côté Plotly.js — c'est
+    justement ce qui permet de désactiver l'un sans l'autre, contrairement à
+    l'ancien blocage CSS (pointer-events sur .nsewdrag) qui neutralisait les
+    deux à la fois sur mobile."""
     layout = dict(
         height=380,
         margin=dict(l=10, r=10, t=10, b=10),
+        dragmode=False,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family=FONT_SANS, color=LIGHT_MUTED),
@@ -1571,12 +1578,19 @@ def plotly_area_fillgradient(color: str, opacity: float = 0.22) -> dict:
 # Modebar sans le logo Plotly (peu cohérent avec le style épuré) ni les
 # boutons de sélection (select/lasso, toggle spikelines) : sans usage sur un
 # graphique en ligne/aire/chandeliers, seulement du bruit visuel. Zoom/pan/
-# reset/téléchargement restent disponibles. À fusionner avec {"scrollZoom":
-# False} côté Trading (voir ui_trading.py), déjà en place et à ne pas
-# changer (prompt 2/5).
+# reset/téléchargement restent disponibles via la modebar (desktop) ou le
+# double-clic (reset, desktop ET mobile — voir plotly_layout ci-dessous pour
+# dragmode=False, qui désactive le zoom/pan par glisser sans toucher au
+# double-clic, indépendant de dragmode côté Plotly.js).
+# scrollZoom=False (molette/pinch) : repris ici depuis prompt 2/5 (Trading
+# seul à l'origine) et étendu à tous les graphiques Plotly de l'app au
+# prompt 18, pour que le graphique Portefeuille reste lui aussi sans zoom
+# une fois le blocage CSS mobile (pointer-events sur .nsewdrag, qui cassait
+# aussi le double-clic) retiré — voir _LIGHT_CSS.
 PLOTLY_CONFIG = {
     "displaylogo": False,
     "modeBarButtonsToRemove": ["select2d", "lasso2d", "toggleSpikelines"],
+    "scrollZoom": False,
 }
 
 # Affiché sous chaque graphique (voir ui_portfolio.py/ui_trading.py) :

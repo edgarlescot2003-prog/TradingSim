@@ -569,16 +569,15 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
         # use_container_width) et ignorait la plage demandée ici.
         fig.update_xaxes(range=[default_start.isoformat(), data_end.isoformat()], autorange=False)
 
-    # scrollZoom=False : désactive le zoom à la molette/pinch (jugé peu
-    # pratique, pas la fenêtre par défaut ci-dessus, mais l'INTERACTION de
-    # zoom continue) — le sélecteur de période reste le seul moyen de
-    # changer l'échelle affichée. Le survol (hover) et le double-clic pour
-    # réinitialiser le zoom restent actifs (gérés par Plotly indépendamment
-    # de ce flag) ; même flag côté Plotly.js pour le pinch tactile, pas de
-    # réglage séparé à faire pour le mobile.
-    # theme.PLOTLY_CONFIG (displaylogo + modebar allégée) fusionné avec le
-    # scrollZoom désactivé ci-dessus : le zoom/pan/reset restent disponibles.
-    st.plotly_chart(fig, use_container_width=True, config={**theme.PLOTLY_CONFIG, "scrollZoom": False})
+    # Zoom molette/pinch désactivé (scrollZoom=False) et zoom/pan par glisser
+    # désactivé (dragmode=False, voir theme.plotly_layout ci-dessus) : le
+    # sélecteur de période reste le seul moyen de changer l'échelle affichée,
+    # desktop et mobile. Les deux réglages vivent dans theme.PLOTLY_CONFIG /
+    # theme.plotly_layout depuis le prompt 18, communs à tous les graphiques
+    # Plotly de l'app (plus de config ad hoc ici). Le survol (hover) et le
+    # double-clic pour réinitialiser le zoom restent actifs, indépendants de
+    # ces deux réglages côté Plotly.js.
+    st.plotly_chart(fig, use_container_width=True, config=theme.PLOTLY_CONFIG)
 
     fallback_note = "" if effective_interval == PERIOD_INTERVAL[period_key] else " (repli, plage trop longue)"
     st.caption(
