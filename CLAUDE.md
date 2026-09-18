@@ -167,13 +167,25 @@ sélecteur de période reste le seul moyen de changer l'échelle affichée ;
 survol et double-clic (reset du zoom) restent actifs, gérés par Plotly
 indépendamment de ce réglage.
 
-**Confirmation d'ordre en toast** : le message vert après achat/vente/short/
-ordre à cours limité placé utilise `st.toast(..., duration=6)` (~6 secondes,
-voir `ORDER_CONFIRMATION_TOAST_SECONDS`) plutôt que `st.success()`, qui
-disparaissait quasi instantanément à cause du `st.rerun()` juste après —
-`st.toast` est le seul mécanisme Streamlit qui survit à ce rerun. Contrepartie
-assumée : le message s'affiche désormais en haut à droite (notification
-Streamlit standard) plutôt qu'en bandeau vert inline dans le formulaire.
+**Confirmation d'ordre en pop-up visible** (prompt 21, point 1 — régression
+corrigée + retour utilisateur) : le message vert après achat/vente/short,
+ordre à cours limité placé, ou création d'un palier TP/SL passe désormais par
+`theme.render_order_confirmation_popup` (~5 secondes, voir
+`ORDER_CONFIRMATION_POPUP_SECONDS`), une bannière verte en flux normal tout en
+haut du panneau d'ordre — PAS `st.success()` seul (disparaîtrait
+instantanément à cause du `st.rerun()` juste après, régression réelle
+constatée sur la création de palier TP/SL avant ce correctif) ni `st.toast`
+(ancien mécanisme, jugé pas assez visible par les testeurs, coin de l'écran
+trop discret). Le message transite par
+`st.session_state["_order_confirmation_message"]`, posé juste avant le
+`st.rerun()` de chaque point d'appel, et affiché (`.pop(...)`, une seule fois)
+tout en haut de `_render_order_panel` à son prochain rendu. **Volontairement
+PAS `position: fixed`** : testé et abandonné (mesuré au pixel via Playwright)
+car l'app tourne dans un iframe Streamlit Cloud sans scroll interne propre
+(c'est la page extérieure qui défile) — un élément fixed s'ancre au sommet de
+tout le contenu, pas au viewport visible, et sort du champ de vision dès que
+la page est scrollée avant validation. Piège à ne pas retenter sans un
+véritable test de scroll.
 
 **Saisie par montant à risquer (Crypto/Forex/Matières premières/
 Obligations)** : pour ouvrir/renforcer une position sur l'une de ces 4
