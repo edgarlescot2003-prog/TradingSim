@@ -18,7 +18,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from . import auth, benchmark, leaderboard, market_data as md, storage, theme, valuation
+from . import auth, benchmark, leaderboard, market_data as md, storage, theme, ui_trading, valuation
 from .portfolio import MAX_PORTFOLIOS_PER_USER, Portfolio
 
 LIGHT_POSITION_COLUMNS = [
@@ -628,6 +628,18 @@ def _render_diversification(portfolio, snapshots: list[dict]) -> None:
             )
 
 
+def _render_orders_in_progress(portfolio) -> None:
+    """Ordres en cours (limite non exécutés + TP/SL non déclenchés), prompt
+    21 point 3 : jusqu'ici visibles uniquement sur la fiche Trading de
+    chaque actif (ordres à cours limité) ou de la position concernée
+    (paliers TP/SL) — affichés ici EN PLUS, pas en remplacement, pour ne
+    pas avoir à rouvrir chaque actif un par un pour voir ce qui est encore
+    en attente. Réutilise les composants de ui_trading.py (même format
+    d'affichage, tableau light) plutôt que d'en recréer un."""
+    ui_trading.render_pending_orders(portfolio)
+    ui_trading.render_all_active_tp_sl(portfolio)
+
+
 def _render_portfolio_actions(portfolio) -> None:
     """Réinitialiser / supprimer ce portefeuille : deux boutons simples, pas
     de menu déroulant. Chaque bouton demande une confirmation en un second
@@ -686,5 +698,6 @@ def render(portfolio, total_value: float, snapshots: list[dict]) -> None:
         _render_positions_table(snapshots)
         _render_performance(portfolio, snapshots)
         _render_diversification(portfolio, snapshots)
+        _render_orders_in_progress(portfolio)
         _render_portfolio_actions(portfolio)
         _render_history(portfolio)

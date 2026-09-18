@@ -1223,6 +1223,91 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                     st.rerun(scope="app")
 
 
+def render_active_tp_sl_table(
+    active_orders: list, container_key: str, empty_message: str, show_ticker: bool = False,
+) -> None:
+    """Table des paliers TP/SL actifs — factorisée (prompt 21, point 3) entre
+    la fiche Trading d'un actif (`show_ticker=False`, le ticker est déjà
+    donné par le contexte de la page) et le récapitulatif portefeuille
+    entier de ui_portfolio.py (`show_ticker=True`, plusieurs tickers
+    mélangés -> colonne Symbole en plus, cliquable comme dans
+    render_pending_orders). `container_key` distinct à chaque appel : les
+    deux emplacements ne s'affichent jamais dans le même rendu (onglets
+    mutuellement exclusifs), mais autant éviter toute clé de conteneur
+    dupliquée si ça change un jour."""
+    if not active_orders:
+        st.caption(empty_message)
+        return
+
+    widths = [0.9, 1.1, 1, 1.3, 1, 0.8] if show_ticker else [1.1, 1, 1.3, 1, 0.8]
+    labels = (
+        ["Symbole", "Type", "Prix cible", "Quantité", "Créé le", ""] if show_ticker
+        else ["Type", "Prix cible", "Quantité", "Créé le", ""]
+    )
+    # Mêmes clés de conteneur que render_table_light (theme.py) : même style
+    # de ligne/séparateur ET conversion en cartes empilées sur mobile, sans
+    # quoi ce tableau à la main resterait tassé sur petit écran (voir le
+    # media query dans theme.py).
+    with st.container(key=container_key):
+        with st.container(key=f"{container_key}_header"):
+            header_cols = st.columns(widths)
+            for col, label in zip(header_cols, labels):
+                col.markdown(f'<div class="ts-light-col-label">{label}</div>', unsafe_allow_html=True)
+        for o in active_orders:
+            cols = st.columns(widths)
+            i = 0
+            if show_ticker:
+                bg, fg = theme.badge_color(None)  # catégorie inconnue ici (pas de quote_type stocké)
+                key = f"tslight_ticker_tpsl_{o.id}"
+                st.markdown(
+                    f"<style>.st-key-ts_light .st-key-{key}.stElementContainer .stButton > button "
+                    f"{{ background:{bg} !important; color:{fg} !important; }}</style>",
+                    unsafe_allow_html=True,
+                )
+                if cols[0].button(o.ticker, key=key):
+                    theme.go_to_trading(o.ticker, o.name)
+                i = 1
+            color = theme.LIGHT_GREEN if o.kind == tp_sl.KIND_TAKE_PROFIT else theme.LIGHT_RED
+            cols[i].markdown(
+                f'<span class="ts-cell-mobile-label">Type</span>'
+                f'<span style="color:{color};font-weight:600">{tp_sl.KIND_LABELS[o.kind]}</span>',
+                unsafe_allow_html=True,
+            )
+            cols[i + 1].markdown(
+                f'<span class="ts-cell-mobile-label">Prix cible</span>'
+                f'<span class="ts-light-num">{o.target_price_eur:,.2f} €</span>',
+                unsafe_allow_html=True,
+            )
+            cols[i + 2].markdown(
+                f'<span class="ts-cell-mobile-label">Quantité</span>'
+                f'<span class="ts-light-num">{o.quantity_pct:g}% ({o.trigger_quantity:g} {o.ticker})</span>',
+                unsafe_allow_html=True,
+            )
+            cols[i + 3].caption(
+                f'<span class="ts-cell-mobile-label">Créé le</span>{o.created_at[:10]}',
+                unsafe_allow_html=True,
+            )
+            if cols[i + 4].button("Annuler", key=f"cancel_tp_sl_{container_key}_{o.id}"):
+                with db.get_session() as session:
+                    tp_sl.cancel_tp_sl(session, o.id, st.session_state.user_id)
+                st.rerun()
+
+
+def render_all_active_tp_sl(portfolio) -> None:
+    """Récapitulatif de TOUS les paliers TP/SL actifs du portefeuille, tous
+    tickers confondus (prompt 21, point 3 — "ordres en cours" affichés en
+    plus dans l'onglet Portefeuille, en plus de leur emplacement actuel sur
+    la fiche Trading de chaque actif, voir _render_tp_sl_section)."""
+    with db.get_session() as session:
+        active_orders = tp_sl.list_for_portfolio(session, portfolio.id, statuses=(tp_sl.STATUS_ACTIVE,))
+    with st.container(key="ts_card_tp_sl_summary"):
+        st.markdown("##### Paliers Take Profit / Stop Loss actifs")
+        render_active_tp_sl_table(
+            active_orders, container_key="tslight_table_tpsl_summary",
+            empty_message="Aucun palier actif pour l'instant.", show_ticker=True,
+        )
+
+
 def _render_tp_sl_section(portfolio, ticker: str) -> None:
     """Paliers Take Profit / Stop Loss sur la position courante de `ticker`.
     Rien à afficher sans position ouverte : un palier se pose toujours sur
@@ -1248,45 +1333,10 @@ def _render_tp_sl_section(portfolio, ticker: str) -> None:
         active_orders = [o for o in ticker_orders if o.status == tp_sl.STATUS_ACTIVE]
         past_orders = [o for o in ticker_orders if o.status != tp_sl.STATUS_ACTIVE]
 
-        if active_orders:
-            tp_sl_widths = [1.1, 1, 1.3, 1, 0.8]
-            # Mêmes clés de conteneur que render_table_light (theme.py) : même
-            # style de ligne/séparateur ET conversion en cartes empilées sur
-            # mobile, sans quoi ce tableau à la main resterait tassé sur petit
-            # écran (voir le media query dans theme.py).
-            with st.container(key="tslight_table_tpsl"):
-                with st.container(key="tslight_header_tpsl"):
-                    header_cols = st.columns(tp_sl_widths)
-                    for col, label in zip(header_cols, ["Type", "Prix cible", "Quantité", "Créé le", ""]):
-                        col.markdown(f'<div class="ts-light-col-label">{label}</div>', unsafe_allow_html=True)
-                for o in active_orders:
-                    cols = st.columns(tp_sl_widths)
-                    color = theme.LIGHT_GREEN if o.kind == tp_sl.KIND_TAKE_PROFIT else theme.LIGHT_RED
-                    cols[0].markdown(
-                        f'<span class="ts-cell-mobile-label">Type</span>'
-                        f'<span style="color:{color};font-weight:600">{tp_sl.KIND_LABELS[o.kind]}</span>',
-                        unsafe_allow_html=True,
-                    )
-                    cols[1].markdown(
-                        f'<span class="ts-cell-mobile-label">Prix cible</span>'
-                        f'<span class="ts-light-num">{o.target_price_eur:,.2f} €</span>',
-                        unsafe_allow_html=True,
-                    )
-                    cols[2].markdown(
-                        f'<span class="ts-cell-mobile-label">Quantité</span>'
-                        f'<span class="ts-light-num">{o.quantity_pct:g}% ({o.trigger_quantity:g} {ticker})</span>',
-                        unsafe_allow_html=True,
-                    )
-                    cols[3].caption(
-                        f'<span class="ts-cell-mobile-label">Créé le</span>{o.created_at[:10]}',
-                        unsafe_allow_html=True,
-                    )
-                    if cols[4].button("Annuler", key=f"cancel_tp_sl_{o.id}"):
-                        with db.get_session() as session:
-                            tp_sl.cancel_tp_sl(session, o.id, st.session_state.user_id)
-                        st.rerun()
-        else:
-            st.caption("Aucun palier actif sur cet actif pour l'instant.")
+        render_active_tp_sl_table(
+            active_orders, container_key="tslight_table_tpsl",
+            empty_message="Aucun palier actif sur cet actif pour l'instant.",
+        )
 
         with st.expander("+ Ajouter un palier"):
             kind_labels = [tp_sl.KIND_LABELS[tp_sl.KIND_TAKE_PROFIT], tp_sl.KIND_LABELS[tp_sl.KIND_STOP_LOSS]]
@@ -1384,7 +1434,11 @@ def _render_explanations() -> None:
             )
 
 
-def _render_pending_orders(portfolio) -> None:
+def render_pending_orders(portfolio) -> None:
+    """Ordres à cours limité en attente (portefeuille entier, pas scopé à un
+    ticker) — sans underscore : appelé aussi depuis ui_portfolio.py (prompt
+    21, point 3, "ordres en cours" affichés en plus dans l'onglet
+    Portefeuille), pas seulement ici en bas de la fiche Trading."""
     with st.container(key="ts_card_pending"):
         st.markdown("##### Ordres en attente")
         if not portfolio.pending_orders:
@@ -1527,4 +1581,4 @@ def render(portfolio) -> None:
             return  # l'erreur a déjà été affichée par le fragment
 
         _render_explanations()
-        _render_pending_orders(portfolio)
+        render_pending_orders(portfolio)
