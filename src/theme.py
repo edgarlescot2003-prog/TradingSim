@@ -1508,22 +1508,24 @@ _LIGHT_CSS = f"""
 
 /* Pop-up de confirmation d'ordre (prompt 21, point 1) : remplace l'ancien
    st.toast (petite notification en coin, jugée pas assez visible par les
-   testeurs) par une bannière centrée en haut de l'écran, `position: fixed`
-   donc visible quel que soit le scroll. Fond vert + texte sombre (mêmes
-   GREEN/BADGE_DARK_TEXT que les badges de catégorie clairs, cohérent avec
-   la charte). Disparition automatique en pure CSS (@keyframes), sans
-   JavaScript ; la durée totale (fade in -> maintien -> fade out) est
-   pilotée par `animation-duration` posé en style inline par
-   theme.render_order_confirmation_popup (secondes passées en Python, pas
-   dupliquées ici). z-index très élevé pour passer au-dessus de la barre
-   d'outils native Streamlit (stToolbar, ~999990 — voir l'incident de la
-   barre d'onglets sticky, prompt 19). */
+   testeurs) par une bannière verte bien visible. VOLONTAIREMENT PAS
+   `position: fixed` : premier essai testé au pixel près via Playwright sur
+   le site déployé — l'app tourne dans un iframe Streamlit Cloud SANS son
+   propre scroll interne (c'est la page EXTÉRIEURE qui défile, l'iframe fait
+   toute la hauteur du contenu), donc `fixed` s'ancre au sommet de tout le
+   contenu plutôt qu'au viewport réellement visible : dès que la page est
+   scrollée, le pop-up sort du champ de vision, exactement l'inverse de
+   l'objectif. Rendu à la place en flux normal, tout en haut de
+   `_render_order_panel` (ui_trading.py) — c.-à-d. exactement la carte que
+   l'utilisateur regarde déjà juste après avoir cliqué "Valider l'ordre"/
+   "Créer le palier", donc visible sans avoir besoin de flotter par-dessus
+   le reste. Fond vert + texte sombre (mêmes GREEN/BADGE_DARK_TEXT que les
+   badges de catégorie clairs, cohérent avec la charte). Disparition
+   automatique en pure CSS (@keyframes), sans JavaScript ; la durée totale
+   (fade in -> maintien -> fade out) est pilotée par `animation-duration`
+   posé en style inline par theme.render_order_confirmation_popup (secondes
+   passées en Python, pas dupliquées ici). */
 .ts-order-confirm-popup {{
-    position: fixed;
-    top: 5.5rem;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 1000000;
     background: {GREEN};
     color: {BADGE_DARK_TEXT};
     padding: 0.75rem 1.4rem;
@@ -1532,21 +1534,19 @@ _LIGHT_CSS = f"""
     font-weight: 600;
     font-size: 0.95rem;
     box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+    margin-bottom: 0.85rem;
     animation-name: ts-order-confirm-fade;
     animation-timing-function: ease;
     animation-fill-mode: forwards;
-    pointer-events: none;
-    max-width: min(90vw, 640px);
-    text-align: center;
 }}
 @keyframes ts-order-confirm-fade {{
-    0% {{ opacity: 0; transform: translate(-50%, -12px); }}
-    8% {{ opacity: 1; transform: translate(-50%, 0); }}
+    0% {{ opacity: 0; transform: translateY(-8px); }}
+    8% {{ opacity: 1; transform: translateY(0); }}
     88% {{ opacity: 1; }}
-    100% {{ opacity: 0; transform: translate(-50%, -12px); }}
+    100% {{ opacity: 0; transform: translateY(-8px); }}
 }}
 @media (max-width: 640px) {{
-    .ts-order-confirm-popup {{ top: 4.5rem; font-size: 0.85rem; padding: 0.6rem 1rem; }}
+    .ts-order-confirm-popup {{ font-size: 0.85rem; padding: 0.6rem 1rem; }}
 }}
 """
 
