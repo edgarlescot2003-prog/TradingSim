@@ -80,19 +80,43 @@ def test_sector_for_crypto_is_fintech_without_api_call():
     print("OK: Crypto -> FinTech, sans appel API")
 
 
-def test_sector_and_country_for_forex_and_commodities_are_undefined_without_api_call():
+def test_sector_and_country_for_forex_are_undefined_without_api_call():
     calls = []
     original = md.get_company_profile
     md.get_company_profile = lambda ticker: calls.append(ticker) or {"sector": None, "country": None}
     try:
         assert valuation.sector_for("Forex", "EURUSD=X") == valuation.UNDEFINED_LABEL
         assert valuation.country_for("Forex", "EURUSD=X") == valuation.UNDEFINED_LABEL
-        assert valuation.sector_for("Matières premières", "GC=F") == valuation.UNDEFINED_LABEL
-        assert valuation.country_for("Matières premières", "GC=F") == valuation.UNDEFINED_LABEL
     finally:
         md.get_company_profile = original
-    assert calls == [], "Forex/Matières premières ne doivent jamais déclencher d'appel yfinance"
-    print("OK: Forex/Matières premières -> Non défini pour secteur ET géographie, sans appel API")
+    assert calls == [], "Forex ne doit jamais déclencher d'appel yfinance"
+    print("OK: Forex -> Non défini pour secteur ET géographie, sans appel API")
+
+
+def test_sector_for_commodities_uses_fixed_mapping_without_api_call():
+    """Suite au retour d'Edgar : les matières premières avaient toutes un
+    secteur "Non défini" (yfinance n'a pas de champ secteur exploitable pour
+    un contrat future) — mapping fixe à deux sous-secteurs (Énergie / Métaux
+    précieux) demandé explicitement plutôt qu'un unique "Non défini" ou une
+    seule catégorie "Matières premières" globale."""
+    calls = []
+    original = md.get_company_profile
+    md.get_company_profile = lambda ticker: calls.append(ticker) or {"sector": None, "country": None}
+    try:
+        assert valuation.sector_for("Matières premières", "GC=F") == "Métaux précieux"
+        assert valuation.sector_for("Matières premières", "SI=F") == "Métaux précieux"
+        assert valuation.sector_for("Matières premières", "CL=F") == "Énergie"
+        assert valuation.sector_for("Matières premières", "BZ=F") == "Énergie"
+        assert valuation.sector_for("Matières premières", "NG=F") == "Énergie"
+        # Géographie inchangée : une matière première n'a pas de pays clair.
+        assert valuation.country_for("Matières premières", "GC=F") == valuation.UNDEFINED_LABEL
+        # Un futur ticker matière première non mappé retombe sur Non défini,
+        # pas une exception (voir le commentaire de _COMMODITY_SECTORS).
+        assert valuation.sector_for("Matières premières", "XX=F") == valuation.UNDEFINED_LABEL
+    finally:
+        md.get_company_profile = original
+    assert calls == [], "Matières premières ne doivent jamais déclencher d'appel yfinance pour le secteur"
+    print("OK: matières premières -> Énergie/Métaux précieux (mapping fixe), sans appel API")
 
 
 def test_sector_and_country_for_equity_use_real_profile():
@@ -185,7 +209,8 @@ if __name__ == "__main__":
     test_get_company_profile_never_raises_on_api_error()
     test_get_company_profile_treats_missing_or_empty_fields_as_none()
     test_sector_for_crypto_is_fintech_without_api_call()
-    test_sector_and_country_for_forex_and_commodities_are_undefined_without_api_call()
+    test_sector_and_country_for_forex_are_undefined_without_api_call()
+    test_sector_for_commodities_uses_fixed_mapping_without_api_call()
     test_sector_and_country_for_equity_use_real_profile()
     test_sector_and_country_for_equity_fallback_to_undefined_on_missing_field()
     test_allocation_by_sector_mixes_real_and_undefined_without_crashing()

@@ -57,11 +57,27 @@ UNDEFINED_LABEL = "Non défini"
 # bas, le reste tombe directement en "Non défini" sans appel.
 _PROFILE_LOOKUP_CATEGORIES = {"Actions", "Indices/ETF", "Obligations"}
 
+# Mapping fixe ticker -> secteur pour les matières premières (voir
+# ui_trading.COMMODITIES pour la liste complète des tickers proposés) :
+# yfinance n'a structurellement aucun champ "sector" exploitable sur un
+# contrat future (GC=F, CL=F...), une liste posée à la main est donc la
+# seule option, comme pour Crypto -> FinTech ci-dessous. Deux sous-secteurs
+# (pas un seul "Matières premières" global) à la demande d'Edgar, pour
+# distinguer énergie et métaux précieux dans le camembert. Un futur ticker
+# ajouté à COMMODITIES sans entrée ici retombe sur UNDEFINED_LABEL (voir
+# sector_for) plutôt que de planter — à compléter ici quand ça arrive.
+_COMMODITY_SECTORS = {
+    "GC=F": "Métaux précieux", "SI=F": "Métaux précieux",
+    "CL=F": "Énergie", "BZ=F": "Énergie", "NG=F": "Énergie",
+}
+
 
 def sector_for(category: str, ticker: str) -> str:
     """Secteur pour le camembert de diversification (prompt 21, point 2).
     Mapping fixe pour Crypto (yfinance n'a pas de notion de secteur pour une
-    cryptomonnaie) ; pour Actions/ETF/Obligations, secteur réel via
+    cryptomonnaie) et pour Matières premières (voir _COMMODITY_SECTORS,
+    ajouté après coup : yfinance n'a pas plus de notion de secteur pour un
+    contrat future) ; pour Actions/ETF/Obligations, secteur réel via
     market_data.get_company_profile. Double filet de sécurité (demandé
     explicitement) : get_company_profile ne lève déjà jamais de lui-même
     (ticker introuvable, API en panne -> champs None), et le `try/except`
@@ -71,6 +87,8 @@ def sector_for(category: str, ticker: str) -> str:
     du camembert pour une seule position."""
     if category == "Crypto":
         return "FinTech"
+    if category == "Matières premières":
+        return _COMMODITY_SECTORS.get(ticker.upper(), UNDEFINED_LABEL)
     if category not in _PROFILE_LOOKUP_CATEGORIES:
         return UNDEFINED_LABEL
     try:
