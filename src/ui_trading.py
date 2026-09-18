@@ -90,13 +90,14 @@ SEARCH_RESULT_COLUMNS = [
 
 MAX_LEVERAGE = 20.0
 
-# Durée d'affichage du toast de confirmation d'ordre (st.toast, voir
-# _render_order_form) : un simple st.success() ici disparaîtrait quasi
-# instantanément à cause du st.rerun() qui suit immédiatement pour
-# rafraîchir le reste de la page (positions, cash...) — st.toast est le seul
-# mécanisme Streamlit qui survit à ce rerun et s'efface tout seul après un
-# délai réel, indépendamment de toute interaction utilisateur.
-ORDER_CONFIRMATION_TOAST_SECONDS = 6
+# Durée d'affichage du pop-up de confirmation d'ordre (prompt 21, point 1 —
+# voir theme.render_order_confirmation_popup). Un simple st.success() ici
+# disparaîtrait quasi instantanément à cause du st.rerun() qui suit
+# immédiatement l'action (rafraîchir positions/cash...) : le message transite
+# donc par st.session_state["_order_confirmation_message"], posé ICI juste
+# avant le rerun, et n'est affiché qu'au tout début du prochain rendu de
+# _render_order_panel (voir ce fragment) — jamais au moment de l'action.
+ORDER_CONFIRMATION_POPUP_SECONDS = 5
 
 # Largeur (px) des champs numériques du formulaire d'ordre (Levier, Montant
 # à risquer, Quantité, Prix cible) : sans elle, st.number_input s'étire par
@@ -1001,6 +1002,15 @@ def _render_action_tabs(key: str, buy_enabled: bool, sell_enabled: bool, short_e
 @st.fragment
 def _render_order_panel(portfolio, ticker: str, name: str | None, price_eur: float, currency: str,
                          quote_type: str = "") -> None:
+    # Affiché une seule fois (.pop) tout en haut du fragment : couvre les 2
+    # sous-fonctions ci-dessous (formulaire d'ordre ET section TP/SL), qui
+    # posent toutes deux le message dans session_state juste avant leur
+    # propre st.rerun() plutôt que d'appeler theme.render_order_confirmation_popup
+    # directement (voir le commentaire de cette fonction, theme.py).
+    confirmation_msg = st.session_state.pop("_order_confirmation_message", None)
+    if confirmation_msg:
+        theme.render_order_confirmation_popup(confirmation_msg, seconds=ORDER_CONFIRMATION_POPUP_SECONDS)
+
     _render_order_form(portfolio, ticker, name, price_eur, currency, quote_type)
     _render_tp_sl_section(portfolio, ticker)
 
@@ -1189,7 +1199,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                     storage.invalidate_valuation_cache()
                     if created:
                         msg += f" {created} palier(s) TP/SL créé(s)."
-                    st.toast(msg, duration=ORDER_CONFIRMATION_TOAST_SECONDS)
+                    st.session_state["_order_confirmation_message"] = msg
                     st.rerun(scope="app")
 
         else:  # Ordre à cours limité
@@ -1207,9 +1217,8 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 else:
                     storage.save_portfolio(portfolio)
                     storage.invalidate_valuation_cache()
-                    st.toast(
-                        f"Ordre à cours limité placé : {quantity:g} x {ticker} à {ref_price:,.2f} €.",
-                        duration=ORDER_CONFIRMATION_TOAST_SECONDS,
+                    st.session_state["_order_confirmation_message"] = (
+                        f"Ordre à cours limité placé : {quantity:g} x {ticker} à {ref_price:,.2f} €."
                     )
                     st.rerun(scope="app")
 
@@ -1311,7 +1320,7 @@ def _render_tp_sl_section(portfolio, ticker: str) -> None:
                 except ValueError as e:
                     st.error(str(e))
                 else:
-                    st.success("Palier créé.")
+                    st.session_state["_order_confirmation_message"] = "Palier créé."
                     st.rerun()
 
         if past_orders:

@@ -1505,6 +1505,49 @@ _LIGHT_CSS = f"""
         display: none !important;
     }}
 }}
+
+/* Pop-up de confirmation d'ordre (prompt 21, point 1) : remplace l'ancien
+   st.toast (petite notification en coin, jugée pas assez visible par les
+   testeurs) par une bannière centrée en haut de l'écran, `position: fixed`
+   donc visible quel que soit le scroll. Fond vert + texte sombre (mêmes
+   GREEN/BADGE_DARK_TEXT que les badges de catégorie clairs, cohérent avec
+   la charte). Disparition automatique en pure CSS (@keyframes), sans
+   JavaScript ; la durée totale (fade in -> maintien -> fade out) est
+   pilotée par `animation-duration` posé en style inline par
+   theme.render_order_confirmation_popup (secondes passées en Python, pas
+   dupliquées ici). z-index très élevé pour passer au-dessus de la barre
+   d'outils native Streamlit (stToolbar, ~999990 — voir l'incident de la
+   barre d'onglets sticky, prompt 19). */
+.ts-order-confirm-popup {{
+    position: fixed;
+    top: 5.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000000;
+    background: {GREEN};
+    color: {BADGE_DARK_TEXT};
+    padding: 0.75rem 1.4rem;
+    border-radius: 10px;
+    font-family: {FONT_SANS};
+    font-weight: 600;
+    font-size: 0.95rem;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+    animation-name: ts-order-confirm-fade;
+    animation-timing-function: ease;
+    animation-fill-mode: forwards;
+    pointer-events: none;
+    max-width: min(90vw, 640px);
+    text-align: center;
+}}
+@keyframes ts-order-confirm-fade {{
+    0% {{ opacity: 0; transform: translate(-50%, -12px); }}
+    8% {{ opacity: 1; transform: translate(-50%, 0); }}
+    88% {{ opacity: 1; }}
+    100% {{ opacity: 0; transform: translate(-50%, -12px); }}
+}}
+@media (max-width: 640px) {{
+    .ts-order-confirm-popup {{ top: 4.5rem; font-size: 0.85rem; padding: 0.6rem 1rem; }}
+}}
 """
 
 
@@ -1577,6 +1620,32 @@ def go_to_trading(ticker: str, name: str | None = None) -> None:
     st.session_state["_clear_search_query"] = True
     st.session_state.active_tab = "trading"
     st.rerun()
+
+
+def render_order_confirmation_popup(message: str, seconds: int = 5) -> None:
+    """Confirmation d'ordre en pop-up visible (prompt 21, point 1 —
+    régression : le message vert avait disparu, cassé par un
+    `st.success()` immédiatement suivi d'un `st.rerun()`, voir
+    `_render_tp_sl_section` dans ui_trading.py avant ce correctif).
+
+    Remplace aussi l'ancien `st.toast` (petite notification en coin, jugée
+    pas assez visible) utilisé pour les ordres marché/limite : un seul
+    mécanisme désormais pour les 4 actions concernées (achat/vente/short,
+    ordre à cours limité, création de palier TP/SL).
+
+    Le message doit survivre au `st.rerun()` qui suit l'action (sinon il
+    disparaît quasi instantanément, comme un `st.success()` classique) :
+    l'appelant le dépose dans `st.session_state["_order_confirmation_message"]`
+    AVANT son rerun, et c'est `_render_order_panel` (ui_trading.py) qui le
+    récupère (`.pop(...)`, donc affiché une seule fois) tout en haut de son
+    prochain rendu et appelle cette fonction — jamais appelée directement au
+    moment de l'action elle-même.
+    """
+    st.markdown(
+        f'<div class="ts-order-confirm-popup" style="animation-duration:{seconds}s">'
+        f'✓ {html_lib.escape(message)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_movers_alert(movers: list[dict]) -> None:
