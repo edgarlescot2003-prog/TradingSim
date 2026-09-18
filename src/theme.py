@@ -117,6 +117,39 @@ CATEGORY_COLORS = {
 _BADGE_DARK_TEXT_CATEGORIES = {"Crypto", "Indices/ETF", "Obligations", "Forex", "Matières premières"}
 
 
+# Palette qualitative générique pour un camembert dont les catégories ne
+# sont PAS connues à l'avance (secteur/géographie, prompt 21 point 2) —
+# contrairement à CATEGORY_COLORS ci-dessus (classes d'actif, ensemble fixe
+# de 6 valeurs). Couleurs vives choisies pour rester distinguables entre
+# elles sur le dégradé de fond sombre de l'app, même logique de contraste.
+QUALITATIVE_PALETTE = [
+    "#3B82F6", "#FBBF24", "#A78BFA", "#2DD4BF", "#38BDF8", "#D97706",
+    "#F472B6", "#4ADE80", "#F87171", "#818CF8", "#FB923C", "#34D399",
+]
+# Gris neutre dédié à "Non défini" (voir valuation.UNDEFINED_LABEL) : cette
+# tranche ne doit JAMAIS se confondre avec une vraie catégorie, quelle que
+# soit sa position dans la liste des labels — voir pie_colors ci-dessous.
+UNDEFINED_SLICE_COLOR = "#64748B"
+
+
+def pie_colors(labels: list[str]) -> list[str]:
+    """Une couleur par label pour un camembert générique (secteur/
+    géographie...) : cycle sur QUALITATIVE_PALETTE dans l'ordre des labels,
+    sauf "Non défini" (valuation.UNDEFINED_LABEL — comparé en dur ici plutôt
+    qu'importé pour ne pas faire dépendre ce module purement visuel de la
+    logique métier de valuation.py) qui a toujours sa couleur neutre dédiée
+    (voir UNDEFINED_SLICE_COLOR), peu importe sa position dans la liste."""
+    colors = []
+    i = 0
+    for label in labels:
+        if label == "Non défini":
+            colors.append(UNDEFINED_SLICE_COLOR)
+        else:
+            colors.append(QUALITATIVE_PALETTE[i % len(QUALITATIVE_PALETTE)])
+            i += 1
+    return colors
+
+
 def badge_color(category: str | None) -> tuple[str, str]:
     """Couleur de fond + couleur de texte lisible pour le badge d'un ticker,
     déterminée uniquement par sa classe d'actif (voir CATEGORY_COLORS) —

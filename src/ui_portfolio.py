@@ -170,35 +170,66 @@ def _render_contest_progress(active_portfolio, active_total_value: float) -> Non
                 )
 
 
-def _allocation_by_category(portfolio, snapshots: list[dict]) -> dict[str, float]:
-    """Répartition du CAPITAL engagé par catégorie d'actif, en % (utilisé par
-    la carte "Points clés" ci-dessous). Basée sur la marge engagée (montant
-    investi / levier) par position, PAS l'exposition brute (prix × quantité)
-    : avec du levier, l'exposition dépasse largement le cash réellement
-    immobilisé (une position x10 à 1000 € de marge affiche 10 000 €
-    d'exposition), ce qui faisait dépasser 100% la somme des parts dès
-    qu'une position à levier était ouverte (prompt 18.4). Dénominateur
-    cohérent : cash + Σ marges (PAS `valuation.total_value`, qui inclut
-    aussi le P&L latent via `equity_contribution_eur` — cette répartition
-    montre comment le CAPITAL engagé est alloué, pas la valeur courante
-    après gains/pertes, donc ne bouge pas au fil des variations de prix).
-    Repli sur le coût d'achat (quantité × prix moyen) pour une position
-    héritée de la Phase 2 sans marge enregistrée (margin_eur nul, short sans
-    levier), même convention que `valuation.position_snapshot` (pnl_base).
+def _allocation_by(snapshots: list[dict], portfolio, label_for) -> dict[str, float]:
+    """Répartition du CAPITAL engagé par un label arbitraire (catégorie
+    d'actif, secteur, géographie... — calculé par `label_for(snapshot)`), en
+    %. Basée sur la marge engagée (montant investi / levier) par position,
+    PAS l'exposition brute (prix × quantité) : avec du levier, l'exposition
+    dépasse largement le cash réellement immobilisé (une position x10 à
+    1000 € de marge affiche 10 000 € d'exposition), ce qui faisait dépasser
+    100% la somme des parts dès qu'une position à levier était ouverte
+    (prompt 18.4). Dénominateur cohérent : cash + Σ marges (PAS
+    `valuation.total_value`, qui inclut aussi le P&L latent via
+    `equity_contribution_eur` — cette répartition montre comment le CAPITAL
+    engagé est alloué, pas la valeur courante après gains/pertes, donc ne
+    bouge pas au fil des variations de prix). Repli sur le coût d'achat
+    (quantité × prix moyen) pour une position héritée de la Phase 2 sans
+    marge enregistrée (margin_eur nul, short sans levier), même convention
+    que `valuation.position_snapshot` (pnl_base).
 
-    Fonction pure (aucun appel Streamlit) pour rester testable directement,
-    sans avoir à parser le HTML généré par _render_highlights."""
-    by_category: dict[str, float] = {}
+    Factorisé (prompt 21, point 2) : utilisé par catégorie/secteur/géographie
+    (voir _allocation_by_category/_allocation_by_sector/_allocation_by_geography
+    ci-dessous), auparavant seulement par catégorie. Fonction pure (aucun
+    appel Streamlit) pour rester testable directement, sans avoir à parser
+    le HTML généré par _render_highlights."""
+    by_label: dict[str, float] = {}
     allocation_total = portfolio.cash
     for s in snapshots:
         pos = s["position"]
         margin = pos.margin_eur if pos.margin_eur > 1e-9 else pos.quantity * pos.avg_price_eur
-        by_category[s["category"]] = by_category.get(s["category"], 0.0) + margin
+        label = label_for(s)
+        by_label[label] = by_label.get(label, 0.0) + margin
         allocation_total += margin
 
-    if not by_category or not allocation_total:
+    if not by_label or not allocation_total:
         return {}
-    return {label: amount / allocation_total * 100 for label, amount in by_category.items() if amount > 0}
+    return {label: amount / allocation_total * 100 for label, amount in by_label.items() if amount > 0}
+
+
+def _allocation_by_category(portfolio, snapshots: list[dict]) -> dict[str, float]:
+    return _allocation_by(snapshots, portfolio, lambda s: s["category"])
+
+
+def _allocation_by_sector(portfolio, snapshots: list[dict]) -> dict[str, float]:
+    """Répartition sectorielle (prompt 21, point 2) : voir
+    valuation.sector_for pour le mapping (Crypto -> FinTech, Actions/ETF/
+    Obligations -> secteur réel yfinance, reste -> "Non défini"). Un ticker
+    en erreur ou sans secteur exploitable tombe sur "Non défini" via
+    sector_for lui-même (jamais d'exception ici)."""
+    return _allocation_by(
+        snapshots, portfolio,
+        lambda s: valuation.sector_for(s["category"], s["position"].ticker),
+    )
+
+
+def _allocation_by_geography(portfolio, snapshots: list[dict]) -> dict[str, float]:
+    """Répartition géographique (prompt 21, point 2) : voir
+    valuation.country_for pour le mapping. Même remarque que
+    _allocation_by_sector sur la robustesse (jamais d'exception)."""
+    return _allocation_by(
+        snapshots, portfolio,
+        lambda s: valuation.country_for(s["category"], s["position"].ticker),
+    )
 
 
 def _render_highlights(portfolio, total_value: float, snapshots: list[dict]) -> None:
@@ -552,6 +583,51 @@ def _render_performance(portfolio, snapshots: list[dict]) -> None:
                 st.caption(theme.PLOTLY_ZOOM_HINT)
 
 
+def _render_pie(shares: dict[str, float], title: str, empty_message: str) -> None:
+    """Un camembert Plotly générique (secteur OU géographie) à partir d'une
+    répartition déjà calculée (voir _allocation_by_sector/_allocation_by_geography)
+    — les valeurs sont déjà des % (base cash + Σ marges, voir _allocation_by),
+    Plotly les renormalise lui-même en % du total de CE camembert pour
+    l'affichage (textinfo="percent"), donc aucune incohérence même si leur
+    somme est < 100 (le cash non engagé n'a pas sa propre tranche, comme pour
+    le camembert par catégorie de la carte "Points clés")."""
+    st.markdown(f"###### {title}")
+    if not shares:
+        st.caption(empty_message)
+        return
+    labels = list(shares.keys())
+    values = list(shares.values())
+    fig = go.Figure(data=[go.Pie(
+        labels=labels, values=values, hole=0.45,
+        marker=dict(colors=theme.pie_colors(labels), line=dict(color=theme.BG, width=1)),
+        textinfo="percent", hovertemplate="%{label} : %{value:.1f}%<extra></extra>",
+    )])
+    fig.update_layout(**theme.plotly_layout(height=320, showlegend=True))
+    st.plotly_chart(fig, use_container_width=True, config=theme.PLOTLY_CONFIG)
+
+
+def _render_diversification(portfolio, snapshots: list[dict]) -> None:
+    """Diversification sectorielle et géographique (prompt 21, point 2),
+    sous le graphique de performance — même base (marge engagée) que le
+    camembert par catégorie de la carte "Points clés", voir _allocation_by.
+    Rien à afficher tant qu'aucune position n'est ouverte."""
+    if not snapshots:
+        return
+    with st.container(key="ts_card_diversification"):
+        st.markdown("##### Diversification")
+        col_sector, col_geo = st.columns(2)
+        with col_sector:
+            _render_pie(
+                _allocation_by_sector(portfolio, snapshots), "Par secteur",
+                "Pas encore de position.",
+            )
+        with col_geo:
+            _render_pie(
+                _allocation_by_geography(portfolio, snapshots), "Par géographie",
+                "Pas encore de position.",
+            )
+
+
 def _render_portfolio_actions(portfolio) -> None:
     """Réinitialiser / supprimer ce portefeuille : deux boutons simples, pas
     de menu déroulant. Chaque bouton demande une confirmation en un second
@@ -609,5 +685,6 @@ def render(portfolio, total_value: float, snapshots: list[dict]) -> None:
         _render_highlights(portfolio, total_value, snapshots)
         _render_positions_table(snapshots)
         _render_performance(portfolio, snapshots)
+        _render_diversification(portfolio, snapshots)
         _render_portfolio_actions(portfolio)
         _render_history(portfolio)

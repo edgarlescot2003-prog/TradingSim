@@ -93,6 +93,40 @@ def get_quote(ticker: str) -> dict:
     return quote
 
 
+# Secteur/pays ne changent quasiment jamais pour une action/ETF donnée
+# (contrairement au prix) : cache TTL très long, uniquement pour limiter les
+# appels à `.info` (endpoint yfinance nettement plus lourd que `.fast_info`
+# utilisé par get_quote, jamais appelé ailleurs dans l'app).
+_PROFILE_CACHE: dict[str, tuple[dict, float]] = {}
+_PROFILE_CACHE_TTL_SECONDS = 12 * 3600
+
+
+def get_company_profile(ticker: str) -> dict:
+    """Retourne {"sector": str|None, "country": str|None} pour une action/ETF,
+    utilisé uniquement par le camembert de diversification secteur/géographique
+    de l'onglet Portefeuille (voir valuation.sector_for/country_for). NE LÈVE
+    JAMAIS : un ticker introuvable, une erreur réseau ou un champ manquant/vide
+    renvoie simplement None pour ce champ — c'est à l'appelant de retomber sur
+    "Non défini" dans tous ces cas, jamais de faire planter le calcul du
+    camembert pour une seule position en erreur.
+    """
+    cached = _PROFILE_CACHE.get(ticker)
+    if cached and (time.time() - cached[1]) < _PROFILE_CACHE_TTL_SECONDS:
+        return cached[0]
+
+    try:
+        info = yf.Ticker(ticker).info or {}
+    except Exception:
+        info = {}
+
+    profile = {
+        "sector": info.get("sector") or None,
+        "country": info.get("country") or None,
+    }
+    _PROFILE_CACHE[ticker] = (profile, time.time())
+    return profile
+
+
 def get_history(ticker: str, period: str = "6mo", interval: str = "1d", start=None):
     """Retourne un DataFrame OHLC (colonnes Open/High/Low/Close) ou lève MarketDataError.
 

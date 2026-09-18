@@ -43,6 +43,58 @@ _FOREX_TICKER_RE = re.compile(r"^[A-Z]{6}=X$")
 _FUTURE_TICKER_RE = re.compile(r"^[A-Z]{1,4}=F$")
 
 
+UNDEFINED_LABEL = "Non défini"
+
+# Catégories dont le ticker sous-jacent est une VRAIE action/ETF côté
+# yfinance (donc un appel à market_data.get_company_profile a du sens) —
+# Obligations inclus : ce sont des ETF obligataires (voir BOND_ETF_TICKERS),
+# juste reclassés sous ce libellé pour le formulaire d'ordre, mais toujours
+# de vrais tickers ETF pour yfinance. Crypto/Forex/Matières premières en
+# sont volontairement exclus : leurs tickers (BTC-USD, EURUSD=X, GC=F...)
+# n'ont structurellement pas de champ secteur/pays exploitable côté
+# yfinance, appeler get_company_profile dessus serait un appel réseau pour
+# rien (toujours vide) — Crypto a son propre mapping fixe (FinTech) plus
+# bas, le reste tombe directement en "Non défini" sans appel.
+_PROFILE_LOOKUP_CATEGORIES = {"Actions", "Indices/ETF", "Obligations"}
+
+
+def sector_for(category: str, ticker: str) -> str:
+    """Secteur pour le camembert de diversification (prompt 21, point 2).
+    Mapping fixe pour Crypto (yfinance n'a pas de notion de secteur pour une
+    cryptomonnaie) ; pour Actions/ETF/Obligations, secteur réel via
+    market_data.get_company_profile. Double filet de sécurité (demandé
+    explicitement) : get_company_profile ne lève déjà jamais de lui-même
+    (ticker introuvable, API en panne -> champs None), et le `try/except`
+    ici couvre même une défaillance inattendue DANS ce filet — un ticker en
+    erreur ou sans champ "sector" exploitable retombe toujours sur
+    UNDEFINED_LABEL, jamais une exception qui ferait planter tout le calcul
+    du camembert pour une seule position."""
+    if category == "Crypto":
+        return "FinTech"
+    if category not in _PROFILE_LOOKUP_CATEGORIES:
+        return UNDEFINED_LABEL
+    try:
+        sector = md.get_company_profile(ticker).get("sector")
+    except Exception:
+        return UNDEFINED_LABEL
+    return sector or UNDEFINED_LABEL
+
+
+def country_for(category: str, ticker: str) -> str:
+    """Géographie pour le camembert de diversification (prompt 21, point 2) :
+    pays réel (via market_data.get_company_profile) pour Actions/ETF/
+    Obligations, "Non défini" pour tout le reste (Crypto, Forex, Matières
+    premières n'ont pas de géographie claire). Même double filet de sécurité
+    que sector_for ci-dessus."""
+    if category not in _PROFILE_LOOKUP_CATEGORIES:
+        return UNDEFINED_LABEL
+    try:
+        country = md.get_company_profile(ticker).get("country")
+    except Exception:
+        return UNDEFINED_LABEL
+    return country or UNDEFINED_LABEL
+
+
 def category_for(quote_type: str, ticker: str | None = None) -> str:
     ticker = (ticker or "").upper()
     if ticker in BOND_ETF_TICKERS:
