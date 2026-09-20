@@ -1,0 +1,3 @@
+id,portfolio_id,user_id,ticker,name,action,quantity,limit_price_eur,currency,leverage,created_at,last_checked_at
+2aa5969b-5bc9-4708-8a60-67f663f29345,69d3e31d-9600-4b74-ad01-c4cc774299bf,2e0ac9d7-a620-4139-9c3d-58abaa18dfab,BTC-USD,Bitcoin,achat,0.134921,63000.0,USD,5.0,2026-09-17T15:31:10.383153,2026-09-17T17:23:31.955131+00:00
+01ed9c57-d986-4486-aa21-d9b40c983946,69d3e31d-9600-4b74-ad01-c4cc774299bf,2e0ac9d7-a620-4139-9c3d-58abaa18dfab,SOL-USD,Solana,ouverture short,21.929825,91.2,USD,2.0,2026-09-17T16:06:40.450696,2026-09-17T17:23:31.955131+00:00
