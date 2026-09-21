@@ -482,6 +482,9 @@ def _fetch_chart_history(ticker: str, quote_type: str, period_key: str):
 # (prompt 24) : action (achat/ouverture short = ouverture, vente/rachat short
 # = clôture) -> couleur ; sens de la position -> lettre.
 _OPENING_TRADE_ACTIONS = ("achat", "ouverture short")
+# Plafond d'affichage : les N ordres les plus RÉCENTS seulement (garde le
+# graphique lisible et le rendu léger, même avec un long historique de trades).
+MAX_TRADE_MARKERS = 10
 _TRADE_ACTION_LABELS = {
     "achat": "Ouverture Long", "ouverture short": "Ouverture Short",
     "vente": "Clôture Long", "rachat short": "Clôture Short",
@@ -505,9 +508,14 @@ def _trade_markers_trace(trades: list, ticker: str, hist, fx_rate: float):
         return None
     xs, ys, colors, letters, hovers = [], [], [], [], []
     start, end = hist.index.min(), hist.index.max()
-    for t in trades:
-        if t.ticker != ticker or t.action not in _TRADE_ACTION_LABELS:
-            continue
+    # Filtre par ticker AVANT tout calcul de date (le portefeuille peut avoir
+    # des centaines de trades sur d'autres actifs), puis garde les plus
+    # récents : les dates ISO se trient chronologiquement en texte.
+    ticker_trades = sorted(
+        (t for t in trades if t.ticker == ticker and t.action in _TRADE_ACTION_LABELS),
+        key=lambda t: t.date,
+    )
+    for t in ticker_trades[-MAX_TRADE_MARKERS * 3:]:
         try:
             ts = pd.Timestamp(t.date)
             if ts.tzinfo is None:
@@ -528,6 +536,9 @@ def _trade_markers_trace(trades: list, ticker: str, hist, fx_rate: float):
         )
     if not xs:
         return None
+    xs, ys, colors, letters, hovers = (
+        seq[-MAX_TRADE_MARKERS:] for seq in (xs, ys, colors, letters, hovers)
+    )
     return go.Scatter(
         x=xs, y=ys, mode="markers+text", name="Ordres", showlegend=False,
         text=letters, textfont=dict(color="#0A2A33", size=10, family=theme.FONT_SANS),

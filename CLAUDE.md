@@ -144,7 +144,7 @@ sous le formulaire. Ordre limité sur une position à créer : aucun TP/SL possi
 
 **Graphique de prix Trading : marqueurs et zoom plein écran (prompt 24)** :
 (1) `ui_trading._trade_markers_trace` superpose les ordres du portefeuille actif sur ce
-ticker (tous, ouverts ET clôturés, dans la plage du graphique) : rond vert = ouverture,
+ticker (les 10 plus récents seulement, `MAX_TRADE_MARKERS`, ouverts ET clôturés, dans la plage du graphique) : rond vert = ouverture,
 rouge = clôture (totale/partielle), lettre L/S = sens de la position, tooltip (type, quantité,
 prix, heure). Prix du trade converti en devise du graphique avec le change ACTUEL (approximatif
 pour un actif non-EUR, le change historique n'est pas stocké) ; horodatage naïf interprété en
