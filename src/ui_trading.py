@@ -140,10 +140,8 @@ LONG_OPENING_TYPES = ("Acheter (position longue)", "Acheter plus")
 ACTION_BY_ORDER_TYPE = {
     "Acheter (position longue)": "achat",
     "Acheter plus": "achat",
-    "Vendre": "vente",
     "Vendre à découvert (position courte)": "ouverture short",
     "Vendre plus à découvert": "ouverture short",
-    "Racheter (clôturer)": "rachat short",
 }
 
 
@@ -868,83 +866,23 @@ def _render_maintenance_indicator(position, current_price_eur: float) -> None:
         st.caption(message)
 
 
-def _render_side_toggle(options: list[str], key: str) -> str:
-    """Remplace st.radio par deux boutons cliquables côte à côte, dans
-    l'esprit Buy/Sell d'un terminal de trading pro (Hyperliquid) — pas de
-    bouton rond à cocher. Couleur déterminée par le SENS de l'action
-    (ACTION_BY_ORDER_TYPE), pas par la position dans la liste : achat/rachat
-    short = vert (GREEN), vente/ouverture short = rouge (RED) — cohérent
-    dans les 3 contextes où ce sélecteur apparaît (aucune position, position
-    longue existante, position courte existante), y compris quand "vendre"
-    sert à clôturer un long plutôt qu'à ouvrir un short. L'option active a un
-    fond plein, l'inactive un simple contour — dans sa propre couleur, pas
-    l'orange ACCENT (seul le sens Long/Short fait exception à la règle des
-    boutons oranges, voir le prompt "Retouches formulaire/benchmark")."""
-    current = st.session_state.get(key)
-    if current not in options:
-        current = options[0]
+def _render_action_tabs(key: str, buy_enabled: bool, short_enabled: bool,
+                         short_help: str = "", buy_help: str = "") -> str:
+    """2 actions distinctes, TOUJOURS affichées : Long / Short, chacune avec
+    sa propre couleur. Depuis le prompt 22, il n'y a plus d'onglet "Vendre"
+    séparé : la clôture d'une position existante se fait DANS l'onglet du
+    sens détenu (voir _render_close_panel) — clôturer un long depuis Long,
+    un short depuis Short. Le sens opposé est DÉSACTIVÉ (pas masqué : la
+    raison reste visible en infobulle) — Long et Short sont mutuellement
+    exclusifs sur un même ticker (voir Portfolio.buy/open_short, qui le
+    refusent déjà côté métier ; ce composant ne fait que refléter cette règle
+    existante, jamais l'inverse). Valeur interne "acheter" inchangée (voir
+    prompt 18).
 
-    # Deux passes : d'abord rendre les boutons et repérer un clic éventuel
-    # (qui met à jour `current` tout de suite), PUIS calculer les styles à
-    # partir de ce `current` final — sinon un clic sur le bouton inactif ne
-    # changeait la couleur qu'au rerun SUIVANT (le style de CETTE passe était
-    # déjà calculé avec l'ancienne sélection avant que le clic soit détecté).
-    cols = st.columns(len(options))
-    btn_keys = [f"{key}_opt_{i}" for i in range(len(options))]
-    for option, btn_key, col in zip(options, btn_keys, cols):
-        if col.button(option, key=btn_key, use_container_width=True):
-            current = option
-    st.session_state[key] = current
-
-    style_rules = []
-    for option, btn_key in zip(options, btn_keys):
-        action = ACTION_BY_ORDER_TYPE[option]
-        color = theme.GREEN if action in ("achat", "rachat short") else theme.RED
-        # Sélecteur à 3 classes (ts_light + la clé du bouton + stElementContainer,
-        # puis .stButton > button) — même technique que badge_color/
-        # _render_action_tabs : la règle générique ".st-key-ts_light .stButton
-        # > button" (2 classes) a une spécificité plus élevée qu'un simple
-        # ".st-key-{btn_key} button" (1 classe) et l'emportait sur la couleur
-        # voulue ici malgré le !important (bug latent découvert en vérifiant
-        # au pixel près le rendu du prompt 13 — les boutons ressortaient tous
-        # dans le même style neutre, sans vert/rouge).
-        selector_base = f'.st-key-ts_light .st-key-{btn_key}.stElementContainer .stButton > button'
-        if option == current:
-            style_rules.append(
-                f'{selector_base}, {selector_base}:active, {selector_base}:focus {{ '
-                f'background:{color} !important; border-color:{color} !important; '
-                f'color:#ffffff !important; }}'
-            )
-        else:
-            style_rules.append(
-                f'{selector_base}, {selector_base}:active, {selector_base}:focus {{ '
-                f'background:transparent !important; border-color:{color} !important; '
-                f'color:{color} !important; }}'
-            )
-    st.markdown(f"<style>{''.join(style_rules)}</style>", unsafe_allow_html=True)
-    return current
-
-
-def _render_action_tabs(key: str, buy_enabled: bool, sell_enabled: bool, short_enabled: bool,
-                         sell_help: str = "", short_help: str = "") -> str:
-    """3 actions distinctes, TOUJOURS affichées (contrairement à l'ancien
-    sélecteur à 2 options dont le libellé changeait selon le contexte, ex.
-    "Acheter (position longue)" puis "Acheter plus") : Long / Vendre /
-    Short, chacune avec son propre texte et sa propre couleur (voir prompt
-    "Distinction claire Acheter / Vendre / Short", et son renommage en
-    "Long" au prompt 18 — seul le libellé affiché change, la valeur interne
-    retournée reste "acheter" partout ailleurs dans le fichier). Vendre et
-    Short sont DÉSACTIVÉS (pas masqués : la raison reste visible en
-    infobulle) quand l'action n'est pas possible sur la position actuelle —
-    Long et Short sont mutuellement exclusifs sur un même ticker (voir
-    Portfolio.buy/open_short, qui le refusent déjà côté métier ; ce
-    composant ne fait que refléter cette règle existante, jamais l'inverse).
-
-    Retourne "acheter" | "vendre" | "short".
+    Retourne "acheter" | "short".
     """
     options = [
-        ("acheter", "Long", theme.GREEN, buy_enabled, ""),
-        ("vendre", "Vendre", theme.SELL_NEUTRAL, sell_enabled, sell_help),
+        ("acheter", "Long", theme.GREEN, buy_enabled, buy_help),
         ("short", "Short", theme.RED, short_enabled, short_help),
     ]
 
@@ -1015,6 +953,60 @@ def _render_order_panel(portfolio, ticker: str, name: str | None, price_eur: flo
     _render_tp_sl_section(portfolio, ticker)
 
 
+def _render_close_panel(portfolio, ticker: str, existing, price_eur: float) -> None:
+    """Clôture d'une position ouverte (prompt 22), commune à Long (vente) et
+    Short (rachat). Toujours au marché, au prix affiché à l'écran.
+
+    - Clôture TOTALE : un seul bouton, aucune saisie — priorité du prompt.
+    - Clôture PARTIELLE : montant saisi en EUROS, converti en quantité au
+      moment du clic sur Valider, avec `price_eur` (le prix affiché et utilisé
+      pour la valeur de position ci-dessous, pas un prix recalculé). Le moteur
+      (Portfolio.sell/cover_short) reste en quantité, inchangé. Un montant qui
+      dépasse la valeur de la position est plafonné à la clôture totale.
+    "Valeur de la position" = quantité x prix affiché (exposition), la même
+    base que la conversion euros -> quantité.
+    """
+    is_long = existing.side == "long"
+    position_value = existing.quantity * price_eur
+
+    def close(quantity: float) -> None:
+        try:
+            if is_long:
+                pnl = portfolio.sell(ticker, quantity, price_eur)
+                msg = (f"Position clôturée : {quantity:g} x {ticker} vendu à {price_eur:,.2f} € "
+                       f"(P&L réalisé : {pnl:+,.2f} €).")
+            else:
+                pnl = portfolio.cover_short(ticker, quantity, price_eur)
+                msg = (f"Position clôturée : {quantity:g} x {ticker} racheté à {price_eur:,.2f} € "
+                       f"(P&L réalisé : {pnl:+,.2f} €).")
+        except ValueError as e:
+            st.error(str(e))
+            return
+        storage.save_portfolio(portfolio)
+        storage.invalidate_valuation_cache()
+        st.session_state["_order_confirmation_message"] = msg
+        st.rerun(scope="app")
+
+    if st.button("Clôturer toute la position", type="primary", key="close_full_position",
+                 use_container_width=True):
+        close(existing.quantity)
+
+    with st.expander("Clôturer une partie"):
+        amount = st.number_input(
+            "Montant à clôturer (€)", min_value=0.0, value=round(position_value / 2, 2), step=50.0,
+            key="close_partial_amount", width=ORDER_INPUT_WIDTH,
+        )
+        value_str = f"{position_value:,.2f} €"
+        st.caption(f"Valeur actuelle de la position : {theme.mono(value_str)}", unsafe_allow_html=True)
+        if st.button("Valider la clôture partielle", key="close_partial_position"):
+            if amount <= 0:
+                st.error("Le montant doit être supérieur à 0.")
+            elif amount >= position_value - 1e-9:
+                close(existing.quantity)  # plafonné : clôture totale
+            else:
+                close(round(amount / price_eur, 6))
+
+
 def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: float, currency: str,
                         quote_type: str = "") -> None:
     with st.container(key="ts_card_order"):
@@ -1028,51 +1020,42 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
         action_choice = _render_action_tabs(
             key="order_action_tab",
             buy_enabled=not has_short,
-            sell_enabled=has_long,
             short_enabled=not has_long,
-            sell_help=(
-                "" if has_long else f"Aucune position longue détenue sur {ticker} : rien à vendre."
+            buy_help=(
+                f"Position courte ouverte sur {ticker} : clôture-la d'abord (onglet Short)."
+                if has_short else ""
             ),
             short_help=(
-                "" if not has_long
-                else f"Position longue déjà ouverte sur {ticker} : vends-la d'abord (onglet Vendre)."
+                f"Position longue ouverte sur {ticker} : clôture-la d'abord (onglet Long)."
+                if has_long else ""
             ),
         )
 
-        if action_choice == "acheter":
-            if existing is None:
-                st.caption(f"Aucune position ouverte sur {ticker}.")
-                order_type = "Acheter (position longue)"
-            else:
-                st.caption(f"Position actuelle : {existing.quantity:g} {ticker} en position longue "
-                           f"(prix moyen {existing.avg_price_eur:,.2f} €).")
-                _render_maintenance_indicator(existing, price_eur)
-                order_type = "Acheter plus"
-        elif action_choice == "vendre":
-            # Exigence explicite du prompt "Distinction claire Acheter/Vendre/
-            # Short" : la quantité détenue doit ressortir clairement, pour que
-            # l'utilisateur sache combien il peut vendre au maximum — avant,
-            # cette information était noyée dans une phrase générique
-            # ("Position actuelle : ..."), pas mise en avant comme un plafond.
-            st.caption(f"Tu détiens : {theme.mono(f'{existing.quantity:g} {ticker}')} en position longue "
-                       f"(prix moyen {existing.avg_price_eur:,.2f} €).", unsafe_allow_html=True)
+        # Position déjà ouverte dans le sens de l'onglet actif : sous-choix
+        # Clôturer / Renforcer (prompt 22 — remplace l'ancien onglet Vendre).
+        # Clôturer est proposé en premier (et par défaut) : c'est le geste à
+        # rendre le plus simple possible.
+        held_here = (action_choice == "acheter" and has_long) or (action_choice == "short" and has_short)
+        if held_here:
+            side_label = "longue" if has_long else "courte"
+            st.caption(f"Position actuelle : {existing.quantity:g} {ticker} en position {side_label} "
+                       f"(prix moyen {existing.avg_price_eur:,.2f} €).")
             _render_maintenance_indicator(existing, price_eur)
-            order_type = "Vendre"
+            add_label = "Renforcer" if has_long else "Vendre plus à découvert"
+            sub_choice = st.segmented_control(
+                "Action sur la position", ["Clôturer", add_label], default="Clôturer", required=True,
+                key=f"order_close_or_add_{action_choice}", label_visibility="collapsed",
+            )
+            if sub_choice == "Clôturer":
+                _render_close_panel(portfolio, ticker, existing, price_eur)
+                return
+            order_type = "Acheter plus" if has_long else "Vendre plus à découvert"
+        elif action_choice == "acheter":
+            st.caption(f"Aucune position ouverte sur {ticker}.")
+            order_type = "Acheter (position longue)"
         else:  # short
-            if existing is None:
-                st.caption(f"Aucune position ouverte sur {ticker}.")
-                order_type = "Vendre à découvert (position courte)"
-            else:
-                st.caption(f"Position actuelle : {existing.quantity:g} {ticker} en position courte "
-                           f"(prix moyen {existing.avg_price_eur:,.2f} €).")
-                _render_maintenance_indicator(existing, price_eur)
-                # Sous-choix propre au short déjà ouvert (renforcer / racheter) :
-                # ce sont deux actions différentes que l'onglet Short doit
-                # toutes les deux couvrir (comportement déjà existant, juste
-                # déplacé ici plutôt que d'être le sélecteur de premier niveau).
-                order_type = _render_side_toggle(
-                    ["Vendre plus à découvert", "Racheter (clôturer)"], key="order_type_short_sub",
-                )
+            st.caption(f"Aucune position ouverte sur {ticker}.")
+            order_type = "Vendre à découvert (position courte)"
 
         action = ACTION_BY_ORDER_TYPE[order_type]
         is_opening = order_type in OPENING_ORDER_TYPES
@@ -1149,22 +1132,8 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 help="Nombre entier de titres : une action/ETF ne se fractionne pas.",
                 width=ORDER_INPUT_WIDTH,
             ))
-        else:
-            default_qty = existing.quantity if order_type in ("Vendre", "Racheter (clôturer)") else 1.0
-            quantity = col_qty.number_input(
-                "Quantité", min_value=0.0, value=float(default_qty), step=1.0, key="order_qty",
-                width=ORDER_INPUT_WIDTH,
-            )
-
         if is_opening and quantity > 0:
             _render_order_summary(ref_price, quantity, leverage, side_for_pnl)
-        elif not is_opening and quantity > 0:
-            exposure_str = f"{quantity * ref_price:,.2f} €"
-            cash_str = f"{portfolio.cash:,.2f} €"
-            st.caption(
-                f"Exposition : {theme.mono(exposure_str)} · Cash disponible : {theme.mono(cash_str)}",
-                unsafe_allow_html=True,
-            )
 
         tp_sl_tiers = (
             _render_tp_sl_at_order_form(order_mode, ref_price) if is_opening and existing is None else []

@@ -119,6 +119,20 @@ laisse les deux autres colonnes se redistribuer normalement l'espace libéré
 de charge CPU sur une session très longue, à surveiller si un jour signalé
 comme perceptible en usage réel.
 
+**Clôture intégrée dans Long/Short (prompt 22)** : l'onglet/bouton "Vendre" n'existe
+plus, remplacé par une clôture DANS l'onglet du sens détenu (`ui_trading._render_close_panel`).
+Le formulaire n'a plus que 2 boutons (Long/Short, `_render_action_tabs`) ; quand une position
+est ouverte dans le sens de l'onglet actif, un sous-choix Clôturer (par défaut) / Renforcer
+(ou "Vendre plus à découvert") apparaît. Clôturer = toujours au marché : un bouton "Clôturer
+toute la position" (un clic, aucune saisie) + un expander "Clôturer une partie" avec un
+montant en **euros**, converti en quantité au clic sur Valider au prix affiché
+(`price_eur`, celui de la "valeur actuelle de la position" affichée sous le champ =
+quantité x prix, pas la marge) ; montant >= valeur -> plafonné à la clôture totale. Le
+moteur (`Portfolio.sell`/`cover_short`) reste inchangé, en quantité. Perte assumée : plus
+d'ordre de clôture à cours limité depuis le formulaire (les ordres limites d'ouverture et
+les paliers TP/SL restent). Les paragraphes ci-dessous parlant de "Vendre" décrivent
+l'état d'avant ce prompt.
+
 **3 actions distinctes (Long/Vendre/Short)** : le formulaire d'ordre
 affiche toujours 3 boutons explicitement labellisés — Long (vert, libellé
 "Acheter" jusqu'au prompt 18, renommé "Long" pour cohérence avec la

@@ -93,8 +93,8 @@ Sur la fiche d'une position à levier que tu détiens, une jauge t'indique en di
 Une fois sur la fiche d'un actif, tu trouveras un formulaire pour passer ton ordre. Les options proposées changent selon ta situation :
 
 - Tu n'as aucune position sur ce ticker → tu peux **Long** (achat) ou **Vendre à découvert** (Short).
-- Tu as déjà une position Longue → tu peux **Long** (renforcer) ou **Vendre** (clôturer).
-- Tu as déjà une position Courte → tu peux **Vendre plus à découvert** (renforcer) ou **Racheter** (clôturer).
+- Tu as déjà une position Longue → tu peux **Renforcer** ou **Clôturer** depuis l'onglet **Long**.
+- Tu as déjà une position Courte → tu peux **Vendre plus à découvert** ou **Clôturer** depuis l'onglet **Short**.
 
 Si tu renforces une position existante, ton prix moyen d'achat est recalculé automatiquement en tenant compte du nouveau prix — pas juste écrasé par le dernier prix payé.
 
@@ -106,7 +106,7 @@ Pour ouvrir ou renforcer une position **sur une crypto** (achat, vente à décou
 
 Exemple : 500 € engagés avec un levier x2 → une position de 1000 €. Le montant à risquer ne peut jamais dépasser ton cash disponible.
 
-Pour une **action, un ETF ou un indice**, en revanche, tu indiques directement un **nombre entier de titres** (une action ne se fractionne pas dans la réalité, contrairement à une crypto) — le coût total et la marge nécessaire s'affichent juste en dessous une fois la quantité choisie. Pour **clôturer** une position existante (Vendre, Racheter), c'est dans tous les cas bien une quantité que tu indiques, quelle que soit la classe d'actif.
+Pour une **action, un ETF ou un indice**, en revanche, tu indiques directement un **nombre entier de titres** (une action ne se fractionne pas dans la réalité, contrairement à une crypto) — le coût total et la marge nécessaire s'affichent juste en dessous une fois la quantité choisie. Pour **clôturer** une position existante (onglet Long ou Short, bouton **Clôturer**), un seul clic ferme toute la position ; pour n'en clôturer qu'une partie, tu indiques un **montant en euros**, quelle que soit la classe d'actif.
 
 ### Ordre au marché vs ordre à cours limité
 
