@@ -19,6 +19,7 @@ bloc, pas dans le panneau d'ordre lui-même.
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -477,8 +478,67 @@ def _fetch_chart_history(ticker: str, quote_type: str, period_key: str):
     return hist, effective, "Yahoo Finance"
 
 
+# Marqueurs d'ouverture/clôture de position sur le graphique de prix
+# (prompt 24) : action (achat/ouverture short = ouverture, vente/rachat short
+# = clôture) -> couleur ; sens de la position -> lettre.
+_OPENING_TRADE_ACTIONS = ("achat", "ouverture short")
+_TRADE_ACTION_LABELS = {
+    "achat": "Ouverture Long", "ouverture short": "Ouverture Short",
+    "vente": "Clôture Long", "rachat short": "Clôture Short",
+}
+
+
+def _trade_markers_trace(trades: list, ticker: str, hist, fx_rate: float):
+    """Trace Plotly des marqueurs de trades de `ticker` (ouvertes ET
+    clôturées, sans filtrage autre que la plage de temps du graphique) :
+    rond vert = ouverture, rouge = clôture (totale ou partielle), lettre L/S =
+    sens de la position. Retourne None s'il n'y a rien à afficher.
+
+    Le prix du trade est stocké en EUR : converti dans la devise du graphique
+    (`fx_rate` = prix natif / prix EUR ACTUELS), donc approximatif pour un actif
+    non-EUR dont le change a bougé depuis le trade — le change historique
+    n'est pas conservé avec le trade. L'horodatage est naïf (heure du serveur
+    au moment de l'ordre, voir Portfolio._log_trade), interprété en fuseau
+    local puis converti dans celui de l'historique de prix.
+    """
+    if len(hist.index) == 0:
+        return None
+    xs, ys, colors, letters, hovers = [], [], [], [], []
+    start, end = hist.index.min(), hist.index.max()
+    for t in trades:
+        if t.ticker != ticker or t.action not in _TRADE_ACTION_LABELS:
+            continue
+        try:
+            ts = pd.Timestamp(t.date)
+            if ts.tzinfo is None:
+                ts = ts.tz_localize(datetime.now().astimezone().tzinfo)
+            ts = ts.tz_convert(hist.index.tz) if hist.index.tz is not None else ts.tz_localize(None)
+        except (ValueError, TypeError):
+            continue
+        if ts < start or ts > end:
+            continue
+        price = t.price_eur * fx_rate
+        xs.append(ts)
+        ys.append(price)
+        colors.append(theme.LIGHT_GREEN if t.action in _OPENING_TRADE_ACTIONS else theme.LIGHT_RED)
+        letters.append("L" if t.side == "long" else "S")
+        hovers.append(
+            f"{_TRADE_ACTION_LABELS[t.action]}<br>{t.quantity:g} à {t.price_eur:,.2f} €"
+            f"<br>{ts.strftime('%d/%m/%Y %H:%M')}"
+        )
+    if not xs:
+        return None
+    return go.Scatter(
+        x=xs, y=ys, mode="markers+text", name="Ordres", showlegend=False,
+        text=letters, textfont=dict(color="#0A2A33", size=10, family=theme.FONT_SANS),
+        textposition="middle center",
+        marker=dict(size=18, color=colors, line=dict(color="rgba(255,255,255,0.85)", width=1)),
+        hovertext=hovers, hoverinfo="text",
+    )
+
+
 @st.fragment(run_every=30)
-def _render_price_and_chart(ticker: str, quote_type: str) -> None:
+def _render_price_and_chart(ticker: str, quote_type: str, trades: list) -> None:
     """Prix + graphique de `ticker`, isolés dans leur propre fragment : se
     rafraîchissent seuls toutes les 30 secondes (run_every), sans recharger
     le reste de la page (portefeuille, autres onglets, formulaire d'ordre
@@ -546,6 +606,9 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
             increasing_line_color=theme.LIGHT_GREEN, increasing_fillcolor=theme.LIGHT_GREEN,
             decreasing_line_color=theme.LIGHT_RED, decreasing_fillcolor=theme.LIGHT_RED,
         ))
+    markers = _trade_markers_trace(trades, ticker, hist, price_native / price_eur if price_eur else 1.0)
+    if markers is not None:
+        fig.add_trace(markers)
     # 600px (au lieu de 450 avant ce correctif) : comble le vide sous le
     # graphique/carnet, le panneau d'ordre à droite (TP/SL, récapitulatif...)
     # étant naturellement plus haut que les 2 autres colonnes (mesuré à
@@ -588,13 +651,18 @@ def _render_price_and_chart(ticker: str, quote_type: str) -> None:
     # Plotly de l'app (plus de config ad hoc ici). Le survol (hover) et le
     # double-clic pour réinitialiser le zoom restent actifs, indépendants de
     # ces deux réglages côté Plotly.js.
-    st.plotly_chart(fig, use_container_width=True, config=theme.PLOTLY_CONFIG)
+    # Prompt 24 : zoom molette + glisser réactivé, mais bloqué hors plein
+    # écran par theme.render_fullscreen_zoom_gate (voir son commentaire).
+    theme.render_fullscreen_zoom_gate()
+    fig.update_layout(dragmode="zoom")
+    with st.container(key=theme.TRADING_CHART_KEY):
+        st.plotly_chart(fig, use_container_width=True, config={**theme.PLOTLY_CONFIG, "scrollZoom": True})
 
     fallback_note = "" if effective_interval == PERIOD_INTERVAL[period_key] else " (repli, plage trop longue)"
     st.caption(
         f"{len(hist)} bougies chargées · intervalle {effective_interval}{fallback_note} · source {source}"
     )
-    st.caption(theme.PLOTLY_ZOOM_HINT)
+    st.caption(theme.PLOTLY_FULLSCREEN_ZOOM_HINT)
 
 
 # -- Carnet d'ordre simulé (prompt 20) ----------------------------------------
@@ -1548,7 +1616,7 @@ def render(portfolio) -> None:
         with st.container(key="ts_trading_layout_row"):
             col_chart, col_book, col_order = st.columns([2.0, 0.55, 1])
             with col_chart:
-                _render_price_and_chart(ticker, quote_type)
+                _render_price_and_chart(ticker, quote_type, portfolio.history)
 
             with col_book:
                 _render_order_book(ticker)

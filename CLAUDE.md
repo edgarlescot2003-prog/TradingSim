@@ -142,6 +142,24 @@ True, `_render_order_panel` ne la rend alors pas une 2e fois). Clôture : sectio
 sous le formulaire. Ordre limité sur une position à créer : aucun TP/SL possible avant
 (la position n'existe pas), inchangé.
 
+**Graphique de prix Trading : marqueurs et zoom plein écran (prompt 24)** :
+(1) `ui_trading._trade_markers_trace` superpose les ordres du portefeuille actif sur ce
+ticker (tous, ouverts ET clôturés, dans la plage du graphique) : rond vert = ouverture,
+rouge = clôture (totale/partielle), lettre L/S = sens de la position, tooltip (type, quantité,
+prix, heure). Prix du trade converti en devise du graphique avec le change ACTUEL (approximatif
+pour un actif non-EUR, le change historique n'est pas stocké) ; horodatage naïf interprété en
+fuseau local. `_render_price_and_chart` reçoit maintenant `portfolio.history` en argument.
+(2) Zoom molette + glisser-sélection actif UNIQUEMENT en plein écran (plein écran natif
+Streamlit) : sa config Plotly ne pouvant pas différer, le graphique est configuré zoomable et
+un script (`theme.render_fullscreen_zoom_gate`, `st.html(..., unsafe_allow_javascript=True)`,
+Streamlit 1.61 épinglé) bloque molette/début de glisser, souris ET tactile, tant que le bouton
+"Close fullscreen" du cadre Streamlit n'est pas présent, uniquement dans le conteneur
+`.st-key-ts_trading_chart`. Survol et double-clic intacts. Vérifié Playwright Chromium
+(normal / plein écran / retour) + balayage tactile émulé (la page défile toujours au doigt
+sur le graphique) ; PAS testé sur un vrai téléphone, ni WebKit. Piège : dépend du libellé
+anglais du bouton natif ("Close fullscreen") — à revérifier après toute montée de version de
+Streamlit (si ça casse, le zoom reste simplement bloqué partout, jamais actif hors plein écran).
+
 **3 actions distinctes (Long/Vendre/Short)** : le formulaire d'ordre
 affiche toujours 3 boutons explicitement labellisés — Long (vert, libellé
 "Acheter" jusqu'au prompt 18, renommé "Long" pour cohérence avec la

@@ -1846,6 +1846,33 @@ PLOTLY_CONFIG = {
 # clic pour le réinitialiser) mais jamais signalé à l'utilisateur.
 PLOTLY_ZOOM_HINT = "Double-clique sur le graphique pour réinitialiser le zoom."
 
+# Graphique de prix de l'onglet Trading (prompt 24) : zoom molette + glisser
+# ACTIF en plein écran seulement. Le plein écran est celui, natif, de
+# Streamlit : sa config Plotly ne peut pas différer entre normal et plein
+# écran, et le CSS ne peut pas couper le zoom sans couper aussi le survol (les
+# deux passent par la même couche .nsewdrag). Le graphique est donc
+# configuré zoomable (scrollZoom + dragmode="zoom") et ce petit script,
+# actif seulement sur le conteneur `TRADING_CHART_KEY`, bloque en phase de
+# capture la molette et le début de glisser (souris ET tactile) tant que le
+# cadre plein écran de Streamlit n'est pas ouvert (détecté via son bouton
+# "Close fullscreen"). Survol et double-clic (reset) ne sont pas touchés.
+# Vérifié Playwright/Chromium : desktop (normal/plein écran/retour) et
+# balayage tactile émulé (le défilement de la page reste possible au doigt
+# sur le graphique) ; pas testé sur un vrai téléphone.
+TRADING_CHART_KEY = "ts_trading_chart"
+PLOTLY_FULLSCREEN_ZOOM_HINT = (
+    "Zoom (molette + sélection à la souris) disponible en plein écran "
+    "— survole le graphique puis clique sur l'icône plein écran. "
+    "Double-clique pour réinitialiser le zoom."
+)
+_FULLSCREEN_ZOOM_GATE_JS = '(function () {\n  if (window.__tsZoomGate) return;\n  window.__tsZoomGate = true;\n  var SEL = \'.st-key-ts_trading_chart\';\n  function gated(e) {\n    var t = e.target;\n    if (!t || !t.closest) return false;\n    var zone = t.closest(SEL);\n    if (!zone) return false;\n    var frame = zone.querySelector(\'[data-testid="stFullScreenFrame"]\');\n    return !(frame && frame.querySelector(\'button[aria-label="Close fullscreen"]\'));\n  }\n  var dragging = false;\n  window.addEventListener(\'wheel\', function (e) { if (gated(e)) e.stopImmediatePropagation(); }, true);\n  window.addEventListener(\'mousedown\', function (e) { dragging = gated(e); }, true);\n  window.addEventListener(\'touchstart\', function (e) { if (gated(e)) { dragging = true; e.stopImmediatePropagation(); } }, true);\n  window.addEventListener(\'mouseup\', function () { dragging = false; }, true);\n  window.addEventListener(\'touchend\', function () { dragging = false; }, true);\n  window.addEventListener(\'mousemove\', function (e) { if (dragging) e.stopImmediatePropagation(); }, true);\n  window.addEventListener(\'touchmove\', function (e) { if (dragging) e.stopImmediatePropagation(); }, true);\n})();\n'
+
+
+def render_fullscreen_zoom_gate() -> None:
+    """Installe (une seule fois par page, garde `window.__tsZoomGate`) le
+    script décrit ci-dessus."""
+    st.html(f"<script>{_FULLSCREEN_ZOOM_GATE_JS}</script>", unsafe_allow_javascript=True)
+
 
 def _cell_content(col: dict, value) -> str:
     """HTML intérieur d'une cellule non cliquable (sans wrapper)."""
