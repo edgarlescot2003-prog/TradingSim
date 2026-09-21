@@ -949,8 +949,12 @@ def _render_order_panel(portfolio, ticker: str, name: str | None, price_eur: flo
     if confirmation_msg:
         theme.render_order_confirmation_popup(confirmation_msg, seconds=ORDER_CONFIRMATION_POPUP_SECONDS)
 
-    _render_order_form(portfolio, ticker, name, price_eur, currency, quote_type)
-    _render_tp_sl_section(portfolio, ticker)
+    # Prompt 23 : quand le formulaire renforce une position existante, il
+    # affiche lui-même la section TP/SL AVANT son bouton "Valider l'ordre"
+    # (retourne True) ; sinon (clôture, ou aucune position), elle reste
+    # affichée ici, sous le formulaire, comme avant.
+    if not _render_order_form(portfolio, ticker, name, price_eur, currency, quote_type):
+        _render_tp_sl_section(portfolio, ticker)
 
 
 def _render_close_panel(portfolio, ticker: str, existing, price_eur: float) -> None:
@@ -1008,7 +1012,9 @@ def _render_close_panel(portfolio, ticker: str, existing, price_eur: float) -> N
 
 
 def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: float, currency: str,
-                        quote_type: str = "") -> None:
+                        quote_type: str = "") -> bool:
+    """Retourne True si le formulaire a déjà rendu lui-même la section TP/SL
+    de la position existante (avant le bouton de validation, prompt 23)."""
     with st.container(key="ts_card_order"):
         st.markdown("##### Passer un ordre")
 
@@ -1048,7 +1054,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
             )
             if sub_choice == "Clôturer":
                 _render_close_panel(portfolio, ticker, existing, price_eur)
-                return
+                return False
             order_type = "Acheter plus" if has_long else "Vendre plus à découvert"
         elif action_choice == "acheter":
             st.caption(f"Aucune position ouverte sur {ticker}.")
@@ -1139,6 +1145,16 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
             _render_tp_sl_at_order_form(order_mode, ref_price) if is_opening and existing is None else []
         )
 
+        # Prompt 23 : TP/SL AVANT la validation, pas après. Nouvelle position
+        # au marché : paliers du formulaire (ci-dessus, créés à l'exécution).
+        # Renforcement d'une position existante : section dédiée à cette
+        # position, affichée ici plutôt que sous le bouton. Ordre à cours
+        # limité sur une position à créer : rien à configurer avant (la
+        # position n'existe pas encore, voir _render_tp_sl_at_order_form).
+        tp_sl_section_rendered = existing is not None
+        if tp_sl_section_rendered:
+            _render_tp_sl_section(portfolio, ticker)
+
         if order_mode == "Ordre au marché":
             if st.button("Valider l'ordre", type="primary", key="submit_market_order"):
                 try:
@@ -1190,6 +1206,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                         f"Ordre à cours limité placé : {quantity:g} x {ticker} à {ref_price:,.2f} €."
                     )
                     st.rerun(scope="app")
+    return tp_sl_section_rendered
 
 
 def render_active_tp_sl_table(

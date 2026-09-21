@@ -133,6 +133,15 @@ d'ordre de clôture à cours limité depuis le formulaire (les ordres limites d'
 les paliers TP/SL restent). Les paragraphes ci-dessous parlant de "Vendre" décrivent
 l'état d'avant ce prompt.
 
+**TP/SL avant "Valider l'ordre" (prompt 23)** : dans `_render_order_form`, la configuration
+TP/SL précède toujours le bouton de validation, qui reste le dernier élément du formulaire.
+Nouvelle position au marché : paliers du formulaire (`_render_tp_sl_at_order_form`, déjà
+avant le bouton). Renforcement d'une position existante : `_render_tp_sl_section` est
+maintenant appelée par le formulaire lui-même juste avant le bouton (le formulaire retourne
+True, `_render_order_panel` ne la rend alors pas une 2e fois). Clôture : section inchangée,
+sous le formulaire. Ordre limité sur une position à créer : aucun TP/SL possible avant
+(la position n'existe pas), inchangé.
+
 **3 actions distinctes (Long/Vendre/Short)** : le formulaire d'ordre
 affiche toujours 3 boutons explicitement labellisés — Long (vert, libellé
 "Acheter" jusqu'au prompt 18, renommé "Long" pour cohérence avec la
