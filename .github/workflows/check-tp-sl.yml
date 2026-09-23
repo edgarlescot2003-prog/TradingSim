@@ -51,3 +51,8 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m scripts.check_liquidation
+
+      - name: Enregistrer les snapshots Admin News
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m scripts.record_admin_snapshots

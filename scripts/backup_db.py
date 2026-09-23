@@ -19,8 +19,9 @@ import pandas as pd
 
 from src import db_core
 from src.db_models import (
-    CourseRow, NewsRow, PendingOrderRow, PortfolioRow, PositionRow, SearchHistoryRow, TpSlOrderRow, TradeRow,
-    User, ValueHistoryRow,
+    CourseRow, MarketPriceSnapshotRow, NewsRow, PendingOrderRow, PortfolioRow,
+    PortfolioValueSnapshotRow, PositionRow, SearchHistoryRow, TpSlOrderRow,
+    TradeRow, User, ValueHistoryRow,
 )
 
 BACKUPS_DIR = Path(__file__).resolve().parent.parent / "backups"
@@ -43,6 +44,8 @@ TABLES = {
     "courses": CourseRow,
     "news": NewsRow,
     "tp_sl_orders": TpSlOrderRow,
+    "market_price_snapshots": MarketPriceSnapshotRow,
+    "portfolio_value_snapshots": PortfolioValueSnapshotRow,
 }
 
 

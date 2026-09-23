@@ -6,7 +6,7 @@ import streamlit as st
 
 from src import (
     auth, db, order_engine, storage, theme,
-    ui_admin, ui_auth, ui_history, ui_leaderboard, ui_news, ui_portfolio, ui_reglement, ui_trading,
+    ui_admin, ui_admin_news, ui_auth, ui_history, ui_leaderboard, ui_news, ui_portfolio, ui_reglement, ui_trading,
     ui_tutorial, valuation, weekly_summary,
 )
 from src.portfolio import MAX_PORTFOLIOS_PER_USER, Portfolio
@@ -152,6 +152,7 @@ portfolio = portfolios[st.session_state.active_id]
 tabs = list(theme.DEFAULT_TABS)
 if auth.is_admin(role):
     tabs.append(("administration", "Administration"))
+    tabs.append(("admin_news", "Admin News"))
 topbar_slot = st.empty()
 messages_slot = st.empty()
 theme.render_tab_bar(st.session_state.active_tab, tabs)
@@ -225,5 +226,7 @@ elif st.session_state.active_tab == "reglement":
     ui_reglement.render()
 elif st.session_state.active_tab == "administration" and auth.is_admin(role):
     ui_admin.render(user_id)
+elif st.session_state.active_tab == "admin_news" and auth.is_admin(role):
+    ui_admin_news.render()
 else:
     ui_portfolio.render(portfolio, total_value, snapshots)

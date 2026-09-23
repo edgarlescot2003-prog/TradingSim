@@ -148,6 +148,33 @@ class ValueHistoryRow(Base):
     value_eur = Column(Float, nullable=False)
 
 
+class MarketPriceSnapshotRow(Base):
+    """Prix en euros collecté par le workflow de contrôle périodique.
+
+    Cette table est la seule source utilisée par la page Admin News : son
+    affichage ne déclenche donc jamais d'appel à une API de marché.
+    """
+    __tablename__ = "market_price_snapshots"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_new_uuid)
+    ticker = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    category = Column(String, nullable=False, default="")
+    recorded_at = Column(String, nullable=False, index=True)
+    price_eur = Column(Float, nullable=False)
+
+
+class PortfolioValueSnapshotRow(Base):
+    """Valeur périodique des portefeuilles officiels pour le tableau Admin."""
+    __tablename__ = "portfolio_value_snapshots"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_new_uuid)
+    portfolio_id = Column(UUID(as_uuid=False), ForeignKey("portfolios.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False, index=True)
+    recorded_at = Column(String, nullable=False, index=True)
+    value_eur = Column(Float, nullable=False)
+
+
 class TpSlOrderRow(Base):
     """Palier Take Profit / Stop Loss sur une position : prix cible EXACT (en
     euros, pas un pourcentage) et quantité exprimée en % de la position
