@@ -21,7 +21,9 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from .db_models import PendingOrderRow, PortfolioRow, PositionRow, TradeRow, ValueHistoryRow
+from .db_models import (
+    PendingOrderRow, PortfolioRow, PositionRow, TradeRow, TpSlOrderRow, ValueHistoryRow,
+)
 from .portfolio import PendingOrder, Portfolio, Position, Trade
 
 
@@ -192,3 +194,29 @@ def save_portfolio(session: Session, portfolio: Portfolio, user_id: str) -> None
         session.execute(stmt)
 
     session.commit()
+
+
+def reset_all_portfolios(session: Session, initial_capital: float = 10_000.0) -> int:
+    """Remet tous les portefeuilles au capital fourni, sans position.
+
+    Les comptes et le statut de portefeuille officiel sont conservés. Les
+    données de trading associées sont supprimées dans une seule transaction.
+    Retourne le nombre de portefeuilles réinitialisés.
+    """
+    portfolios = session.execute(
+        select(PortfolioRow).with_for_update()
+    ).scalars().all()
+    portfolio_ids = [portfolio.id for portfolio in portfolios]
+
+    if portfolio_ids:
+        for model in (PositionRow, TradeRow, PendingOrderRow, ValueHistoryRow, TpSlOrderRow):
+            session.query(model).filter(model.portfolio_id.in_(portfolio_ids)).delete(
+                synchronize_session=False
+            )
+        session.query(PortfolioRow).filter(PortfolioRow.id.in_(portfolio_ids)).update(
+            {PortfolioRow.initial_capital: initial_capital, PortfolioRow.cash: initial_capital},
+            synchronize_session=False,
+        )
+
+    session.commit()
+    return len(portfolios)

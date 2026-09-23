@@ -6,7 +6,24 @@ d'un compte standard en Contributeur (droit de publier des news) ou en Admin
 
 import streamlit as st
 
-from . import auth, theme
+from . import auth, db, portfolio_repo, theme
+
+
+def _render_competition_reset() -> None:
+    st.subheader("Réinitialiser la compétition")
+    st.warning(
+        "Cette action remet TOUS les portefeuilles à 10 000 €, supprime les positions, "
+        "ordres, paliers TP/SL, trades et courbes de valeur. Les comptes et les "
+        "portefeuilles officiels sont conservés. Cette action est irréversible."
+    )
+    if st.button("Confirmer le reset général", key="reset_all_portfolios", type="primary"):
+        with db.get_session() as session:
+            count = portfolio_repo.reset_all_portfolios(session)
+        st.session_state.pop("portfolios", None)
+        st.session_state.pop("active_id", None)
+        st.session_state.pop("_valuation_cache", None)
+        st.success(f"{count} portefeuille(s) remis à 10 000 €.")
+        st.rerun()
 
 
 def _render_header() -> None:
@@ -149,6 +166,7 @@ def _render_row(user, current_user_id: str) -> None:
 
 def render(current_user_id: str) -> None:
     st.subheader("Administration des comptes")
+    _render_competition_reset()
     users = auth.list_users()
 
     _render_header()
