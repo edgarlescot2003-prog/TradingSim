@@ -8,7 +8,6 @@ crypto plus fine est nécessaire.
 
 import time
 
-import pandas as pd
 import yfinance as yf
 
 from . import diag_log, market_store
@@ -122,57 +121,114 @@ def search_assets(query: str, max_results: int = 8) -> list[dict]:
     return assets
 
 
+# Accueil Trading (~29 actifs) : un prix déjà obtenu il y a moins de 5 min
+# (par n'importe quel processus, via last_known_prices) est réutilisé tel
+# quel ; la variation 30 j, qui demande un historique, jusqu'à 1 h (même
+# durée que l'ancien cache dédié _fetch_30d_changes).
+BATCH_PRICE_REUSE_SECONDS = 5 * 60
+BATCH_CHANGE_30D_REUSE_SECONDS = 60 * 60
+
+
 def get_quotes_batch(tickers: tuple[str, ...]) -> dict[str, dict]:
-    """Récupère les prix et variations en un seul téléchargement Yahoo."""
-    if not tickers or market_store.blocked_remaining(YAHOO) > 0:
+    """Prix, variation du jour et variation 30 j pour une liste d'actifs
+    (vitrine de l'accueil Trading, snapshot Admin). Retourne
+    {ticker: {price, currency, previous_close, change_pct, change_30d_pct,
+    fetched_at, stale}} ; un ticker sans aucune donnée est absent.
+
+    Réduit la rafale à froid (29 requêtes d'un coup à chaque redémarrage) :
+    1. lit d'abord les derniers prix connus en base (une seule requête SQL) ;
+    2. n'appelle Yahoo QUE pour les actifs périmés, un par un, et s'arrête
+       net au premier 429 (coupe-circuit) — yf.download continuait les 28
+       autres tickers sur une IP déjà bloquée et avalait le 429 ;
+    3. complète avec le dernier prix connu (stale=True) ce qui n'a pas pu
+       être rafraîchi.
+    Une requête par actif rafraîchi (historique 1 mois/1 j), comme
+    yf.download(threads=False) avant, mais la devise vient maintenant des
+    métadonnées Yahoo de l'actif au lieu d'une table codée en dur.
+    """
+    if not tickers:
         return {}
+    now = time.time()
+    known = market_store.get_last_known(tickers)
+    result: dict[str, dict] = {}
+    to_fetch = []
+    for ticker in tickers:
+        entry = known.get(ticker)
+        reusable = (
+            entry is not None
+            and now - (entry.get("fetched_at") or 0) <= BATCH_PRICE_REUSE_SECONDS
+            and entry.get("change_30d_at") is not None
+            and now - entry["change_30d_at"] <= BATCH_CHANGE_30D_REUSE_SECONDS
+        )
+        if reusable:
+            result[ticker] = _batch_entry(entry, stale=False)
+        else:
+            to_fetch.append(ticker)
+
+    fetched = []
+    for ticker in to_fetch:
+        if market_store.blocked_remaining(YAHOO) > 0:
+            break  # source en pause : plus aucun appel, repli sur les prix connus
+        try:
+            entry = _fetch_daily_summary(ticker)
+        except MarketDataError:
+            continue
+        fetched.append(entry)
+        result[ticker] = _batch_entry(entry, stale=False)
+    market_store.remember_prices(fetched)  # une seule transaction pour le lot
+
+    for ticker in tickers:
+        if ticker not in result and ticker in known:
+            result[ticker] = _batch_entry(known[ticker], stale=True)
+    return result
+
+
+def _batch_entry(entry: dict, stale: bool) -> dict:
+    price, previous_close = entry["price"], entry.get("previous_close")
+    return {
+        "price": price, "currency": entry["currency"], "previous_close": previous_close,
+        "change_pct": (price - previous_close) / previous_close * 100 if previous_close else None,
+        "change_30d_pct": entry.get("change_30d_pct"), "fetched_at": entry.get("fetched_at"),
+        "stale": stale,
+    }
+
+
+def _fetch_daily_summary(ticker: str) -> dict:
+    """UNE requête Yahoo (historique 1 mois / 1 jour) : prix, clôture
+    précédente, variation 30 j, devise réelle et heure de cotation."""
+    _ensure_yahoo_available("history_1mo", ticker)
     started = time.perf_counter()
     try:
-        data = yf.download(
-            tickers=list(tickers), period="1mo", interval="1d", group_by="ticker",
-            auto_adjust=False, threads=False, progress=False,
-        )
-    except Exception as error:
-        diag_log.log("error", "Yahoo", "download", ",".join(tickers), "batch", time.perf_counter() - started, repr(error), True)
-        _note_yahoo_error(error)
-        return {}
-    # yf.download avale les erreurs par ticker (dont les 429) dans shared._ERRORS.
-    rate_limited = [e for e in getattr(yf.shared, "_ERRORS", {}).values() if market_store.is_rate_limit_error(e)]
-    if rate_limited:
-        _note_yahoo_error(RuntimeError(rate_limited[0]))
-    if data is None or data.empty:
-        diag_log.log("empty", "Yahoo", "download", ",".join(tickers), "batch", time.perf_counter() - started, real_request=True)
-        return {}
-
-    result = {}
-    for ticker in tickers:
-        try:
-            closes = data[ticker]["Close"] if isinstance(data.columns, pd.MultiIndex) else data["Close"]
-            closes = closes.dropna()
-            if closes.empty:
-                continue
-            price = float(closes.iloc[-1])
-            previous_close = float(closes.iloc[-2]) if len(closes) >= 2 else None
-        except (KeyError, TypeError, ValueError):
-            continue
-        currency = "pts" if ticker.startswith("^") else {
-            "USDJPY=X": "JPY", "USDCHF=X": "CHF",
-        }.get(ticker, "USD")
-        change_30d_pct = (
-            (price - float(closes.iloc[0])) / float(closes.iloc[0]) * 100
-            if len(closes) >= 2 and closes.iloc[0]
-            else None
-        )
-        result[ticker] = {
-            "price": price, "currency": currency,
-            "previous_close": previous_close, "change_pct": (
-                (price - previous_close) / previous_close * 100
-                if previous_close else None
-            ),
-            "change_30d_pct": change_30d_pct,
-        }
-    diag_log.log("success", "Yahoo", "download", ",".join(tickers), "batch", time.perf_counter() - started, real_request=True)
-    return result
+        tkr = yf.Ticker(ticker)
+        hist = tkr.history(period="1mo", interval="1d")
+    except Exception as e:
+        diag_log.log("error", "Yahoo", "history_1mo", ticker, "batch", time.perf_counter() - started, repr(e), True)
+        _note_yahoo_error(e)
+        raise MarketDataError(f"Historique indisponible pour '{ticker}' ({e}).") from e
+    closes = hist["Close"].dropna() if hist is not None and "Close" in hist else None
+    if closes is None or closes.empty:
+        diag_log.log("empty", "Yahoo", "history_1mo", ticker, "batch", time.perf_counter() - started, real_request=True)
+        raise MarketDataError(f"Aucun historique disponible pour '{ticker}'.")
+    meta = getattr(getattr(tkr, "_price_history", None), "_history_metadata", None) or {}
+    currency = meta.get("currency")
+    if not currency:
+        diag_log.log("empty", "Yahoo", "history_1mo", ticker, "batch", time.perf_counter() - started,
+                     "missing_currency", True)
+        raise MarketDataError(f"Devise inconnue pour '{ticker}'.")
+    market_store.record_success(YAHOO)
+    diag_log.log("success", "Yahoo", "history_1mo", ticker, "batch", time.perf_counter() - started, real_request=True)
+    now = time.time()
+    price = float(closes.iloc[-1])
+    first = float(closes.iloc[0])
+    market_time, market_open = _market_timing(tkr)
+    return {
+        "ticker": ticker, "price": price, "currency": currency,
+        "previous_close": float(closes.iloc[-2]) if len(closes) >= 2 else None,
+        "quote_type": meta.get("instrumentType") or "", "market_time": market_time,
+        "market_open": market_open, "fetched_at": now,
+        "change_30d_pct": (price - first) / first * 100 if len(closes) >= 2 and first else None,
+        "change_30d_at": now,
+    }
 
 
 def get_quote(ticker: str, allow_stale: bool = False) -> dict:

@@ -151,7 +151,9 @@ ACTION_BY_ORDER_TYPE = {
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _fetch_quotes(tickers: tuple[str, ...]) -> dict[str, dict]:
-    """Prix et variations de l'accueil récupérés par batch Yahoo, puis cachés."""
+    """Prix et variations de l'accueil : derniers prix connus en base,
+    complétés par Yahoo pour les seuls actifs périmés (voir
+    md.get_quotes_batch), puis mis en cache 60 s par processus."""
     return md.get_quotes_batch(tickers)
 
 
@@ -226,6 +228,12 @@ def _render_home_boxes() -> None:
     universe = INDICES + TOP_CAP + CRYPTO + FOREX + COMMODITIES + BONDS
     tickers = tuple(t for t, _ in universe)
     quotes = _fetch_quotes(tickers)
+    stale_times = [q["fetched_at"] for q in quotes.values() if q.get("stale") and q.get("fetched_at")]
+    if stale_times:
+        oldest_min = max(0, (time.time() - min(stale_times)) / 60)
+        theme.render_stale_banner(
+            f"Certains prix ci-dessous sont datés (jusqu'à {oldest_min:.0f} min) : source de cotation en pause."
+        )
 
     # Conteneur dédié : sert d'ancrage CSS pour forcer le passage à 1 colonne
     # sur mobile (voir le media query dans theme.py), sans dépendre du seul
