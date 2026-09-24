@@ -21,7 +21,7 @@ l'ancien stockage JSON et celui-ci, la logique métier qui les manipule
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 
@@ -173,6 +173,38 @@ class PortfolioValueSnapshotRow(Base):
     user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False, index=True)
     recorded_at = Column(String, nullable=False, index=True)
     value_eur = Column(Float, nullable=False)
+
+
+class ApiCircuitStateRow(Base):
+    """Coupe-circuit par source de marché (yahoo, kraken), partagé entre
+    processus — voir market_store.py. Même définition que le
+    CREATE TABLE IF NOT EXISTS de market_store._CREATE_TABLES_SQL (qui crée la
+    table même si l'app n'a pas encore redémarré depuis son ajout)."""
+    __tablename__ = "api_circuit_state"
+
+    source = Column(String, primary_key=True)
+    blocked_until = Column(String, nullable=True)  # ISO 8601 UTC, NULL = pas de pause
+    consecutive_failures = Column(Integer, nullable=False, default=0)
+    last_error = Column(String, nullable=True)
+    updated_at = Column(String, nullable=False, default=_now_iso)
+
+
+class LastKnownPriceRow(Base):
+    """Dernier prix obtenu d'une source live, une ligne par ticker (ou
+    "FX:USD" pour un taux de change -> EUR) — alimenté par l'app et les
+    scripts à chaque prix frais, sans aucune requête dédiée. Sert de prix
+    daté quand la source est en pause (voir market_store.py)."""
+    __tablename__ = "last_known_prices"
+
+    ticker = Column(String, primary_key=True)
+    price = Column(Float, nullable=False)  # devise native (pas en euros)
+    currency = Column(String, nullable=False)  # devise réelle de l'actif
+    previous_close = Column(Float, nullable=True)
+    quote_type = Column(String, nullable=True)
+    market_time = Column(String, nullable=True)  # heure de cotation réelle (ISO), si connue
+    fetched_at = Column(String, nullable=False)  # heure d'obtention auprès de la source (ISO)
+    change_30d_pct = Column(Float, nullable=True)
+    change_30d_at = Column(String, nullable=True)
 
 
 class TpSlOrderRow(Base):

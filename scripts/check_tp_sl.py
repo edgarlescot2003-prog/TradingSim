@@ -45,7 +45,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src import db_core, diag_log, market_data as md, portfolio_repo, tp_sl
+from src import db_core, diag_log, market_data as md, market_store, portfolio_repo, tp_sl
 from src.db_models import TpSlOrderRow
 
 
@@ -166,6 +166,7 @@ def run() -> None:
     now_iso = datetime.now(timezone.utc).isoformat()
     engine = db_core.create_engine_from_env()
     db_core.ensure_schema(engine)  # au cas où l'app n'a pas encore redémarré depuis l'ajout de ce schéma
+    market_store.configure(lambda: engine)  # coupe-circuit partagé avec l'app
 
     with Session(engine) as session:
         active_orders = session.execute(

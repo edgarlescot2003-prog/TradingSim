@@ -20,7 +20,12 @@ import pandas as pd
 import requests
 
 from .market_data import MarketDataError
-from . import diag_log
+from . import diag_log, market_store
+
+# Même coupe-circuit que Yahoo (voir market_store.py) : le chargement d'un
+# graphique crypto peut enchaîner jusqu'à 20 pages par intervalle et
+# plusieurs intervalles en cas d'échec — risque de rafale comparable.
+KRAKEN = "kraken"
 
 OHLC_URL = "https://api.kraken.com/0/public/OHLC"
 
@@ -45,6 +50,13 @@ def _to_kraken_pair(yf_ticker: str) -> str:
 
 
 def _fetch_page(pair: str, minutes: int, since: int) -> tuple[list, int | None]:
+    remaining = market_store.blocked_remaining(KRAKEN)
+    if remaining > 0:
+        diag_log.log("circuit_open", "Kraken", "OHLC", pair, "individual", 0.0)
+        raise MarketDataError(
+            f"API Kraken en pause (limite de requêtes atteinte) : reprise dans {max(1, round(remaining / 60))} min."
+        )
+
     error_key = (pair, minutes)
     error_cached = _ERROR_CACHE.get(error_key)
     if error_cached and (time.time() - error_cached[1]) < _ERROR_COOLDOWN_SECONDS:
@@ -58,12 +70,16 @@ def _fetch_page(pair: str, minutes: int, since: int) -> tuple[list, int | None]:
         payload = resp.json()
     except Exception as e:
         diag_log.log("error", "Kraken", "OHLC", pair, "individual", time.perf_counter() - started, repr(e), True)
+        if market_store.is_rate_limit_error(e):
+            market_store.record_rate_limit(KRAKEN, e)
         message = f"API Kraken indisponible pour '{pair}' : {e}"
         _ERROR_CACHE[error_key] = (message, time.time())
         raise MarketDataError(message) from e
 
     if payload.get("error"):
         diag_log.log("error", "Kraken", "OHLC", pair, "individual", time.perf_counter() - started, repr(payload["error"]), True)
+        if market_store.is_rate_limit_error(payload["error"]):
+            market_store.record_rate_limit(KRAKEN, payload["error"])
         message = f"Kraken a refusé la requête pour '{pair}' : {payload['error']}"
         _ERROR_CACHE[error_key] = (message, time.time())
         raise MarketDataError(message)
@@ -71,6 +87,7 @@ def _fetch_page(pair: str, minutes: int, since: int) -> tuple[list, int | None]:
     result = payload.get("result", {})
     candles = next((v for k, v in result.items() if k != "last"), None)
     _ERROR_CACHE.pop(error_key, None)
+    market_store.record_success(KRAKEN)
     diag_log.log("success", "Kraken", "OHLC", pair, "individual", time.perf_counter() - started, real_request=True)
     return candles or [], result.get("last")
 
@@ -128,6 +145,8 @@ def get_history_with_fallback(yf_ticker: str, interval: str, start) -> tuple:
             df = _fetch_interval(pair, minutes, since_ts)
         except MarketDataError as e:
             last_error = e
+            if market_store.blocked_remaining(KRAKEN) > 0:
+                break  # source en pause : inutile d'essayer les intervalles suivants
             continue
 
         start_dt = start if isinstance(start, datetime) else datetime.fromtimestamp(since_ts, tz=timezone.utc)

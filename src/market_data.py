@@ -11,11 +11,35 @@ import time
 import pandas as pd
 import yfinance as yf
 
-from . import diag_log
+from . import diag_log, market_store
 
 
 class MarketDataError(Exception):
     """Erreur métier lisible, à afficher telle quelle à l'utilisateur."""
+
+
+# Coupe-circuit (voir market_store.py) : après un vrai 429 de Yahoo, plus
+# aucun appel Yahoo pendant la pause, quel que soit le processus. Le cooldown
+# de 30 s PAR TICKER plus bas reste en complément : il couvre les erreurs
+# qui ne sont PAS des rate limits (ticker introuvable, erreur ponctuelle),
+# qui ne doivent pas bloquer toute la source mais ne doivent pas non plus
+# être retentées à chaque rerun.
+YAHOO = "yahoo"
+
+
+def _ensure_yahoo_available(operation: str, ticker: str) -> None:
+    remaining = market_store.blocked_remaining(YAHOO)
+    if remaining > 0:
+        diag_log.log("circuit_open", "Yahoo", operation, ticker, "individual", 0.0)
+        raise MarketDataError(
+            f"Cotations Yahoo en pause (limite de requêtes atteinte) : reprise dans "
+            f"{max(1, round(remaining / 60))} min."
+        )
+
+
+def _note_yahoo_error(error: Exception) -> None:
+    if market_store.is_rate_limit_error(error):
+        market_store.record_rate_limit(YAHOO, error)
 
 
 MAX_EXECUTION_PRICE_AGE_SECONDS = 5 * 60
@@ -59,15 +83,18 @@ def search_assets(query: str, max_results: int = 8) -> list[dict]:
     query = (query or "").strip()
     if not query:
         return []
+    _ensure_yahoo_available("Search", query)
     started = time.perf_counter()
     try:
         results = yf.Search(query, max_results=max_results)
     except Exception as e:
+        _note_yahoo_error(e)
         diag_log.log("error", "Yahoo", "Search", query, "individual", time.perf_counter() - started, repr(e), True)
         raise MarketDataError(
             f"Recherche impossible pour '{query}' (API indisponible : {e})."
         ) from e
     diag_log.log("success", "Yahoo", "Search", query, "individual", time.perf_counter() - started, real_request=True)
+    market_store.record_success(YAHOO)
 
     assets = []
     for quote in results.quotes:
@@ -85,7 +112,7 @@ def search_assets(query: str, max_results: int = 8) -> list[dict]:
 
 def get_quotes_batch(tickers: tuple[str, ...]) -> dict[str, dict]:
     """Récupère les prix et variations en un seul téléchargement Yahoo."""
-    if not tickers:
+    if not tickers or market_store.blocked_remaining(YAHOO) > 0:
         return {}
     started = time.perf_counter()
     try:
@@ -95,7 +122,12 @@ def get_quotes_batch(tickers: tuple[str, ...]) -> dict[str, dict]:
         )
     except Exception as error:
         diag_log.log("error", "Yahoo", "download", ",".join(tickers), "batch", time.perf_counter() - started, repr(error), True)
+        _note_yahoo_error(error)
         return {}
+    # yf.download avale les erreurs par ticker (dont les 429) dans shared._ERRORS.
+    rate_limited = [e for e in getattr(yf.shared, "_ERRORS", {}).values() if market_store.is_rate_limit_error(e)]
+    if rate_limited:
+        _note_yahoo_error(RuntimeError(rate_limited[0]))
     if data is None or data.empty:
         diag_log.log("empty", "Yahoo", "download", ",".join(tickers), "batch", time.perf_counter() - started, real_request=True)
         return {}
@@ -153,6 +185,7 @@ def get_quote(ticker: str) -> dict:
         diag_log.log("cooldown", "Yahoo", "fast_info", ticker, "individual", 0.0, error_cached[0])
         raise MarketDataError(error_cached[0])
 
+    _ensure_yahoo_available("fast_info", ticker)
     started = time.perf_counter()
     try:
         info = yf.Ticker(ticker).fast_info
@@ -162,6 +195,7 @@ def get_quote(ticker: str) -> dict:
         quote_type = info.get("quote_type") or info.get("quoteType") or ""
     except Exception as e:
         diag_log.log("error", "Yahoo", "fast_info", ticker, "individual", time.perf_counter() - started, repr(e), True)
+        _note_yahoo_error(e)
         message = f"Ticker '{ticker}' introuvable ou API indisponible ({e})."
         _QUOTE_ERROR_CACHE[ticker] = (message, time.time())
         raise MarketDataError(message) from e
@@ -181,6 +215,7 @@ def get_quote(ticker: str) -> dict:
     }
     _QUOTE_CACHE[ticker] = (quote, fetched_at)
     _QUOTE_ERROR_CACHE.pop(ticker, None)
+    market_store.record_success(YAHOO)
     diag_log.log("success", "Yahoo", "fast_info", ticker, "individual", time.perf_counter() - started, real_request=True)
     return quote
 
@@ -208,9 +243,14 @@ def get_company_profile(ticker: str) -> dict:
     if cached and (time.time() - cached[1]) < _PROFILE_CACHE_TTL_SECONDS:
         return cached[0]
 
+    if market_store.blocked_remaining(YAHOO) > 0:
+        return {"sector": None, "country": None}  # pas mis en cache : retenté après la pause
     try:
         info = yf.Ticker(ticker).info or {}
-    except Exception:
+    except Exception as e:
+        if market_store.is_rate_limit_error(e):
+            _note_yahoo_error(e)
+            return {"sector": None, "country": None}  # pas mis en cache 12 h sur un 429
         info = {}
 
     profile = {
@@ -232,6 +272,7 @@ def get_history(ticker: str, period: str = "6mo", interval: str = "1d", start=No
         diag_log.log("cooldown", "Yahoo", "history", ticker, "individual", 0.0, error_cached[0])
         raise MarketDataError(error_cached[0])
 
+    _ensure_yahoo_available("history", ticker)
     started = time.perf_counter()
     try:
         if start is not None:
@@ -240,6 +281,7 @@ def get_history(ticker: str, period: str = "6mo", interval: str = "1d", start=No
             hist = yf.Ticker(ticker).history(period=period, interval=interval)
     except Exception as e:
         diag_log.log("error", "Yahoo", "history", ticker, "individual", time.perf_counter() - started, repr(e), True)
+        _note_yahoo_error(e)
         message = f"Historique indisponible pour '{ticker}' ({e})."
         _HISTORY_ERROR_CACHE[error_key] = (message, time.time())
         raise MarketDataError(message) from e
@@ -250,6 +292,7 @@ def get_history(ticker: str, period: str = "6mo", interval: str = "1d", start=No
         _HISTORY_ERROR_CACHE[error_key] = (message, time.time())
         raise MarketDataError(message)
     _HISTORY_ERROR_CACHE.pop(error_key, None)
+    market_store.record_success(YAHOO)
     diag_log.log("success", "Yahoo", "history", ticker, "individual", time.perf_counter() - started, real_request=True)
     return hist
 
@@ -278,6 +321,8 @@ def get_history_with_fallback(ticker: str, interval: str, start) -> tuple:
             return hist, candidate
         except MarketDataError as e:
             last_error = e
+            if market_store.blocked_remaining(YAHOO) > 0:
+                break  # source en pause : inutile d'essayer les intervalles suivants
     raise last_error or MarketDataError(f"Aucun historique disponible pour '{ticker}'.")
 
 
@@ -297,12 +342,14 @@ def get_fx_rate_info(currency: str) -> tuple[float, float]:
         raise MarketDataError(error_cached[0])
 
     pair = f"{currency}EUR=X"
+    _ensure_yahoo_available("fx", pair)
     started = time.perf_counter()
     try:
         info = yf.Ticker(pair).fast_info
         rate = info.get("last_price") or info.get("lastPrice")
     except Exception as e:
         diag_log.log("error", "Yahoo", "fx", pair, "individual", time.perf_counter() - started, repr(e), True)
+        _note_yahoo_error(e)
         message = f"Taux de change {currency}->EUR indisponible ({e})."
         _FX_ERROR_CACHE[currency] = (message, time.time())
         raise MarketDataError(message) from e
@@ -316,6 +363,7 @@ def get_fx_rate_info(currency: str) -> tuple[float, float]:
     rate = float(rate)
     _FX_CACHE[currency] = (rate, time.time())
     _FX_ERROR_CACHE.pop(currency, None)
+    market_store.record_success(YAHOO)
     diag_log.log("success", "Yahoo", "fx", pair, "individual", time.perf_counter() - started, real_request=True)
     return _FX_CACHE[currency]
 

@@ -90,7 +90,14 @@ def bootstrap() -> None:
     un compte "default" fantôme à chaque redémarrage dès qu'il a été
     renommé, ce qui s'est produit et a laissé un compte orphelin en base.
     """
-    from . import diag_log
+    from . import diag_log, market_store
 
     diag_log.log_process_start()
+    # Moteur résolu ici une fois (et non db.get_engine passé tel quel) : le
+    # coupe-circuit peut être consulté depuis des threads sans contexte
+    # Streamlit (ThreadPoolExecutor du Classement), où st.cache_resource
+    # n'est pas garanti. Branché AVANT init_db : si la base est en panne au
+    # démarrage, le coupe-circuit fonctionne quand même (repli mémoire).
+    engine = get_engine()
+    market_store.configure(lambda: engine)
     init_db()
