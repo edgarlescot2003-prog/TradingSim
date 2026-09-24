@@ -16,11 +16,13 @@ name: Verification TP/SL et liquidation
 # les modifications vont directement dans Supabase.
 
 on:
-  # PAUSE TEMPORAIRE (diagnostic 429 Yahoo/Kraken, 24/09/2026) : déclencheur
-  # planifié désactivé pour ne pas consommer de quota pendant le diagnostic.
-  # Pour réactiver : annuler ce commit (git revert) ou décommenter les 2 lignes.
-  # schedule:
-  #   - cron: "*/15 * * * *"  # toutes les 15 minutes
+  # Toutes les 15 min en théorie ; en pratique GitHub ne le lance que toutes
+  # les 3 à 5 h (bridage des crons planifiés, constaté le 24/09/2026). Réactivé
+  # le 24/09/2026 après durcissement : coupe-circuit propre à l'IP GitHub,
+  # snapshot Admin via le batch (au plus 1/h), jamais de prix daté pour TP/SL
+  # et liquidation.
+  schedule:
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}  # bouton "Run workflow" manuel dans l'onglet Actions
 
 permissions:
