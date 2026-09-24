@@ -16,8 +16,11 @@ name: Verification TP/SL et liquidation
 # les modifications vont directement dans Supabase.
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"  # toutes les 15 minutes
+  # PAUSE TEMPORAIRE (diagnostic 429 Yahoo/Kraken, 24/09/2026) : déclencheur
+  # planifié désactivé pour ne pas consommer de quota pendant le diagnostic.
+  # Pour réactiver : annuler ce commit (git revert) ou décommenter les 2 lignes.
+  # schedule:
+  #   - cron: "*/15 * * * *"  # toutes les 15 minutes
   workflow_dispatch: {}  # bouton "Run workflow" manuel dans l'onglet Actions
 
 permissions:
