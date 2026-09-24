@@ -41,12 +41,28 @@ def _pick_interval(gap: timedelta) -> str:
 def _find_trigger(order, fx_rate: float, now: datetime):
     """Cherche, dans l'historique depuis order.last_checked_at, le premier
     instant où le prix (converti en €) franchit le seuil de l'ordre.
-    Retourne (event_time_naif_local, prix_eur) si trouvé, sinon None.
+    Retourne (déclenchement, point_de_contrôle) : déclenchement =
+    (event_time_naif_local, prix_eur) si trouvé, sinon None ; point de
+    contrôle = début de la dernière bougie reçue (datetime UTC), jusqu'où
+    avancer order.last_checked_at, ou None s'il ne faut pas l'avancer.
     Lève _FetchFailed si l'historique n'a pas pu être récupéré.
+
+    Pas de contrôle de fraîcheur ici : l'ordre s'exécute au prix LIMITE, à
+    l'instant historique du franchissement, pas au prix courant — un seuil
+    d'ancienneté (5 min auparavant) bloquait à tort toutes les places à
+    cotation différée de 10-15 min chez Yahoo (actions européennes, matières
+    premières), et le point de contrôle, jamais avancé, finissait coincé sur
+    des bougies d'1 h puis d'1 jour.
+
+    Point de contrôle = début de la DERNIÈRE bougie reçue (et non "maintenant") :
+    avec une cotation différée, les bougies des 10-15 dernières minutes ne sont
+    pas encore publiées ; avancer jusqu'à "maintenant" les aurait sautées au
+    contrôle suivant. La dernière bougie (peut-être encore en cours) est donc
+    revérifiée la fois d'après, ce qui est sans danger.
     """
     since = datetime.fromisoformat(order.last_checked_at)
     if since >= now:
-        return None
+        return None, None
 
     interval = _pick_interval(now - since)
     try:
@@ -54,14 +70,14 @@ def _find_trigger(order, fx_rate: float, now: datetime):
     except md.MarketDataError as e:
         raise _FetchFailed from e
 
-    if hist.empty:
-        raise _FetchFailed
-    latest_timestamp = hist.index.max()
-    if getattr(latest_timestamp, "tzinfo", None) is None:
-        latest_timestamp = latest_timestamp.replace(tzinfo=timezone.utc)
-    latest_age = now - latest_timestamp.to_pydatetime()
-    if latest_age.total_seconds() > md.MAX_EXECUTION_PRICE_AGE_SECONDS:
-        raise _FetchFailed
+    checkpoint = None
+    if len(hist.index) > 0:
+        latest = hist.index.max().to_pydatetime()
+        if latest.tzinfo is None:
+            latest = latest.replace(tzinfo=timezone.utc)
+        latest = latest.astimezone(timezone.utc)
+        if latest > since:
+            checkpoint = min(latest, now)
 
     is_buy_side = order.action in ("achat", "rachat short")
     for timestamp, row in hist.iterrows():
@@ -71,9 +87,9 @@ def _find_trigger(order, fx_rate: float, now: datetime):
             touched = row["High"] * fx_rate >= order.limit_price_eur
         if touched:
             event_time = timestamp.to_pydatetime().astimezone().replace(tzinfo=None)
-            return event_time, order.limit_price_eur
+            return (event_time, order.limit_price_eur), checkpoint
 
-    return None
+    return None, checkpoint
 
 
 def _execute(portfolio, order, price_eur: float, event_time: datetime) -> None:
@@ -100,7 +116,7 @@ def process_pending_orders(portfolio) -> list[str]:
     for order in portfolio.pending_orders:
         try:
             fx_rate = md.get_fx_rate_to_eur(order.currency)
-            trigger = _find_trigger(order, fx_rate, now)
+            trigger, checkpoint = _find_trigger(order, fx_rate, now)
         except (_FetchFailed, md.MarketDataError):
             # Échec temporaire : on retentera avec la même fenêtre au prochain
             # rafraîchissement plutôt que de risquer de manquer un franchissement.
@@ -108,7 +124,8 @@ def process_pending_orders(portfolio) -> list[str]:
             continue
 
         if trigger is None:
-            order.last_checked_at = now.isoformat()
+            if checkpoint is not None:
+                order.last_checked_at = checkpoint.isoformat()
             still_pending.append(order)
             continue
 
