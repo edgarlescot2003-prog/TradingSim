@@ -13,6 +13,7 @@ page (utile tant que les autres onglets n'ont pas leur propre refonte).
 """
 
 import html as html_lib
+import time
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -310,6 +311,14 @@ def _render_positions_table(snapshots: list[dict]) -> None:
                     f"Prix indisponible pour {s['position'].ticker} ({s['error']}) — "
                     "prix d'achat utilisé à la place pour cette ligne."
                 )
+        stale = [s for s in snapshots if s.get("stale_since")]
+        if stale:
+            oldest_min = max(0, (time.time() - min(s["stale_since"] for s in stale)) / 60)
+            tickers = ", ".join(s["position"].ticker for s in stale)
+            theme.render_stale_banner(
+                f"Prix daté de {oldest_min:.0f} min pour {tickers} : source de cotation en pause, "
+                "dernier prix connu affiché."
+            )
 
         if not snapshots:
             st.info("Aucune position pour l'instant. Rends-toi dans l'onglet Trading pour passer ton premier ordre.")

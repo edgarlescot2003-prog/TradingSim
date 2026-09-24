@@ -241,3 +241,137 @@ def record_success(source: str) -> None:
         state.update(_empty_state())
         _save_state(source, dict(state))
     log_event("circuit_closed", source=source)
+
+
+# -- Dernier prix connu ---------------------------------------------------------
+#
+# Alimenté UNIQUEMENT à partir de prix déjà obtenus d'une source live (jamais
+# de requête dédiée), par l'app comme par les scripts du cron : c'est ce qui
+# rompt la dépendance circulaire de l'ancien repli (market_price_snapshots,
+# rempli seulement par le cron, lui-même bloqué quand Yahoo l'est). Une ligne
+# par ticker (upsert), plutôt que market_price_snapshots : celle-ci est un
+# historique (une ligne par passage du cron) servant aux variations sur 8
+# jours de la page Admin News, et ne garde ni la devise réelle ni le prix
+# natif — deux informations indispensables pour convertir correctement un
+# prix daté en euros.
+#
+# Entrée : {"ticker", "price", "currency", "previous_close", "quote_type",
+#           "market_time" (float|None), "fetched_at" (float),
+#           "change_30d_pct", "change_30d_at" (float|None)}.
+
+LAST_KNOWN_WRITE_INTERVAL_SECONDS = 5 * 60
+_LAST_KNOWN_READ_TTL_SECONDS = 30
+
+_known_lock = threading.Lock()
+_known_memory: dict[str, dict] = {}
+_known_written_at: dict[str, float] = {}
+_known_db_read: dict[str, tuple[dict | None, float]] = {}
+
+
+def remember_prices(entries: list[dict]) -> None:
+    """Mémorise des prix frais. En base : au plus une écriture par ticker
+    toutes les LAST_KNOWN_WRITE_INTERVAL_SECONDS (sauf nouvelle variation
+    30 j), et tout un lot dans une seule transaction."""
+    now = time.time()
+    to_write = []
+    with _known_lock:
+        for entry in entries:
+            if not entry or entry.get("price") is None or not entry.get("currency"):
+                continue  # jamais de ligne vide : un échec ne remplace pas un bon prix
+            ticker = entry["ticker"]
+            _known_memory[ticker] = dict(entry)
+            has_new_change = entry.get("change_30d_pct") is not None
+            if has_new_change or now - _known_written_at.get(ticker, 0.0) >= LAST_KNOWN_WRITE_INTERVAL_SECONDS:
+                _known_written_at[ticker] = now
+                to_write.append(entry)
+    if not to_write:
+        return
+    engine = _engine()
+    if engine is None:
+        return
+    params = [{
+        "ticker": e["ticker"], "price": float(e["price"]), "currency": e["currency"],
+        "previous_close": e.get("previous_close"), "quote_type": e.get("quote_type") or None,
+        "market_time": _to_iso(e.get("market_time")), "fetched_at": _to_iso(e["fetched_at"]),
+        "change_30d_pct": e.get("change_30d_pct"), "change_30d_at": _to_iso(e.get("change_30d_at")),
+    } for e in to_write]
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO last_known_prices (ticker, price, currency, previous_close, quote_type, "
+                    "market_time, fetched_at, change_30d_pct, change_30d_at) VALUES (:ticker, :price, "
+                    ":currency, :previous_close, :quote_type, :market_time, :fetched_at, :change_30d_pct, "
+                    ":change_30d_at) ON CONFLICT (ticker) DO UPDATE SET "
+                    "price = excluded.price, currency = excluded.currency, "
+                    "previous_close = COALESCE(excluded.previous_close, last_known_prices.previous_close), "
+                    "quote_type = COALESCE(excluded.quote_type, last_known_prices.quote_type), "
+                    "market_time = COALESCE(excluded.market_time, last_known_prices.market_time), "
+                    "fetched_at = excluded.fetched_at, "
+                    "change_30d_pct = COALESCE(excluded.change_30d_pct, last_known_prices.change_30d_pct), "
+                    "change_30d_at = COALESCE(excluded.change_30d_at, last_known_prices.change_30d_at) "
+                    "WHERE excluded.fetched_at >= last_known_prices.fetched_at"
+                ),
+                params,
+            )
+    except Exception as error:
+        _db_failed(error)
+
+
+def _row_to_entry(row) -> dict:
+    return {
+        "ticker": row[0], "price": row[1], "currency": row[2], "previous_close": row[3],
+        "quote_type": row[4] or "", "market_time": _from_iso(row[5]), "fetched_at": _from_iso(row[6]),
+        "change_30d_pct": row[7], "change_30d_at": _from_iso(row[8]),
+    }
+
+
+def get_last_known(tickers) -> dict[str, dict]:
+    """Derniers prix connus (mémoire du processus, complétée par la base,
+    relue au plus toutes les 30 s par ticker). Ne fait JAMAIS d'appel à une
+    API de marché. Tickers inconnus absents du résultat."""
+    tickers = list(dict.fromkeys(tickers))
+    now = time.time()
+    result: dict[str, dict] = {}
+    to_read = []
+    with _known_lock:
+        for ticker in tickers:
+            memory = _known_memory.get(ticker)
+            cached = _known_db_read.get(ticker)
+            if cached and now - cached[1] < _LAST_KNOWN_READ_TTL_SECONDS:
+                candidates = [e for e in (memory, cached[0]) if e]
+                if candidates:
+                    result[ticker] = max(candidates, key=lambda e: e["fetched_at"] or 0)
+            else:
+                to_read.append(ticker)
+                if memory:
+                    result[ticker] = memory
+    if not to_read:
+        return result
+    engine = _engine()
+    if engine is None:
+        return result
+    try:
+        with engine.connect() as conn:
+            rows = []
+            for chunk_start in range(0, len(to_read), 100):
+                chunk = to_read[chunk_start:chunk_start + 100]
+                placeholders = ", ".join(f":t{i}" for i in range(len(chunk)))
+                rows += conn.execute(
+                    text("SELECT ticker, price, currency, previous_close, quote_type, market_time, "
+                         f"fetched_at, change_30d_pct, change_30d_at FROM last_known_prices "
+                         f"WHERE ticker IN ({placeholders})"),
+                    {f"t{i}": t for i, t in enumerate(chunk)},
+                ).fetchall()
+    except Exception as error:
+        _db_failed(error)
+        return result
+    from_db = {row[0]: _row_to_entry(row) for row in rows}
+    with _known_lock:
+        for ticker in to_read:
+            entry = from_db.get(ticker)
+            _known_db_read[ticker] = (entry, now)
+            current = result.get(ticker)
+            if entry and (current is None or (entry["fetched_at"] or 0) > (current["fetched_at"] or 0)):
+                result[ticker] = entry
+    return result

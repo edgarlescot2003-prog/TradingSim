@@ -45,8 +45,9 @@ def _load_portfolio(session, prow: PortfolioRow) -> Portfolio:
 
 def _fetch_price_eur(ticker: str) -> tuple[str, float | None]:
     try:
-        quote = md.get_quote(ticker)
-        return ticker, md.convert_to_eur(quote["price"], quote["currency"])
+        # Affichage uniquement : dernier prix connu si la source est en pause.
+        quote = md.get_quote(ticker, allow_stale=True)
+        return ticker, md.convert_to_eur(quote["price"], quote["currency"], allow_stale=True)
     except md.MarketDataError:
         return ticker, None
 

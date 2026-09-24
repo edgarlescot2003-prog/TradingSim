@@ -215,16 +215,23 @@ def position_snapshot(position, price_cache: dict[str, float] | None = None) -> 
 
     previous_close_eur = None
     quote_type = ""
+    stale_since = None
     if price_cache is not None and position.ticker in price_cache:
         current_price_eur = price_cache[position.ticker]
         error = None
     else:
         try:
-            quote = md.get_quote(position.ticker)
-            current_price_eur = md.convert_to_eur(quote["price"], quote["currency"])
+            # allow_stale : affichage uniquement (valeur, P&L, topbar) — si la
+            # source est en pause, dernier prix connu plutôt que prix d'achat.
+            # Jamais utilisé pour une liquidation (voir scripts/check_liquidation.py,
+            # qui appelle get_quote sans allow_stale).
+            quote = md.get_quote(position.ticker, allow_stale=True)
+            current_price_eur = md.convert_to_eur(quote["price"], quote["currency"], allow_stale=True)
             if quote.get("previous_close") is not None:
-                previous_close_eur = md.convert_to_eur(quote["previous_close"], quote["currency"])
+                previous_close_eur = md.convert_to_eur(quote["previous_close"], quote["currency"], allow_stale=True)
             quote_type = quote.get("quote_type") or ""
+            if quote.get("stale"):
+                stale_since = quote["fetched_at"]
             error = None
         except md.MarketDataError as e:
             current_price_eur = position.avg_price_eur
@@ -277,6 +284,7 @@ def position_snapshot(position, price_cache: dict[str, float] | None = None) -> 
         "day_pnl_pct": day_pnl_pct,
         "category": category_for(quote_type, position.ticker),
         "error": error,
+        "stale_since": stale_since,  # epoch du dernier prix connu si prix daté, sinon None
     }
 
 

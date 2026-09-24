@@ -163,7 +163,67 @@ def get_quotes_batch(tickers: tuple[str, ...]) -> dict[str, dict]:
     return result
 
 
-def get_quote(ticker: str) -> dict:
+def get_quote(ticker: str, allow_stale: bool = False) -> dict:
+    """Retourne {price, currency, previous_close, quote_type, fetched_at,
+    market_time, market_open, stale, source} pour le ticker donné, ou lève
+    MarketDataError.
+
+    - `price`/`currency` : prix dans la devise RÉELLE de l'actif.
+    - `fetched_at` : heure (epoch) d'obtention du prix auprès de la source
+      live — pour un prix daté, celle de son obtention d'origine.
+    - `market_time` : heure de cotation réelle annoncée par Yahoo (peut
+      précéder fetched_at de 10-15 min pour les places à cotation différée),
+      None si inconnue. `market_open` : séance régulière en cours (None si
+      inconnu).
+    - `stale` : True si le prix vient du dernier prix connu
+      (market_store.get_last_known) faute de source disponible ; ne se
+      produit QUE si l'appelant passe `allow_stale=True` (affichage, ordres
+      manuels sous conditions). Par défaut, un échec lève MarketDataError :
+      TP/SL, liquidation et snapshots n'utilisent jamais de prix daté.
+    """
+    try:
+        return _get_live_quote(ticker)
+    except MarketDataError:
+        if allow_stale:
+            stale = _stale_quote(ticker)
+            if stale is not None:
+                return stale
+        raise
+
+
+def _stale_quote(ticker: str) -> dict | None:
+    entry = market_store.get_last_known([ticker]).get(ticker)
+    if entry is None or entry.get("fetched_at") is None:
+        return None
+    return {
+        "price": float(entry["price"]), "currency": entry["currency"],
+        "previous_close": entry.get("previous_close"), "quote_type": entry.get("quote_type") or "",
+        "fetched_at": entry["fetched_at"], "market_time": entry.get("market_time"),
+        "market_open": None, "stale": True, "source": "last_known",
+    }
+
+
+def _market_timing(tkr) -> tuple[float | None, bool | None]:
+    """(heure de cotation réelle, séance en cours ?) lues dans les
+    métadonnées DÉJÀ reçues avec fast_info — jamais via
+    Ticker.get_history_metadata(), qui peut relancer une requête (période
+    5 j/1 h) pour obtenir les horaires de séance. Attribut privé de
+    yfinance, d'où la lecture entièrement défensive : (None, None) si absent."""
+    try:
+        meta = getattr(getattr(tkr, "_price_history", None), "_history_metadata", None) or {}
+        market_time = meta.get("regularMarketTime")
+        market_time = float(market_time) if isinstance(market_time, (int, float)) else None
+        regular = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
+        start, end = regular.get("start"), regular.get("end")
+        market_open = None
+        if isinstance(start, (int, float)) and isinstance(end, (int, float)):
+            market_open = start <= time.time() <= end
+        return market_time, market_open
+    except Exception:
+        return None, None
+
+
+def _get_live_quote(ticker: str) -> dict:
     """Retourne {price, currency, previous_close, quote_type} pour le ticker
     donné, ou lève MarketDataError. `previous_close` (peut être None si
     indisponible) sert au calcul du gain du jour ; `quote_type` (EQUITY/ETF/
@@ -188,7 +248,8 @@ def get_quote(ticker: str) -> dict:
     _ensure_yahoo_available("fast_info", ticker)
     started = time.perf_counter()
     try:
-        info = yf.Ticker(ticker).fast_info
+        tkr = yf.Ticker(ticker)
+        info = tkr.fast_info
         price = info.get("last_price") or info.get("lastPrice")
         currency = info.get("currency")
         previous_close = info.get("previous_close") or info.get("previousClose")
@@ -206,13 +267,19 @@ def get_quote(ticker: str) -> dict:
         _QUOTE_ERROR_CACHE[ticker] = (message, time.time())
         raise MarketDataError(message)
     fetched_at = time.time()
+    market_time, market_open = _market_timing(tkr)
     quote = {
         "price": float(price),
         "currency": currency,
         "previous_close": float(previous_close) if previous_close is not None else None,
         "quote_type": quote_type,
         "fetched_at": fetched_at,
+        "market_time": market_time,
+        "market_open": market_open,
+        "stale": False,
+        "source": "yahoo",
     }
+    market_store.remember_prices([{"ticker": ticker, **quote}])
     _QUOTE_CACHE[ticker] = (quote, fetched_at)
     _QUOTE_ERROR_CACHE.pop(ticker, None)
     market_store.record_success(YAHOO)
@@ -326,8 +393,26 @@ def get_history_with_fallback(ticker: str, interval: str, start) -> tuple:
     raise last_error or MarketDataError(f"Aucun historique disponible pour '{ticker}'.")
 
 
-def get_fx_rate_info(currency: str) -> tuple[float, float]:
-    """Retourne (taux, heure de récupération) pour `currency` -> EUR."""
+def get_fx_rate_info(currency: str, allow_stale: bool = False) -> tuple[float, float]:
+    """Retourne (taux, heure de récupération) pour `currency` -> EUR.
+    `allow_stale` : même principe que get_quote (dernier taux connu si la
+    source est indisponible, uniquement si l'appelant l'accepte)."""
+    try:
+        return _get_live_fx_rate(currency)
+    except MarketDataError:
+        if allow_stale:
+            key = _fx_key(currency)
+            entry = market_store.get_last_known([key]).get(key)
+            if entry is not None and entry.get("fetched_at") is not None:
+                return float(entry["price"]), entry["fetched_at"]
+        raise
+
+
+def _fx_key(currency: str) -> str:
+    return f"FX:{currency.upper()}"
+
+
+def _get_live_fx_rate(currency: str) -> tuple[float, float]:
     currency = currency.upper()
     if currency == "EUR":
         return 1.0, time.time()
@@ -362,16 +447,19 @@ def get_fx_rate_info(currency: str) -> tuple[float, float]:
 
     rate = float(rate)
     _FX_CACHE[currency] = (rate, time.time())
+    market_store.remember_prices([{
+        "ticker": _fx_key(currency), "price": rate, "currency": "EUR", "fetched_at": _FX_CACHE[currency][1],
+    }])
     _FX_ERROR_CACHE.pop(currency, None)
     market_store.record_success(YAHOO)
     diag_log.log("success", "Yahoo", "fx", pair, "individual", time.perf_counter() - started, real_request=True)
     return _FX_CACHE[currency]
 
 
-def get_fx_rate_to_eur(currency: str) -> float:
+def get_fx_rate_to_eur(currency: str, allow_stale: bool = False) -> float:
     """Taux de conversion 1 unité de `currency` -> EUR, avec cache 5 minutes."""
-    return get_fx_rate_info(currency)[0]
+    return get_fx_rate_info(currency, allow_stale=allow_stale)[0]
 
 
-def convert_to_eur(amount: float, currency: str) -> float:
-    return amount * get_fx_rate_to_eur(currency)
+def convert_to_eur(amount: float, currency: str, allow_stale: bool = False) -> float:
+    return amount * get_fx_rate_to_eur(currency, allow_stale=allow_stale)

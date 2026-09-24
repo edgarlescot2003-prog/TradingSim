@@ -1681,6 +1681,23 @@ def render_order_confirmation_popup(message: str, seconds: int = 5) -> None:
     )
 
 
+def render_stale_banner(message: str) -> None:
+    """Bandeau d'information "prix daté" (source de cotation en pause, voir
+    market_store.py) : simple information, aucune action demandée. Même
+    gabarit que render_movers_alert ci-dessous, avec une bordure gauche
+    orange (ACCENT) pour se distinguer sans alarmer (pas de rouge)."""
+    st.markdown(
+        f"""
+        <div style="padding:0.45rem 1rem;border:1px solid var(--ts-border);border-left:3px solid {ACCENT};
+                     border-radius:4px;background:var(--ts-panel);margin:0.2rem 0 0.6rem 0;
+                     font-family:{FONT_SANS};font-size:0.85rem;color:var(--ts-text);">
+            ⏱ {html_lib.escape(message)}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_movers_alert(movers: list[dict]) -> None:
     """Bannière en session (pas de push/email) signalant qu'une position
     détenue du portefeuille actif a bougé de plus du seuil configuré
