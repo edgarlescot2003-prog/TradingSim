@@ -11,6 +11,8 @@ import time
 import pandas as pd
 import yfinance as yf
 
+from . import diag_log
+
 
 class MarketDataError(Exception):
     """Erreur métier lisible, à afficher telle quelle à l'utilisateur."""
@@ -57,12 +59,15 @@ def search_assets(query: str, max_results: int = 8) -> list[dict]:
     query = (query or "").strip()
     if not query:
         return []
+    started = time.perf_counter()
     try:
         results = yf.Search(query, max_results=max_results)
     except Exception as e:
+        diag_log.log("error", "Yahoo", "Search", query, "individual", time.perf_counter() - started, repr(e), True)
         raise MarketDataError(
             f"Recherche impossible pour '{query}' (API indisponible : {e})."
         ) from e
+    diag_log.log("success", "Yahoo", "Search", query, "individual", time.perf_counter() - started, real_request=True)
 
     assets = []
     for quote in results.quotes:
@@ -82,14 +87,17 @@ def get_quotes_batch(tickers: tuple[str, ...]) -> dict[str, dict]:
     """Récupère les prix et variations en un seul téléchargement Yahoo."""
     if not tickers:
         return {}
+    started = time.perf_counter()
     try:
         data = yf.download(
             tickers=list(tickers), period="1mo", interval="1d", group_by="ticker",
             auto_adjust=False, threads=False, progress=False,
         )
-    except Exception:
+    except Exception as error:
+        diag_log.log("error", "Yahoo", "download", ",".join(tickers), "batch", time.perf_counter() - started, repr(error), True)
         return {}
     if data is None or data.empty:
+        diag_log.log("empty", "Yahoo", "download", ",".join(tickers), "batch", time.perf_counter() - started, real_request=True)
         return {}
 
     result = {}
@@ -119,6 +127,7 @@ def get_quotes_batch(tickers: tuple[str, ...]) -> dict[str, dict]:
             ),
             "change_30d_pct": change_30d_pct,
         }
+    diag_log.log("success", "Yahoo", "download", ",".join(tickers), "batch", time.perf_counter() - started, real_request=True)
     return result
 
 
@@ -136,12 +145,15 @@ def get_quote(ticker: str) -> dict:
     """
     cached = _QUOTE_CACHE.get(ticker)
     if cached and (time.time() - cached[1]) < _QUOTE_CACHE_TTL_SECONDS:
+        diag_log.log("cache_hit", "Yahoo", "fast_info", ticker, "individual", 0.0)
         return cached[0]
 
     error_cached = _QUOTE_ERROR_CACHE.get(ticker)
     if error_cached and (time.time() - error_cached[1]) < _QUOTE_ERROR_COOLDOWN_SECONDS:
+        diag_log.log("cooldown", "Yahoo", "fast_info", ticker, "individual", 0.0, error_cached[0])
         raise MarketDataError(error_cached[0])
 
+    started = time.perf_counter()
     try:
         info = yf.Ticker(ticker).fast_info
         price = info.get("last_price") or info.get("lastPrice")
@@ -149,11 +161,13 @@ def get_quote(ticker: str) -> dict:
         previous_close = info.get("previous_close") or info.get("previousClose")
         quote_type = info.get("quote_type") or info.get("quoteType") or ""
     except Exception as e:
+        diag_log.log("error", "Yahoo", "fast_info", ticker, "individual", time.perf_counter() - started, repr(e), True)
         message = f"Ticker '{ticker}' introuvable ou API indisponible ({e})."
         _QUOTE_ERROR_CACHE[ticker] = (message, time.time())
         raise MarketDataError(message) from e
 
     if price is None or currency is None:
+        diag_log.log("error", "Yahoo", "fast_info", ticker, "individual", time.perf_counter() - started, "missing_price_or_currency", True)
         message = f"Aucune donnée de prix disponible pour '{ticker}'."
         _QUOTE_ERROR_CACHE[ticker] = (message, time.time())
         raise MarketDataError(message)
@@ -167,6 +181,7 @@ def get_quote(ticker: str) -> dict:
     }
     _QUOTE_CACHE[ticker] = (quote, fetched_at)
     _QUOTE_ERROR_CACHE.pop(ticker, None)
+    diag_log.log("success", "Yahoo", "fast_info", ticker, "individual", time.perf_counter() - started, real_request=True)
     return quote
 
 
@@ -214,23 +229,28 @@ def get_history(ticker: str, period: str = "6mo", interval: str = "1d", start=No
     error_key = (ticker, interval)
     error_cached = _HISTORY_ERROR_CACHE.get(error_key)
     if error_cached and (time.time() - error_cached[1]) < _HISTORY_ERROR_COOLDOWN_SECONDS:
+        diag_log.log("cooldown", "Yahoo", "history", ticker, "individual", 0.0, error_cached[0])
         raise MarketDataError(error_cached[0])
 
+    started = time.perf_counter()
     try:
         if start is not None:
             hist = yf.Ticker(ticker).history(start=start, interval=interval)
         else:
             hist = yf.Ticker(ticker).history(period=period, interval=interval)
     except Exception as e:
+        diag_log.log("error", "Yahoo", "history", ticker, "individual", time.perf_counter() - started, repr(e), True)
         message = f"Historique indisponible pour '{ticker}' ({e})."
         _HISTORY_ERROR_CACHE[error_key] = (message, time.time())
         raise MarketDataError(message) from e
 
     if hist is None or hist.empty:
+        diag_log.log("empty", "Yahoo", "history", ticker, "individual", time.perf_counter() - started, real_request=True)
         message = f"Aucun historique disponible pour '{ticker}'."
         _HISTORY_ERROR_CACHE[error_key] = (message, time.time())
         raise MarketDataError(message)
     _HISTORY_ERROR_CACHE.pop(error_key, None)
+    diag_log.log("success", "Yahoo", "history", ticker, "individual", time.perf_counter() - started, real_request=True)
     return hist
 
 
@@ -273,18 +293,22 @@ def get_fx_rate_info(currency: str) -> tuple[float, float]:
 
     error_cached = _FX_ERROR_CACHE.get(currency)
     if error_cached and (time.time() - error_cached[1]) < _FX_ERROR_COOLDOWN_SECONDS:
+        diag_log.log("cooldown", "Yahoo", "fx", currency, "individual", 0.0, error_cached[0])
         raise MarketDataError(error_cached[0])
 
     pair = f"{currency}EUR=X"
+    started = time.perf_counter()
     try:
         info = yf.Ticker(pair).fast_info
         rate = info.get("last_price") or info.get("lastPrice")
     except Exception as e:
+        diag_log.log("error", "Yahoo", "fx", pair, "individual", time.perf_counter() - started, repr(e), True)
         message = f"Taux de change {currency}->EUR indisponible ({e})."
         _FX_ERROR_CACHE[currency] = (message, time.time())
         raise MarketDataError(message) from e
 
     if rate is None:
+        diag_log.log("error", "Yahoo", "fx", pair, "individual", time.perf_counter() - started, "missing_rate", True)
         message = f"Taux de change {currency}->EUR indisponible."
         _FX_ERROR_CACHE[currency] = (message, time.time())
         raise MarketDataError(message)
@@ -292,6 +316,7 @@ def get_fx_rate_info(currency: str) -> tuple[float, float]:
     rate = float(rate)
     _FX_CACHE[currency] = (rate, time.time())
     _FX_ERROR_CACHE.pop(currency, None)
+    diag_log.log("success", "Yahoo", "fx", pair, "individual", time.perf_counter() - started, real_request=True)
     return _FX_CACHE[currency]
 
 

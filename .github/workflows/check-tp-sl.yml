@@ -26,6 +26,8 @@ permissions:
 jobs:
   check-tp-sl:
     runs-on: ubuntu-latest
+    env:
+      TS_DIAG_LOG: "1"
     steps:
       - name: Checkout du dépôt
         uses: actions/checkout@v4

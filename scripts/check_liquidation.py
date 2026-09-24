@@ -47,7 +47,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src import db_core, market_data as md, portfolio_repo, valuation
+from src import db_core, diag_log, market_data as md, portfolio_repo, valuation
 from src.db_models import PositionRow
 
 
@@ -130,6 +130,7 @@ def _process_portfolio(
 
 
 def run() -> None:
+    diag_log.log_process_start()
     now_iso = datetime.now(timezone.utc).isoformat()
     engine = db_core.create_engine_from_env()
     db_core.ensure_schema(engine)  # au cas où l'app n'a pas encore redémarré depuis l'ajout de ce schéma

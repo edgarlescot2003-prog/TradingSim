@@ -20,6 +20,7 @@ import pandas as pd
 import requests
 
 from .market_data import MarketDataError
+from . import diag_log
 
 OHLC_URL = "https://api.kraken.com/0/public/OHLC"
 
@@ -47,18 +48,22 @@ def _fetch_page(pair: str, minutes: int, since: int) -> tuple[list, int | None]:
     error_key = (pair, minutes)
     error_cached = _ERROR_CACHE.get(error_key)
     if error_cached and (time.time() - error_cached[1]) < _ERROR_COOLDOWN_SECONDS:
+        diag_log.log("cooldown", "Kraken", "OHLC", pair, "individual", 0.0, error_cached[0])
         raise MarketDataError(error_cached[0])
 
+    started = time.perf_counter()
     try:
         resp = requests.get(OHLC_URL, params={"pair": pair, "interval": minutes, "since": since}, timeout=10)
         resp.raise_for_status()
         payload = resp.json()
     except Exception as e:
+        diag_log.log("error", "Kraken", "OHLC", pair, "individual", time.perf_counter() - started, repr(e), True)
         message = f"API Kraken indisponible pour '{pair}' : {e}"
         _ERROR_CACHE[error_key] = (message, time.time())
         raise MarketDataError(message) from e
 
     if payload.get("error"):
+        diag_log.log("error", "Kraken", "OHLC", pair, "individual", time.perf_counter() - started, repr(payload["error"]), True)
         message = f"Kraken a refusé la requête pour '{pair}' : {payload['error']}"
         _ERROR_CACHE[error_key] = (message, time.time())
         raise MarketDataError(message)
@@ -66,6 +71,7 @@ def _fetch_page(pair: str, minutes: int, since: int) -> tuple[list, int | None]:
     result = payload.get("result", {})
     candles = next((v for k, v in result.items() if k != "last"), None)
     _ERROR_CACHE.pop(error_key, None)
+    diag_log.log("success", "Kraken", "OHLC", pair, "individual", time.perf_counter() - started, real_request=True)
     return candles or [], result.get("last")
 
 

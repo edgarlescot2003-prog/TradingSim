@@ -90,4 +90,7 @@ def bootstrap() -> None:
     un compte "default" fantôme à chaque redémarrage dès qu'il a été
     renommé, ce qui s'est produit et a laissé un compte orphelin en base.
     """
+    from . import diag_log
+
+    diag_log.log_process_start()
     init_db()

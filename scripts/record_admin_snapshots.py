@@ -6,10 +6,11 @@ Il contacte les API uniquement ici, jamais au rendu de la page Admin.
 
 from sqlalchemy.orm import Session
 
-from src import admin_snapshot, db_core
+from src import admin_snapshot, db_core, diag_log
 
 
 def run() -> None:
+    diag_log.log_process_start()
     engine = db_core.create_engine_from_env()
     db_core.ensure_schema(engine)
     with Session(engine) as session:
