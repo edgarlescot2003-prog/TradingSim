@@ -42,6 +42,7 @@ Usage (depuis la racine du projet) :
 """
 
 from concurrent.futures import ThreadPoolExecutor
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -53,13 +54,16 @@ from src.db_models import PositionRow
 
 def _fetch_price_eur(ticker: str) -> tuple[str, tuple[float, float] | None]:
     try:
+        # Jamais allow_stale ici : un prix daté (dernier prix connu) ne peut
+        # pas déclencher d'exécution automatique, même récent.
         quote = md.get_quote(ticker)
-        fx_rate, fx_fetched_at = md.get_fx_rate_info(quote["currency"])
-        fetched_at = min(quote["fetched_at"], fx_fetched_at)
-        if not md.is_fresh(fetched_at):
-            print(f"  ⚠️  Prix périmé pour {ticker}, liquidation reportée.")
+        fx_rate, _ = md.get_fx_rate_info(quote["currency"])
+        if not md.is_fresh_for_automation(quote):
+            market_store.log_event("automation_skipped_stale_price", ticker=ticker,
+                                   market_time=quote.get("market_time"), market_open=quote.get("market_open"))
+            print(f"  ⚠️  Prix pas assez frais pour {ticker} (cotation figée ?), liquidation reportée.")
             return ticker, None
-        return ticker, (quote["price"] * fx_rate, fetched_at)
+        return ticker, (quote["price"] * fx_rate, quote["fetched_at"])
     except md.MarketDataError as e:
         print(f"  ⚠️  Prix indisponible pour {ticker} : {e}")
         return ticker, None
@@ -98,7 +102,7 @@ def _process_portfolio(
         if position is None:
             continue  # fermée/inversée entre-temps (autre trade, ou run TP/SL précédent du même workflow)
         price_info = price_cache.get(ticker)
-        if price_info is None or not md.is_fresh(price_info[1]):
+        if price_info is None or time.time() - price_info[1] > md.AUTOMATION_MAX_FETCH_AGE_SECONDS:
             continue  # déjà loggé par _fetch_price_eur ; retenté au prochain run
         price_eur = price_info[0]
         if valuation.is_liquidatable(position, price_eur):

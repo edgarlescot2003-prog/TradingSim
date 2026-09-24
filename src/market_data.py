@@ -42,20 +42,32 @@ def _note_yahoo_error(error: Exception) -> None:
         market_store.record_rate_limit(YAHOO, error)
 
 
-MAX_EXECUTION_PRICE_AGE_SECONDS = 5 * 60
+# Exécutions AUTOMATIQUES (TP/SL, liquidation) : prix frais uniquement, jamais
+# de prix daté — une liquidation sur un prix faux pénaliserait injustement un
+# participant. Deux conditions (voir is_fresh_for_automation) :
+# - le prix vient d'être obtenu de la source live (moins de 5 min) ;
+# - pendant une séance ouverte, l'heure de cotation réelle annoncée par Yahoo
+#   a moins de 30 min. Assez large pour les places cotées en différé
+#   (Euronext 15 min, futures 10 min — mesuré le 24/09), assez strict pour
+#   écarter un flux figé. Marché fermé : le dernier cours officiel reste un
+#   prix exact (il ne bouge plus), donc accepté.
+AUTOMATION_MAX_FETCH_AGE_SECONDS = 5 * 60
+AUTOMATION_MAX_MARKET_DELAY_SECONDS = 30 * 60
 
 
-def is_fresh(fetched_at: float, now: float | None = None) -> bool:
-    """Vrai si un prix est assez récent pour une décision d'exécution.
-
-    Cinq minutes est un compromis : deux minutes bloqueraient trop souvent
-    sur le simple retard d'une API, tandis que dix minutes augmente trop le
-    risque d'exécuter un ordre sur un marché déjà déplacé. Ce seuil ne rend
-    jamais un prix périmé utilisable pour l'affichage : il sert uniquement
-    aux décisions d'ordre, TP/SL et liquidation.
-    """
+def is_fresh_for_automation(quote: dict, now: float | None = None) -> bool:
+    """Vrai si `quote` (résultat de get_quote) peut déclencher un TP/SL ou
+    une liquidation. Faux pour tout prix daté (repli sur le dernier prix
+    connu), même récent."""
     current_time = time.time() if now is None else now
-    return current_time - fetched_at <= MAX_EXECUTION_PRICE_AGE_SECONDS
+    if quote.get("stale") or quote.get("fetched_at") is None:
+        return False
+    if current_time - quote["fetched_at"] > AUTOMATION_MAX_FETCH_AGE_SECONDS:
+        return False
+    market_time = quote.get("market_time")
+    if quote.get("market_open") and market_time is not None:
+        return current_time - market_time <= AUTOMATION_MAX_MARKET_DELAY_SECONDS
+    return True
 
 
 _FX_CACHE: dict[str, tuple[float, float]] = {}

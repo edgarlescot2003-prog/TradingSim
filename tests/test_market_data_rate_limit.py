@@ -39,10 +39,14 @@ def test_quote_error_is_cooled_down():
 
 
 def test_execution_freshness_window():
-    now = 1_000.0
-    assert md.is_fresh(now - md.MAX_EXECUTION_PRICE_AGE_SECONDS, now)
-    assert not md.is_fresh(now - md.MAX_EXECUTION_PRICE_AGE_SECONDS - 0.001, now)
-    print("OK: un prix dépasse le seuil d'exécution après 5 minutes")
+    now = 100_000.0
+    live = {"stale": False, "fetched_at": now - 10, "market_time": now - 15 * 60, "market_open": True}
+    assert md.is_fresh_for_automation(live, now)  # cotation différée de 15 min : acceptée
+    assert not md.is_fresh_for_automation({**live, "market_time": now - 31 * 60}, now)  # flux figé
+    assert md.is_fresh_for_automation({**live, "market_time": now - 16 * 3600, "market_open": False}, now)
+    assert not md.is_fresh_for_automation({**live, "fetched_at": now - 301}, now)
+    assert not md.is_fresh_for_automation({**live, "stale": True}, now)  # prix daté : jamais
+    print("OK: TP/SL et liquidation n'acceptent que des prix frais (jamais de prix daté)")
 
 
 if __name__ == "__main__":
