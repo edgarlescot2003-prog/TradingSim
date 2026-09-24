@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from . import db
 from .db_models import (
@@ -68,16 +69,24 @@ def load_dashboard() -> dict:
     price_start = now - timedelta(days=8)
     trade_start = now - timedelta(hours=24)
     with db.get_session() as session:
-        price_rows = session.execute(
-            select(MarketPriceSnapshotRow).where(
-                MarketPriceSnapshotRow.recorded_at >= price_start.isoformat()
-            )
-        ).scalars().all()
-        portfolio_rows = session.execute(
-            select(PortfolioValueSnapshotRow).where(
-                PortfolioValueSnapshotRow.recorded_at >= price_start.isoformat()
-            )
-        ).scalars().all()
+        try:
+            price_rows = session.execute(
+                select(MarketPriceSnapshotRow).where(
+                    MarketPriceSnapshotRow.recorded_at >= price_start.isoformat()
+                )
+            ).scalars().all()
+            portfolio_rows = session.execute(
+                select(PortfolioValueSnapshotRow).where(
+                    PortfolioValueSnapshotRow.recorded_at >= price_start.isoformat()
+                )
+            ).scalars().all()
+        except SQLAlchemyError:
+            # Les snapshots sont un cache facultatif : une base existante peut
+            # ne pas encore avoir reçu leur migration. Annule l'état SQL
+            # invalide avant de poursuivre la lecture des trades.
+            session.rollback()
+            price_rows = []
+            portfolio_rows = []
         trades = session.execute(
             select(TradeRow).where(TradeRow.date >= trade_start.isoformat()).order_by(TradeRow.date.desc())
         ).scalars().all()
