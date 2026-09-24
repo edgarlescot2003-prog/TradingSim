@@ -1,7 +1,9 @@
 """Enregistre les snapshots du tableau Admin News.
 
-Ce script est exécuté par le workflow TP/SL existant toutes les 15 minutes.
-Il contacte les API uniquement ici, jamais au rendu de la page Admin.
+Ce script est exécuté par le workflow TP/SL existant (après TP/SL et
+liquidation), mais n'enregistre au plus qu'un snapshot par heure (voir
+admin_snapshot.SNAPSHOT_MIN_INTERVAL). Il contacte les API uniquement ici,
+jamais au rendu de la page Admin.
 """
 
 from sqlalchemy.orm import Session

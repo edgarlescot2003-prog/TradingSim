@@ -4,10 +4,9 @@ Ce module est appelé par le workflow TP/SL existant. La page Streamlit lit
 uniquement les tables produites ici et ne contacte jamais les API de marché.
 """
 
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import market_data as md, portfolio_repo, valuation
@@ -34,25 +33,37 @@ TRACKED_ASSETS = {
 }
 
 
-def _fetch_price(ticker: str) -> tuple[str, float | None]:
-    try:
-        quote = md.get_quote(ticker)
-        return ticker, md.convert_to_eur(quote["price"], quote["currency"])
-    except md.MarketDataError as error:
-        print(f"Prix indisponible pour {ticker}: {error}")
-        return ticker, None
+# Le tableau Admin News compare des prix sur 8 jours : un point par heure
+# suffit largement. Le workflow peut tourner bien plus souvent (TP/SL,
+# liquidation) : ce script se contente alors de ne rien faire.
+SNAPSHOT_MIN_INTERVAL = timedelta(minutes=55)
 
 
 def _fetch_prices(tickers: set[str]) -> dict[str, float]:
-    with ThreadPoolExecutor(max_workers=min(8, len(tickers))) as executor:
-        return {
-            ticker: price for ticker, price in executor.map(_fetch_price, tickers)
-            if price is not None
-        }
+    """Prix en euros via le batch (market_data.get_quotes_batch) : réutilise
+    les prix de moins de 5 min déjà en base (obtenus par l'app), n'appelle
+    Yahoo que pour les autres, s'arrête au premier 429 et respecte le
+    coupe-circuit partagé — au lieu de 29+ requêtes individuelles en
+    parallèle. Un prix daté (stale) n'est JAMAIS enregistré comme snapshot."""
+    quotes = md.get_quotes_batch(tuple(sorted(tickers)))
+    prices = {}
+    for ticker, quote in quotes.items():
+        if quote.get("stale"):
+            continue
+        try:
+            prices[ticker] = quote["price"] * md.get_fx_rate_to_eur(quote["currency"])
+        except md.MarketDataError as error:
+            print(f"Taux de change indisponible pour {ticker}: {error}")
+    return prices
 
 
 def record_snapshots(session: Session) -> tuple[int, int]:
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    last_recorded = session.execute(select(func.max(MarketPriceSnapshotRow.recorded_at))).scalar()
+    if last_recorded and last_recorded >= (now - SNAPSHOT_MIN_INTERVAL).isoformat():
+        print(f"Dernier snapshot à {last_recorded} : moins de 55 min, rien à faire ce run.")
+        return 0, 0
     official_rows = session.execute(
         select(PortfolioRow).where(PortfolioRow.is_official.is_(True))
     ).scalars().all()
@@ -63,6 +74,11 @@ def record_snapshots(session: Session) -> tuple[int, int]:
             tracked.update(portfolio.positions)
 
     fetched_prices = _fetch_prices(tracked)
+    if not fetched_prices:
+        # Source en pause : aucun snapshot plutôt qu'une série de portefeuilles
+        # tous valorisés au prix moyen d'achat (données trompeuses).
+        print("Aucun prix frais disponible (source en pause ?) : snapshots reportés au prochain run.")
+        return 0, 0
     valuation_prices = dict(fetched_prices)
     # Une cotation indisponible ne doit pas provoquer un second appel caché
     # dans valuation.total_value : le portefeuille est alors valorisé au prix
