@@ -4,7 +4,6 @@ Active uniquement avec TS_DIAG_LOG=1. Ce module ne fait aucun appel réseau et
 ne modifie pas la logique métier.
 """
 
-import inspect
 import os
 import sys
 import threading
@@ -21,21 +20,38 @@ def enabled() -> bool:
     return os.environ.get("TS_DIAG_LOG", "").lower() in {"1", "true", "yes", "on"}
 
 
-def _session_id() -> str:
-    try:
-        from streamlit.runtime.scriptrunner import get_script_run_ctx
+_get_ctx = None  # résolu une fois : Streamlit absent dans le cron (pas de nouvel essai d'import par ligne)
 
-        ctx = get_script_run_ctx()
+
+def _session_id() -> str:
+    global _get_ctx
+    try:
+        if _get_ctx is None:
+            try:
+                from streamlit.runtime.scriptrunner import get_script_run_ctx
+                _get_ctx = get_script_run_ctx
+            except Exception:
+                _get_ctx = False
+        if not _get_ctx:
+            return "-"
+        ctx = _get_ctx(suppress_warning=True)
         return getattr(ctx, "session_id", "-") if ctx else "-"
     except Exception:
         return "-"
 
 
 def _caller() -> str:
-    for frame in inspect.stack()[2:]:
-        if frame.filename != __file__:
-            return f"{os.path.basename(frame.filename)}:{frame.function}"
-    return "unknown"
+    # sys._getframe plutôt qu'inspect.stack() : ce dernier lit le code source
+    # de TOUTE la pile d'appels (contexte de lignes) à chaque ligne de log.
+    # Ici, simple remontée des cadres, sans aucune lecture de fichier. On
+    # saute diag_log et market_data/kraken_data pour nommer le vrai appelant.
+    frame = sys._getframe(2)
+    skipped = (__file__, "market_data.py", "kraken_data.py")
+    while frame is not None and frame.f_code.co_filename.endswith(skipped):
+        frame = frame.f_back
+    if frame is None:
+        return "unknown"
+    return f"{os.path.basename(frame.f_code.co_filename)}:{frame.f_code.co_name}"
 
 
 def log_process_start() -> None:
