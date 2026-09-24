@@ -1,0 +1,43 @@
+name: Diagnostic temporaire APIs marché
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tester Yahoo une fois
+        shell: bash
+        run: |
+          set +e
+          curl --silent --show-error --dump-header /tmp/yahoo.headers \
+            --output /tmp/yahoo.body \
+            --max-time 20 \
+            'https://query1.finance.yahoo.com/v8/finance/chart/CL%3DF?range=1d&interval=1d'
+          status=$?
+          echo "YAHOO_CURL_EXIT=$status"
+          echo '--- YAHOO_HEADERS ---'
+          cat /tmp/yahoo.headers
+          echo '--- YAHOO_BODY ---'
+          head -c 1000 /tmp/yahoo.body
+          echo
+
+      - name: Tester Kraken une fois
+        shell: bash
+        run: |
+          set +e
+          curl --silent --show-error --dump-header /tmp/kraken.headers \
+            --output /tmp/kraken.body \
+            --max-time 20 \
+            'https://api.kraken.com/0/public/Ticker?pair=XBTUSD'
+          status=$?
+          echo "KRAKEN_CURL_EXIT=$status"
+          echo '--- KRAKEN_HEADERS ---'
+          cat /tmp/kraken.headers
+          echo '--- KRAKEN_BODY ---'
+          head -c 1000 /tmp/kraken.body
+          echo
