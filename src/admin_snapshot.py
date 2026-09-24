@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import market_data as md, portfolio_repo, valuation
-from .db_models import MarketPriceSnapshotRow, PortfolioRow
+from .db_models import MarketPriceSnapshotRow, PortfolioRow, PortfolioValueSnapshotRow
 
 TRACKED_ASSETS = {
     "^FCHI": ("CAC 40", "Indices"), "^GDAXI": ("DAX", "Indices"),
