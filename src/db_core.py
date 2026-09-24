@@ -92,3 +92,11 @@ def ensure_schema(engine: Engine) -> None:
         conn.execute(text(
             "ALTER TABLE trades ADD COLUMN IF NOT EXISTS is_liquidation BOOLEAN NOT NULL DEFAULT FALSE"
         ))
+        # Traçabilité des ordres sur prix daté (additif, nullable, sans
+        # toucher aux lignes existantes).
+        conn.execute(text(
+            "ALTER TABLE trades ADD COLUMN IF NOT EXISTS price_age_seconds DOUBLE PRECISION"
+        ))
+        conn.execute(text(
+            "ALTER TABLE trades ADD COLUMN IF NOT EXISTS price_source VARCHAR"
+        ))

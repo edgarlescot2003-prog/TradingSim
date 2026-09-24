@@ -51,6 +51,13 @@ class Trade:
     # tp_sl_order_id en pratique (une position est liquidée ou sortie par un
     # palier, jamais les deux sur le même trade).
     is_liquidation: bool = False
+    # Traçabilité des ordres manuels (voir ui_trading._tag_last_trade) : âge
+    # du prix utilisé au moment de l'exécution (secondes) et sa source
+    # ("yahoo" = prix live, "last_known" = prix daté pendant une pause de la
+    # source). None pour les trades antérieurs, TP/SL, liquidations, ordres
+    # limites (exécutés au prix limite).
+    price_age_seconds: float | None = None
+    price_source: str | None = None
 
 
 @dataclass

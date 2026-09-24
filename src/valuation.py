@@ -140,6 +140,38 @@ def category_for(quote_type: str, ticker: str | None = None) -> str:
 MAINTENANCE_LOSS_RATIO = 0.80
 
 
+# Âge maximal du prix sur lequel un ORDRE MANUEL (au marché, clôture, pose
+# d'ordre limite) peut s'appuyer — règle décidée par Edgar : quand la source
+# de cotation est en pause (coupe-circuit, voir market_store.py), le site
+# reste utilisable sur le dernier prix connu, jusqu'à cet âge. Au-delà,
+# l'ordre est refusé avec un message clair. Crypto plus stricte : cote 24/7
+# et bouge vite. Ne concerne JAMAIS TP/SL ni liquidation (prix frais
+# uniquement, voir market_data.is_fresh_for_automation).
+MAX_ORDER_PRICE_AGE_SECONDS = 60 * 60
+MAX_ORDER_PRICE_AGE_CRYPTO_SECONDS = 15 * 60
+
+
+def max_order_price_age_seconds(ticker: str, quote_type: str = "") -> int:
+    if category_for(quote_type, ticker) == "Crypto":
+        return MAX_ORDER_PRICE_AGE_CRYPTO_SECONDS
+    return MAX_ORDER_PRICE_AGE_SECONDS
+
+
+def order_price_age_error(age_seconds: float | None, ticker: str, quote_type: str = "") -> str | None:
+    """Message de refus si le prix est trop ancien pour un ordre manuel,
+    sinon None. `age_seconds` = maintenant - heure d'obtention du prix
+    auprès de la source live (quote["fetched_at"]), pas l'heure de session."""
+    limit = max_order_price_age_seconds(ticker, quote_type)
+    if age_seconds is None:
+        return "Prix indisponible : impossible d'exécuter cet ordre pour l'instant."
+    if age_seconds > limit:
+        return (
+            f"Prix daté de {age_seconds / 60:.0f} min : au-delà de {limit // 60} min, les ordres sur "
+            f"{ticker} sont bloqués. Réessaie quand la cotation sera revenue."
+        )
+    return None
+
+
 def unrealized_pnl_eur(position, current_price_eur: float) -> float:
     """P&L latent (€) d'une position au prix courant, formule identique à
     celle utilisée dans position_snapshot ci-dessous (centralisée ici pour

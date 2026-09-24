@@ -16,17 +16,17 @@ pédagogiques (_render_explanations) vivent dans une zone séparée sous ce
 bloc, pas dans le panneau d'ordre lui-même.
 """
 
+import time
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 
 from . import db
 from . import kraken_data
 from . import market_data as md
+from . import market_store
 from . import orderbook_sim
 from . import search_history
 from . import storage
@@ -402,47 +402,37 @@ def _period_start(period_key: str) -> datetime:
     return now - timedelta(days=days)
 
 
-def _last_known_price(ticker: str) -> tuple[float, datetime] | None:
-    """Lit le dernier prix partagé pour l'affichage uniquement."""
-    try:
-        with db.get_session() as session:
-            from .db_models import MarketPriceSnapshotRow
-
-            row = session.execute(
-                select(MarketPriceSnapshotRow)
-                .where(MarketPriceSnapshotRow.ticker == ticker)
-                .order_by(MarketPriceSnapshotRow.recorded_at.desc())
-                .limit(1)
-            ).scalar_one_or_none()
-    except SQLAlchemyError:
-        return None
-    if row is None:
-        return None
-    try:
-        recorded_at = datetime.fromisoformat(row.recorded_at.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if recorded_at.tzinfo is None:
-        recorded_at = recorded_at.replace(tzinfo=timezone.utc)
-    return row.price_eur, recorded_at.astimezone(timezone.utc)
+def _execution_price_error() -> str | None:
+    """Refus (message) si le prix affiché est trop ancien pour un ordre
+    manuel — règles d'âge maximal centralisées dans valuation
+    (MAX_ORDER_PRICE_AGE_SECONDS / _CRYPTO_SECONDS). L'âge part de l'heure
+    d'obtention réelle du prix auprès de la source (quote["fetched_at"],
+    déposée par _render_price_and_chart), jamais du taux de change : un
+    taux en cache 5 min provoquait des refus à tort toutes les 5 min."""
+    fetched_at = st.session_state.get("trading_price_fetched_at")
+    ticker = st.session_state.get("trading_price_ticker") or ""
+    quote_type = st.session_state.get("trading_quote_type") or ""
+    age = None if fetched_at is None else max(0.0, time.time() - fetched_at)
+    error = valuation.order_price_age_error(age, ticker, quote_type)
+    if error:
+        market_store.log_event("order_refused_stale_price", ticker=ticker,
+                               age_s=round(age) if age is not None else None,
+                               source=st.session_state.get("trading_price_source"))
+    return error
 
 
-def _render_stale_price(ticker: str) -> bool:
-    """Affiche un prix de cache, sans le rendre éligible à l'exécution."""
-    fallback = _last_known_price(ticker)
-    if fallback is None:
-        return False
-    price_eur, recorded_at = fallback
-    age_minutes = max(0, (datetime.now(timezone.utc) - recorded_at).total_seconds() / 60)
-    st.session_state.trading_price_eur = price_eur
-    st.session_state.trading_currency = "EUR"
-    st.session_state.trading_price_fetched_at = recorded_at.timestamp()
-    st.metric("Dernier prix connu (€)", f"{price_eur:,.2f}")
-    st.markdown(
-        f'<span class="ts-badge ts-badge-warning">Donnée datée de {age_minutes:.0f} min</span>',
-        unsafe_allow_html=True,
-    )
-    return True
+def _tag_last_trade(portfolio, ticker: str) -> None:
+    """Traçabilité (règle 3) : âge et source du prix utilisé, posés sur le
+    trade que Portfolio.buy/sell/... vient d'ajouter en fin d'historique."""
+    fetched_at = st.session_state.get("trading_price_fetched_at")
+    if not portfolio.history or portfolio.history[-1].ticker != ticker or fetched_at is None:
+        return
+    trade = portfolio.history[-1]
+    trade.price_age_seconds = round(max(0.0, time.time() - fetched_at), 1)
+    trade.price_source = st.session_state.get("trading_price_source")
+    if trade.price_source == "last_known":
+        market_store.log_event("order_on_stale_price", ticker=ticker, action=trade.action,
+                               age_s=round(trade.price_age_seconds))
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -552,27 +542,26 @@ def _render_price_and_chart(ticker: str, quote_type: str, trades: list) -> None:
     """
     try:
         with st.spinner(f"Chargement de {ticker}..."):
-            quote = md.get_quote(ticker)
+            # allow_stale : si la source est en pause, dernier prix connu (avec
+            # sa vraie devise) plutôt qu'une page vide — ordres possibles sous
+            # conditions d'âge (voir _execution_price_error).
+            quote = md.get_quote(ticker, allow_stale=True)
+        fx_rate, _ = md.get_fx_rate_info(quote["currency"], allow_stale=True)
     except md.MarketDataError as e:
-        if not _render_stale_price(ticker):
-            st.error(str(e))
-            st.session_state.trading_price_eur = None
-            st.session_state.trading_price_fetched_at = None
-        return
-
-    price_native, currency = quote["price"], quote["currency"]
-    try:
-        fx_rate, fx_fetched_at = md.get_fx_rate_info(currency)
-        price_eur = price_native * fx_rate
-    except md.MarketDataError as e:
-        st.error(f"Conversion en euros impossible : {e}")
+        st.error(str(e))
         st.session_state.trading_price_eur = None
         st.session_state.trading_price_fetched_at = None
         return
 
+    price_native, currency = quote["price"], quote["currency"]
+    price_eur = price_native * fx_rate
+
     st.session_state.trading_price_eur = price_eur
     st.session_state.trading_currency = currency
-    st.session_state.trading_price_fetched_at = min(quote["fetched_at"], fx_fetched_at)
+    st.session_state.trading_price_fetched_at = quote["fetched_at"]
+    st.session_state.trading_price_source = quote["source"]
+    st.session_state.trading_price_ticker = ticker
+    st.session_state.trading_quote_type = quote.get("quote_type") or quote_type
 
     previous_close = quote.get("previous_close")
     day_up = previous_close is None or price_native >= previous_close
@@ -580,10 +569,22 @@ def _render_price_and_chart(ticker: str, quote_type: str, trades: list) -> None:
     col1, col2 = st.columns(2)
     col1.metric(f"Prix actuel ({currency})", f"{price_native:,.2f}")
     col2.metric("Prix actuel (€)", f"{price_eur:,.2f}")
-    st.caption(
-        "Prix légèrement différé (source : Yahoo Finance) · actualisation automatique toutes les 30 secondes "
-        f"· dernière actualisation : {datetime.now().strftime('%H:%M:%S')}"
-    )
+    if quote["stale"]:
+        age_min = max(0, (time.time() - quote["fetched_at"]) / 60)
+        limit_min = valuation.max_order_price_age_seconds(ticker, st.session_state.trading_quote_type) // 60
+        theme.render_stale_banner(
+            f"Prix daté de {age_min:.0f} min : source de cotation en pause, dernier prix connu affiché. "
+            f"Ordres possibles tant que le prix a moins de {limit_min} min."
+        )
+        if st.session_state.get("_stale_mode_logged") != ticker:
+            st.session_state["_stale_mode_logged"] = ticker
+            market_store.log_event("stale_price_mode", ticker=ticker, age_s=round(age_min * 60))
+    else:
+        st.session_state.pop("_stale_mode_logged", None)
+        st.caption(
+            "Prix légèrement différé (source : Yahoo Finance) · actualisation automatique toutes les 30 secondes "
+            f"· dernière actualisation : {datetime.now().strftime('%H:%M:%S')}"
+        )
 
     col_a, col_b = st.columns([3, 1])
     period_key = col_a.radio(
@@ -1047,18 +1048,13 @@ def _render_close_panel(portfolio, ticker: str, existing, price_eur: float) -> N
     "Valeur de la position" = quantité x prix affiché (exposition), la même
     base que la conversion euros -> quantité.
     """
-    def execution_price_is_fresh() -> bool:
-        fetched_at = st.session_state.get("trading_price_fetched_at")
-        if fetched_at is None or not md.is_fresh(fetched_at):
-            st.error("Prix trop ancien pour exécuter cet ordre. Actualise la cotation et réessaie.")
-            return False
-        return True
-
     is_long = existing.side == "long"
     position_value = existing.quantity * price_eur
 
     def close(quantity: float) -> None:
-        if not execution_price_is_fresh():
+        price_error = _execution_price_error()
+        if price_error:
+            st.error(price_error)
             return
         try:
             if is_long:
@@ -1072,6 +1068,7 @@ def _render_close_panel(portfolio, ticker: str, existing, price_eur: float) -> N
         except ValueError as e:
             st.error(str(e))
             return
+        _tag_last_trade(portfolio, ticker)
         storage.save_portfolio(portfolio)
         storage.invalidate_valuation_cache()
         st.session_state["_order_confirmation_message"] = msg
@@ -1243,9 +1240,9 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
 
         if order_mode == "Ordre au marché":
             if st.button("Valider l'ordre", type="primary", key="submit_market_order"):
-                fetched_at = st.session_state.get("trading_price_fetched_at")
-                if fetched_at is None or not md.is_fresh(fetched_at):
-                    st.error("Prix trop ancien pour exécuter cet ordre. Actualise la cotation et réessaie.")
+                price_error = _execution_price_error()
+                if price_error:
+                    st.error(price_error)
                     return tp_sl_section_rendered
                 try:
                     if action == "achat":
@@ -1269,6 +1266,7 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
                 except ValueError as e:
                     st.error(str(e))
                 else:
+                    _tag_last_trade(portfolio, ticker)
                     created = _create_tp_sl_tiers(portfolio, ticker, tp_sl_tiers) if tp_sl_tiers else 0
                     storage.save_portfolio(portfolio)
                     storage.invalidate_valuation_cache()
@@ -1282,9 +1280,9 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
             st.caption(f"L'ordre s'exécutera automatiquement quand le prix {trigger_hint} {ref_price:,.2f} €.")
 
             if st.button("Placer l'ordre à cours limité", type="primary", key="submit_limit_order"):
-                fetched_at = st.session_state.get("trading_price_fetched_at")
-                if fetched_at is None or not md.is_fresh(fetched_at):
-                    st.error("Prix trop ancien pour placer cet ordre. Actualise la cotation et réessaie.")
+                price_error = _execution_price_error()
+                if price_error:
+                    st.error(price_error)
                     return tp_sl_section_rendered
                 try:
                     portfolio.place_limit_order(

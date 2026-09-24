@@ -118,6 +118,11 @@ class TradeRow(Base):
     # scripts/check_liquidation.py) — badge "Liquidation auto" distinct de
     # "Auto (TP/SL)" dans l'historique (ui_portfolio.py, ui_history.py).
     is_liquidation = Column(Boolean, nullable=False, default=False)
+    # Traçabilité des ordres manuels exécutés (voir Trade.price_age_seconds) :
+    # permet de repérer, et au besoin d'écarter, un ordre passé sur un prix
+    # daté. Colonnes nullables ajoutées par ALTER (db_core.ensure_schema).
+    price_age_seconds = Column(Float, nullable=True)
+    price_source = Column(String, nullable=True)
 
 
 class PendingOrderRow(Base):
