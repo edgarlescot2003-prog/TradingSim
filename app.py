@@ -7,7 +7,7 @@ import streamlit as st
 from src import (
     auth, db, order_engine, storage, theme,
     ui_admin, ui_admin_news, ui_auth, ui_history, ui_leaderboard, ui_news, ui_portfolio, ui_reglement, ui_trading,
-    ui_tutorial, valuation, weekly_summary,
+    ui_tutorial, market_data, market_store, valuation, weekly_summary,
 )
 from src.portfolio import MAX_PORTFOLIOS_PER_USER, Portfolio
 
@@ -211,6 +211,16 @@ with messages_slot.container():
     # calculés juste au-dessus (valuation.total_value), donc sans aucun appel
     # API de prix supplémentaire — voir valuation.large_movers.
     theme.render_movers_alert(valuation.large_movers(snapshots))
+    # Source de cotation en pause (coupe-circuit après un 429, voir
+    # market_store.py) : simple information sur tous les onglets, l'app reste
+    # utilisable sur les derniers prix connus. Lecture de l'état en mémoire /
+    # base (au plus toutes les 5 s), jamais un appel réseau.
+    yahoo_pause = market_store.blocked_remaining(market_data.YAHOO)
+    if yahoo_pause > 0:
+        theme.render_stale_banner(
+            'Cotations en pause (limite de requêtes de Yahoo atteinte) : derniers prix connus affichés, '
+            f'reprise automatique dans {max(1, round(yahoo_pause / 60))} min.'
+        )
 
 if st.session_state.active_tab == "trading":
     ui_trading.render(portfolio)
