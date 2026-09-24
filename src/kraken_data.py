@@ -33,6 +33,8 @@ _MINUTES_BY_LABEL = dict(_INTERVAL_LADDER)
 
 # Kraken utilise des codes d'actifs historiques irréguliers (XBT pour BTC...).
 _SYMBOL_OVERRIDES = {"BTC": "XBT"}
+_ERROR_CACHE: dict[tuple[str, int], tuple[str, float]] = {}
+_ERROR_COOLDOWN_SECONDS = 30
 
 
 def _to_kraken_pair(yf_ticker: str) -> str:
@@ -42,18 +44,28 @@ def _to_kraken_pair(yf_ticker: str) -> str:
 
 
 def _fetch_page(pair: str, minutes: int, since: int) -> tuple[list, int | None]:
+    error_key = (pair, minutes)
+    error_cached = _ERROR_CACHE.get(error_key)
+    if error_cached and (time.time() - error_cached[1]) < _ERROR_COOLDOWN_SECONDS:
+        raise MarketDataError(error_cached[0])
+
     try:
         resp = requests.get(OHLC_URL, params={"pair": pair, "interval": minutes, "since": since}, timeout=10)
         resp.raise_for_status()
         payload = resp.json()
     except Exception as e:
-        raise MarketDataError(f"API Kraken indisponible pour '{pair}' : {e}") from e
+        message = f"API Kraken indisponible pour '{pair}' : {e}"
+        _ERROR_CACHE[error_key] = (message, time.time())
+        raise MarketDataError(message) from e
 
     if payload.get("error"):
-        raise MarketDataError(f"Kraken a refusé la requête pour '{pair}' : {payload['error']}")
+        message = f"Kraken a refusé la requête pour '{pair}' : {payload['error']}"
+        _ERROR_CACHE[error_key] = (message, time.time())
+        raise MarketDataError(message)
 
     result = payload.get("result", {})
     candles = next((v for k, v in result.items() if k != "last"), None)
+    _ERROR_CACHE.pop(error_key, None)
     return candles or [], result.get("last")
 
 

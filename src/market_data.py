@@ -8,6 +8,7 @@ crypto plus fine est nécessaire.
 
 import time
 
+import pandas as pd
 import yfinance as yf
 
 
@@ -15,17 +16,38 @@ class MarketDataError(Exception):
     """Erreur métier lisible, à afficher telle quelle à l'utilisateur."""
 
 
+MAX_EXECUTION_PRICE_AGE_SECONDS = 5 * 60
+
+
+def is_fresh(fetched_at: float, now: float | None = None) -> bool:
+    """Vrai si un prix est assez récent pour une décision d'exécution.
+
+    Cinq minutes est un compromis : deux minutes bloqueraient trop souvent
+    sur le simple retard d'une API, tandis que dix minutes augmente trop le
+    risque d'exécuter un ordre sur un marché déjà déplacé. Ce seuil ne rend
+    jamais un prix périmé utilisable pour l'affichage : il sert uniquement
+    aux décisions d'ordre, TP/SL et liquidation.
+    """
+    current_time = time.time() if now is None else now
+    return current_time - fetched_at <= MAX_EXECUTION_PRICE_AGE_SECONDS
+
+
 _FX_CACHE: dict[str, tuple[float, float]] = {}
 _FX_CACHE_TTL_SECONDS = 300
+_FX_ERROR_CACHE: dict[str, tuple[str, float]] = {}
+_FX_ERROR_COOLDOWN_SECONDS = 30
 
 # Cache court sur le prix courant : la revalorisation du Portefeuille (et du
 # Classement) refait cet appel à chaque interaction, sans aucun cache
 # jusqu'ici — un enchaînement rapide de clics pouvait donc envoyer une rafale
 # de requêtes sur le même ticker et déclencher le rate-limit "Too Many
-# Requests" de l'API gratuite de Yahoo. 20s reste largement assez frais pour
+# Requests" de l'API gratuite de Yahoo. 30s correspond au rythme de
+# rafraîchissement de la fiche Trading et reste largement assez frais pour
 # un prix qui n'est de toute façon pas temps réel (voir get_quote).
 _QUOTE_CACHE: dict[str, tuple[dict, float]] = {}
-_QUOTE_CACHE_TTL_SECONDS = 20
+_QUOTE_CACHE_TTL_SECONDS = 30
+_QUOTE_ERROR_CACHE: dict[str, tuple[str, float]] = {}
+_QUOTE_ERROR_COOLDOWN_SECONDS = 30
 
 
 def search_assets(query: str, max_results: int = 8) -> list[dict]:
@@ -56,6 +78,50 @@ def search_assets(query: str, max_results: int = 8) -> list[dict]:
     return assets
 
 
+def get_quotes_batch(tickers: tuple[str, ...]) -> dict[str, dict]:
+    """Récupère les prix et variations en un seul téléchargement Yahoo."""
+    if not tickers:
+        return {}
+    try:
+        data = yf.download(
+            tickers=list(tickers), period="1mo", interval="1d", group_by="ticker",
+            auto_adjust=False, threads=False, progress=False,
+        )
+    except Exception:
+        return {}
+    if data is None or data.empty:
+        return {}
+
+    result = {}
+    for ticker in tickers:
+        try:
+            closes = data[ticker]["Close"] if isinstance(data.columns, pd.MultiIndex) else data["Close"]
+            closes = closes.dropna()
+            if closes.empty:
+                continue
+            price = float(closes.iloc[-1])
+            previous_close = float(closes.iloc[-2]) if len(closes) >= 2 else None
+        except (KeyError, TypeError, ValueError):
+            continue
+        currency = "pts" if ticker.startswith("^") else {
+            "USDJPY=X": "JPY", "USDCHF=X": "CHF",
+        }.get(ticker, "USD")
+        change_30d_pct = (
+            (price - float(closes.iloc[0])) / float(closes.iloc[0]) * 100
+            if len(closes) >= 2 and closes.iloc[0]
+            else None
+        )
+        result[ticker] = {
+            "price": price, "currency": currency,
+            "previous_close": previous_close, "change_pct": (
+                (price - previous_close) / previous_close * 100
+                if previous_close else None
+            ),
+            "change_30d_pct": change_30d_pct,
+        }
+    return result
+
+
 def get_quote(ticker: str) -> dict:
     """Retourne {price, currency, previous_close, quote_type} pour le ticker
     donné, ou lève MarketDataError. `previous_close` (peut être None si
@@ -72,6 +138,10 @@ def get_quote(ticker: str) -> dict:
     if cached and (time.time() - cached[1]) < _QUOTE_CACHE_TTL_SECONDS:
         return cached[0]
 
+    error_cached = _QUOTE_ERROR_CACHE.get(ticker)
+    if error_cached and (time.time() - error_cached[1]) < _QUOTE_ERROR_COOLDOWN_SECONDS:
+        raise MarketDataError(error_cached[0])
+
     try:
         info = yf.Ticker(ticker).fast_info
         price = info.get("last_price") or info.get("lastPrice")
@@ -79,17 +149,24 @@ def get_quote(ticker: str) -> dict:
         previous_close = info.get("previous_close") or info.get("previousClose")
         quote_type = info.get("quote_type") or info.get("quoteType") or ""
     except Exception as e:
-        raise MarketDataError(f"Ticker '{ticker}' introuvable ou API indisponible ({e}).") from e
+        message = f"Ticker '{ticker}' introuvable ou API indisponible ({e})."
+        _QUOTE_ERROR_CACHE[ticker] = (message, time.time())
+        raise MarketDataError(message) from e
 
     if price is None or currency is None:
-        raise MarketDataError(f"Aucune donnée de prix disponible pour '{ticker}'.")
+        message = f"Aucune donnée de prix disponible pour '{ticker}'."
+        _QUOTE_ERROR_CACHE[ticker] = (message, time.time())
+        raise MarketDataError(message)
+    fetched_at = time.time()
     quote = {
         "price": float(price),
         "currency": currency,
         "previous_close": float(previous_close) if previous_close is not None else None,
         "quote_type": quote_type,
+        "fetched_at": fetched_at,
     }
-    _QUOTE_CACHE[ticker] = (quote, time.time())
+    _QUOTE_CACHE[ticker] = (quote, fetched_at)
+    _QUOTE_ERROR_CACHE.pop(ticker, None)
     return quote
 
 
@@ -99,6 +176,8 @@ def get_quote(ticker: str) -> dict:
 # utilisé par get_quote, jamais appelé ailleurs dans l'app).
 _PROFILE_CACHE: dict[str, tuple[dict, float]] = {}
 _PROFILE_CACHE_TTL_SECONDS = 12 * 3600
+_HISTORY_ERROR_CACHE: dict[tuple[str, str], tuple[str, float]] = {}
+_HISTORY_ERROR_COOLDOWN_SECONDS = 30
 
 
 def get_company_profile(ticker: str) -> dict:
@@ -132,16 +211,26 @@ def get_history(ticker: str, period: str = "6mo", interval: str = "1d", start=No
 
     Si `start` est fourni (date ou Timestamp), il prime sur `period`.
     """
+    error_key = (ticker, interval)
+    error_cached = _HISTORY_ERROR_CACHE.get(error_key)
+    if error_cached and (time.time() - error_cached[1]) < _HISTORY_ERROR_COOLDOWN_SECONDS:
+        raise MarketDataError(error_cached[0])
+
     try:
         if start is not None:
             hist = yf.Ticker(ticker).history(start=start, interval=interval)
         else:
             hist = yf.Ticker(ticker).history(period=period, interval=interval)
     except Exception as e:
-        raise MarketDataError(f"Historique indisponible pour '{ticker}' ({e}).") from e
+        message = f"Historique indisponible pour '{ticker}' ({e})."
+        _HISTORY_ERROR_CACHE[error_key] = (message, time.time())
+        raise MarketDataError(message) from e
 
     if hist is None or hist.empty:
-        raise MarketDataError(f"Aucun historique disponible pour '{ticker}'.")
+        message = f"Aucun historique disponible pour '{ticker}'."
+        _HISTORY_ERROR_CACHE[error_key] = (message, time.time())
+        raise MarketDataError(message)
+    _HISTORY_ERROR_CACHE.pop(error_key, None)
     return hist
 
 
@@ -172,29 +261,43 @@ def get_history_with_fallback(ticker: str, interval: str, start) -> tuple:
     raise last_error or MarketDataError(f"Aucun historique disponible pour '{ticker}'.")
 
 
-def get_fx_rate_to_eur(currency: str) -> float:
-    """Taux de conversion 1 unité de `currency` -> EUR, avec cache 5 minutes."""
+def get_fx_rate_info(currency: str) -> tuple[float, float]:
+    """Retourne (taux, heure de récupération) pour `currency` -> EUR."""
     currency = currency.upper()
     if currency == "EUR":
-        return 1.0
+        return 1.0, time.time()
 
     cached = _FX_CACHE.get(currency)
     if cached and (time.time() - cached[1]) < _FX_CACHE_TTL_SECONDS:
-        return cached[0]
+        return cached
+
+    error_cached = _FX_ERROR_CACHE.get(currency)
+    if error_cached and (time.time() - error_cached[1]) < _FX_ERROR_COOLDOWN_SECONDS:
+        raise MarketDataError(error_cached[0])
 
     pair = f"{currency}EUR=X"
     try:
         info = yf.Ticker(pair).fast_info
         rate = info.get("last_price") or info.get("lastPrice")
     except Exception as e:
-        raise MarketDataError(f"Taux de change {currency}->EUR indisponible ({e}).") from e
+        message = f"Taux de change {currency}->EUR indisponible ({e})."
+        _FX_ERROR_CACHE[currency] = (message, time.time())
+        raise MarketDataError(message) from e
 
     if rate is None:
-        raise MarketDataError(f"Taux de change {currency}->EUR indisponible.")
+        message = f"Taux de change {currency}->EUR indisponible."
+        _FX_ERROR_CACHE[currency] = (message, time.time())
+        raise MarketDataError(message)
 
     rate = float(rate)
     _FX_CACHE[currency] = (rate, time.time())
-    return rate
+    _FX_ERROR_CACHE.pop(currency, None)
+    return _FX_CACHE[currency]
+
+
+def get_fx_rate_to_eur(currency: str) -> float:
+    """Taux de conversion 1 unité de `currency` -> EUR, avec cache 5 minutes."""
+    return get_fx_rate_info(currency)[0]
 
 
 def convert_to_eur(amount: float, currency: str) -> float:
