@@ -54,6 +54,15 @@ def _find_trigger(order, fx_rate: float, now: datetime):
     except md.MarketDataError as e:
         raise _FetchFailed from e
 
+    if hist.empty:
+        raise _FetchFailed
+    latest_timestamp = hist.index.max()
+    if getattr(latest_timestamp, "tzinfo", None) is None:
+        latest_timestamp = latest_timestamp.replace(tzinfo=timezone.utc)
+    latest_age = now - latest_timestamp.to_pydatetime()
+    if latest_age.total_seconds() > md.MAX_EXECUTION_PRICE_AGE_SECONDS:
+        raise _FetchFailed
+
     is_buy_side = order.action in ("achat", "rachat short")
     for timestamp, row in hist.iterrows():
         if is_buy_side:

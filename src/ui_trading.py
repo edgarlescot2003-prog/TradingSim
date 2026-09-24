@@ -16,12 +16,13 @@ pédagogiques (_render_explanations) vivent dans une zone séparée sous ce
 bloc, pas dans le panneau d'ordre lui-même.
 """
 
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from . import db
 from . import kraken_data
@@ -150,56 +151,8 @@ ACTION_BY_ORDER_TYPE = {
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _fetch_quotes(tickers: tuple[str, ...]) -> dict[str, dict]:
-    """Prix + variation du jour pour chaque ticker, récupérés en parallèle
-    (comme leaderboard.py) et mis en cache 60s : la page d'accueil affiche une
-    vitrine d'une vingtaine d'actifs, un appel séquentiel serait trop lent, et
-    ces chiffres n'ont pas besoin d'être aussi frais que le prix de l'actif
-    réellement sélectionné (qui a son propre rafraîchissement 30s)."""
-    def fetch_one(ticker: str):
-        try:
-            quote = md.get_quote(ticker)
-        except md.MarketDataError:
-            return ticker, None
-        change_pct = None
-        previous_close = quote.get("previous_close")
-        if previous_close:
-            change_pct = (quote["price"] - previous_close) / previous_close * 100
-        return ticker, {"price": quote["price"], "currency": quote["currency"], "change_pct": change_pct}
-
-    out: dict[str, dict] = {}
-    if not tickers:
-        return out
-    with ThreadPoolExecutor(max_workers=min(8, len(tickers))) as executor:
-        for ticker, data in executor.map(fetch_one, tickers):
-            if data is not None:
-                out[ticker] = data
-    return out
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def _fetch_30d_changes(tickers: tuple[str, ...]) -> dict[str, float | None]:
-    """Variation sur 30 jours glissants pour chaque ticker, mise en cache 1h :
-    contrairement au prix (fast_info, quasi gratuit), ce calcul nécessite de
-    récupérer tout un historique, plus coûteux ; et une tendance sur 30 jours
-    ne bouge de toute façon pas d'une minute à l'autre, un cache plus long
-    que celui du prix n'y perd donc rien en fraîcheur perçue."""
-    def fetch_one(ticker: str):
-        try:
-            hist = md.get_history(ticker, period="1mo", interval="1d")
-        except md.MarketDataError:
-            return ticker, None
-        closes = hist["Close"]
-        if len(closes) < 2 or not closes.iloc[0]:
-            return ticker, None
-        return ticker, float((closes.iloc[-1] - closes.iloc[0]) / closes.iloc[0] * 100)
-
-    out: dict[str, float | None] = {}
-    if not tickers:
-        return out
-    with ThreadPoolExecutor(max_workers=min(8, len(tickers))) as executor:
-        for ticker, change_pct in executor.map(fetch_one, tickers):
-            out[ticker] = change_pct
-    return out
+    """Prix et variations de l'accueil récupérés par batch Yahoo, puis cachés."""
+    return md.get_quotes_batch(tickers)
 
 
 def _format_price(ticker: str, price: float, currency: str) -> str:
@@ -273,9 +226,6 @@ def _render_home_boxes() -> None:
     universe = INDICES + TOP_CAP + CRYPTO + FOREX + COMMODITIES + BONDS
     tickers = tuple(t for t, _ in universe)
     quotes = _fetch_quotes(tickers)
-    changes_30d = _fetch_30d_changes(tickers)
-    for ticker, data in quotes.items():
-        data["change_30d_pct"] = changes_30d.get(ticker)
 
     # Conteneur dédié : sert d'ancrage CSS pour forcer le passage à 1 colonne
     # sur mobile (voir le media query dans theme.py), sans dépendre du seul
@@ -452,13 +402,56 @@ def _period_start(period_key: str) -> datetime:
     return now - timedelta(days=days)
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+def _last_known_price(ticker: str) -> tuple[float, datetime] | None:
+    """Lit le dernier prix partagé pour l'affichage uniquement."""
+    try:
+        with db.get_session() as session:
+            from .db_models import MarketPriceSnapshotRow
+
+            row = session.execute(
+                select(MarketPriceSnapshotRow)
+                .where(MarketPriceSnapshotRow.ticker == ticker)
+                .order_by(MarketPriceSnapshotRow.recorded_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+    except SQLAlchemyError:
+        return None
+    if row is None:
+        return None
+    try:
+        recorded_at = datetime.fromisoformat(row.recorded_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if recorded_at.tzinfo is None:
+        recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+    return row.price_eur, recorded_at.astimezone(timezone.utc)
+
+
+def _render_stale_price(ticker: str) -> bool:
+    """Affiche un prix de cache, sans le rendre éligible à l'exécution."""
+    fallback = _last_known_price(ticker)
+    if fallback is None:
+        return False
+    price_eur, recorded_at = fallback
+    age_minutes = max(0, (datetime.now(timezone.utc) - recorded_at).total_seconds() / 60)
+    st.session_state.trading_price_eur = price_eur
+    st.session_state.trading_currency = "EUR"
+    st.session_state.trading_price_fetched_at = recorded_at.timestamp()
+    st.metric("Dernier prix connu (€)", f"{price_eur:,.2f}")
+    st.markdown(
+        f'<span class="ts-badge ts-badge-warning">Donnée datée de {age_minutes:.0f} min</span>',
+        unsafe_allow_html=True,
+    )
+    return True
+
+
+@st.cache_data(ttl=60, show_spinner=False)
 def _fetch_chart_history(ticker: str, quote_type: str, period_key: str):
     """Récupère l'historique pour le graphique, en choisissant la source
     (Kraken pour la crypto, Yahoo sinon) et en appliquant le repli
     automatique d'intervalle. Retourne (DataFrame, intervalle_effectif, source).
 
-    Mis en cache 20s (comme get_quote) : sans ça, changer de période/type de
+    Mis en cache 60s : sans ça, changer de période/type de
     graphique ou revenir peu après sur le même actif refait un appel réseau
     complet à chaque fois. Sans lien avec le bug du double-clic (voir
     _render_search) : ce cache et le st.spinner posé à l'appel, plus bas,
@@ -561,20 +554,25 @@ def _render_price_and_chart(ticker: str, quote_type: str, trades: list) -> None:
         with st.spinner(f"Chargement de {ticker}..."):
             quote = md.get_quote(ticker)
     except md.MarketDataError as e:
-        st.error(str(e))
-        st.session_state.trading_price_eur = None
+        if not _render_stale_price(ticker):
+            st.error(str(e))
+            st.session_state.trading_price_eur = None
+            st.session_state.trading_price_fetched_at = None
         return
 
     price_native, currency = quote["price"], quote["currency"]
     try:
-        price_eur = md.convert_to_eur(price_native, currency)
+        fx_rate, fx_fetched_at = md.get_fx_rate_info(currency)
+        price_eur = price_native * fx_rate
     except md.MarketDataError as e:
         st.error(f"Conversion en euros impossible : {e}")
         st.session_state.trading_price_eur = None
+        st.session_state.trading_price_fetched_at = None
         return
 
     st.session_state.trading_price_eur = price_eur
     st.session_state.trading_currency = currency
+    st.session_state.trading_price_fetched_at = min(quote["fetched_at"], fx_fetched_at)
 
     previous_close = quote.get("previous_close")
     day_up = previous_close is None or price_native >= previous_close
@@ -1049,10 +1047,19 @@ def _render_close_panel(portfolio, ticker: str, existing, price_eur: float) -> N
     "Valeur de la position" = quantité x prix affiché (exposition), la même
     base que la conversion euros -> quantité.
     """
+    def execution_price_is_fresh() -> bool:
+        fetched_at = st.session_state.get("trading_price_fetched_at")
+        if fetched_at is None or not md.is_fresh(fetched_at):
+            st.error("Prix trop ancien pour exécuter cet ordre. Actualise la cotation et réessaie.")
+            return False
+        return True
+
     is_long = existing.side == "long"
     position_value = existing.quantity * price_eur
 
     def close(quantity: float) -> None:
+        if not execution_price_is_fresh():
+            return
         try:
             if is_long:
                 pnl = portfolio.sell(ticker, quantity, price_eur)
@@ -1236,6 +1243,10 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
 
         if order_mode == "Ordre au marché":
             if st.button("Valider l'ordre", type="primary", key="submit_market_order"):
+                fetched_at = st.session_state.get("trading_price_fetched_at")
+                if fetched_at is None or not md.is_fresh(fetched_at):
+                    st.error("Prix trop ancien pour exécuter cet ordre. Actualise la cotation et réessaie.")
+                    return tp_sl_section_rendered
                 try:
                     if action == "achat":
                         portfolio.buy(ticker, name or ticker, quantity, price_eur, currency, leverage=leverage)
@@ -1271,6 +1282,10 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
             st.caption(f"L'ordre s'exécutera automatiquement quand le prix {trigger_hint} {ref_price:,.2f} €.")
 
             if st.button("Placer l'ordre à cours limité", type="primary", key="submit_limit_order"):
+                fetched_at = st.session_state.get("trading_price_fetched_at")
+                if fetched_at is None or not md.is_fresh(fetched_at):
+                    st.error("Prix trop ancien pour placer cet ordre. Actualise la cotation et réessaie.")
+                    return tp_sl_section_rendered
                 try:
                     portfolio.place_limit_order(
                         ticker=ticker, name=name or ticker, action=action, quantity=quantity,

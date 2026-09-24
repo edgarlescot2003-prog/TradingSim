@@ -49,10 +49,15 @@ from src import db_core, market_data as md, portfolio_repo, tp_sl
 from src.db_models import TpSlOrderRow
 
 
-def _fetch_price_eur(ticker: str) -> tuple[str, float | None]:
+def _fetch_price_eur(ticker: str) -> tuple[str, tuple[float, float] | None]:
     try:
         quote = md.get_quote(ticker)
-        return ticker, md.convert_to_eur(quote["price"], quote["currency"])
+        fx_rate, fx_fetched_at = md.get_fx_rate_info(quote["currency"])
+        fetched_at = min(quote["fetched_at"], fx_fetched_at)
+        if not md.is_fresh(fetched_at):
+            print(f"  ⚠️  Prix périmé pour {ticker}, palier reporté.")
+            return ticker, None
+        return ticker, (quote["price"] * fx_rate, fetched_at)
     except md.MarketDataError as e:
         print(f"  ⚠️  Prix indisponible pour {ticker} : {e}")
         return ticker, None
@@ -84,7 +89,7 @@ def _is_triggered(order: TpSlOrderRow, current_price_eur: float) -> bool:
 
 def _process_portfolio(
     session: Session, portfolio_id: str, orders: list[TpSlOrderRow],
-    price_cache: dict[str, float | None], now_iso: str,
+    price_cache: dict[str, tuple[float, float] | None], now_iso: str,
 ) -> None:
     portfolio = portfolio_repo.load_portfolio(session, portfolio_id)
     if portfolio is None:
@@ -93,9 +98,10 @@ def _process_portfolio(
 
     triggered = []
     for o in orders:
-        price_eur = price_cache.get(o.ticker)
-        if price_eur is None:
+        price_info = price_cache.get(o.ticker)
+        if price_info is None or not md.is_fresh(price_info[1]):
             continue  # déjà loggé par _fetch_price_eur ; reste "active", retenté au prochain run
+        price_eur = price_info[0]
         if _is_triggered(o, price_eur):
             triggered.append(o)
 

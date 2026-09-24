@@ -51,10 +51,15 @@ from src import db_core, market_data as md, portfolio_repo, valuation
 from src.db_models import PositionRow
 
 
-def _fetch_price_eur(ticker: str) -> tuple[str, float | None]:
+def _fetch_price_eur(ticker: str) -> tuple[str, tuple[float, float] | None]:
     try:
         quote = md.get_quote(ticker)
-        return ticker, md.convert_to_eur(quote["price"], quote["currency"])
+        fx_rate, fx_fetched_at = md.get_fx_rate_info(quote["currency"])
+        fetched_at = min(quote["fetched_at"], fx_fetched_at)
+        if not md.is_fresh(fetched_at):
+            print(f"  ⚠️  Prix périmé pour {ticker}, liquidation reportée.")
+            return ticker, None
+        return ticker, (quote["price"] * fx_rate, fetched_at)
     except md.MarketDataError as e:
         print(f"  ⚠️  Prix indisponible pour {ticker} : {e}")
         return ticker, None
@@ -80,7 +85,7 @@ def _is_leveraged(pos_row: PositionRow) -> bool:
 
 def _process_portfolio(
     session: Session, portfolio_id: str, user_id: str, tickers: set[str],
-    price_cache: dict[str, float | None],
+    price_cache: dict[str, tuple[float, float] | None],
 ) -> None:
     portfolio = portfolio_repo.load_portfolio(session, portfolio_id)
     if portfolio is None:
@@ -92,9 +97,10 @@ def _process_portfolio(
         position = portfolio.positions.get(ticker)
         if position is None:
             continue  # fermée/inversée entre-temps (autre trade, ou run TP/SL précédent du même workflow)
-        price_eur = price_cache.get(ticker)
-        if price_eur is None:
+        price_info = price_cache.get(ticker)
+        if price_info is None or not md.is_fresh(price_info[1]):
             continue  # déjà loggé par _fetch_price_eur ; retenté au prochain run
+        price_eur = price_info[0]
         if valuation.is_liquidatable(position, price_eur):
             to_liquidate.append((position, price_eur))
 
