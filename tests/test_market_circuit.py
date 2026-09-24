@@ -45,7 +45,7 @@ def _fresh_engine():
 
 
 def _reset(engine=None):
-    ms.configure((lambda: engine) if engine is not None else None)
+    ms.configure((lambda: engine) if engine is not None else None, scope="")
     ms._state.clear()
     ms._state_synced_at.clear()
     ms._db_unavailable_until = 0.0
@@ -194,6 +194,21 @@ def test_kraken_circuit():
     print("OK: Kraken a son propre coupe-circuit, indépendant de Yahoo")
 
 
+def test_cron_and_app_circuits_are_independent():
+    engine = _fresh_engine()
+    _reset(engine)
+    ms.configure(lambda: engine, scope="github")  # le cron reçoit un 429 sur SON IP
+    ms.record_rate_limit(md.YAHOO, YFRateLimitError("x"))
+    assert ms.blocked_remaining(md.YAHOO) > 290
+    ms.configure(lambda: engine)  # l'app (autre IP) n'est pas mise en pause
+    _simulate_other_process()
+    assert ms.blocked_remaining(md.YAHOO) == 0
+    with engine.connect() as conn:
+        keys = {r[0] for r in conn.execute(text("SELECT source FROM api_circuit_state"))}
+    assert keys == {"yahoo@github"}, keys
+    print("OK: coupe-circuit du cron (IP GitHub) indépendant de celui de l'app")
+
+
 if __name__ == "__main__":
     test_pause_progression()
     test_rate_limit_detection()
@@ -203,4 +218,5 @@ if __name__ == "__main__":
     test_database_down_falls_back_to_memory()
     test_missing_table_is_created()
     test_kraken_circuit()
+    test_cron_and_app_circuits_are_independent()
     print("Tous les tests du coupe-circuit sont passés.")

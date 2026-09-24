@@ -27,16 +27,24 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 
 _engine_getter = None
+_scope = ""
 
 
-def configure(engine_getter) -> None:
+def configure(engine_getter, scope: str = "") -> None:
     """Branche la persistance en base. `engine_getter` : fonction sans
     argument qui retourne un Engine SQLAlchemy (db.get_engine dans l'app,
     un moteur de db_core dans les scripts). Sans appel à configure(), tout
-    reste en mémoire (tests, usage hors app)."""
-    global _engine_getter, _tables_ready
+    reste en mémoire (tests, usage hors app).
+
+    `scope` : origine réseau des appels. Un rate limit vise une IP : l'app
+    (IP de Streamlit Cloud) et le cron (IP de GitHub Actions) ont donc chacun
+    leur propre coupe-circuit ("" pour l'app, "github" pour le cron) — un 429
+    reçu par le cron ne doit pas mettre l'app en pause, et inversement. Les
+    derniers prix connus, eux, restent partagés entre tous."""
+    global _engine_getter, _tables_ready, _scope
     _engine_getter = engine_getter
     _tables_ready = False
+    _scope = scope
 
 
 def log_event(event: str, **fields) -> None:
@@ -156,9 +164,14 @@ def _empty_state() -> dict:
     return {"blocked_until": None, "failures": 0, "last_error": None}
 
 
+def _circuit_key(source: str) -> str:
+    return f"{source}@{_scope}" if _scope else source
+
+
 def _load_state(source: str, force: bool = False) -> dict:
     """État courant (mémoire), rafraîchi depuis la base au plus toutes les
     _STATE_REFRESH_SECONDS secondes. Appelé sous _state_lock."""
+    source = _circuit_key(source)
     now = time.time()
     state = _state.setdefault(source, _empty_state())
     if not force and now - _state_synced_at.get(source, 0.0) < _STATE_REFRESH_SECONDS:
@@ -185,6 +198,7 @@ def _load_state(source: str, force: bool = False) -> dict:
 
 
 def _save_state(source: str, state: dict) -> None:
+    source = _circuit_key(source)
     engine = _engine()
     if engine is None:
         return
@@ -227,7 +241,7 @@ def record_rate_limit(source: str, error) -> None:
         state["blocked_until"] = time.time() + pause
         state["last_error"] = str(error)[:300]
         _save_state(source, dict(state))
-    log_event("circuit_open", source=source, pause_s=pause, consecutive_429=state["failures"],
+    log_event("circuit_open", source=_circuit_key(source), pause_s=pause, consecutive_429=state["failures"],
               error=repr(error))
 
 
@@ -235,12 +249,12 @@ def record_success(source: str) -> None:
     """À appeler après un appel réussi : remet la pause à zéro. N'écrit en
     base que si l'état change réellement (pas à chaque succès)."""
     with _state_lock:
-        state = _state.get(source)
+        state = _state.get(_circuit_key(source))
         if state is None or (state["failures"] == 0 and state["blocked_until"] is None):
             return
         state.update(_empty_state())
         _save_state(source, dict(state))
-    log_event("circuit_closed", source=source)
+    log_event("circuit_closed", source=_circuit_key(source))
 
 
 # -- Dernier prix connu ---------------------------------------------------------

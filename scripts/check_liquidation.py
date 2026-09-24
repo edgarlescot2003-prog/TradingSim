@@ -138,7 +138,7 @@ def run() -> None:
     now_iso = datetime.now(timezone.utc).isoformat()
     engine = db_core.create_engine_from_env()
     db_core.ensure_schema(engine)  # au cas où l'app n'a pas encore redémarré depuis l'ajout de ce schéma
-    market_store.configure(lambda: engine)  # coupe-circuit partagé avec l'app
+    market_store.configure(lambda: engine, scope="github")  # coupe-circuit propre à l'IP GitHub
 
     with Session(engine) as session:
         all_positions = session.execute(select(PositionRow)).scalars().all()

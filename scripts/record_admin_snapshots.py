@@ -15,7 +15,7 @@ def run() -> None:
     diag_log.log_process_start()
     engine = db_core.create_engine_from_env()
     db_core.ensure_schema(engine)
-    market_store.configure(lambda: engine)  # coupe-circuit partagé avec l'app
+    market_store.configure(lambda: engine, scope="github")  # coupe-circuit propre à l'IP GitHub
     with Session(engine) as session:
         prices, portfolios = admin_snapshot.record_snapshots(session)
     print(f"Snapshots Admin News: {prices} prix, {portfolios} portefeuilles officiels.")
