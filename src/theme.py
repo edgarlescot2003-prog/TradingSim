@@ -1996,6 +1996,9 @@ def _light_cell_content(col: dict, value) -> str:
         return "—"
     if kind == "text":
         return html_lib.escape(str(value))
+    if kind == "html":
+        # HTML déjà construit ET échappé par l'appelant (pastille, squelette...).
+        return str(value)
     if kind == "mono_text":
         # Valeur déjà formatée en chaîne (ex : prix avec suffixe "pts"/devise) mais
         # numérique par nature : police monospace comme les autres colonnes de chiffres.
@@ -2057,7 +2060,7 @@ def render_table_light(
     `show_header=False` masque la ligne d'en-têtes (listes compactes façon
     encadré d'actifs, où les libellés de colonne n'apportent rien).
     """
-    numeric_kinds = {"num", "eur", "signed_eur", "pct", "signed_pct", "signed_eur_pct", "mono_text"}
+    numeric_kinds = {"num", "eur", "signed_eur", "pct", "signed_pct", "signed_eur_pct", "mono_text", "html"}
     widths = [
         col["width"] if "width" in col else (1.3 if col.get("kind") in numeric_kinds else 1.0)
         for col in columns

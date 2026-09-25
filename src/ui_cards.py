@@ -119,6 +119,17 @@ _CSS = f"""
                font-weight: 700; letter-spacing: 0.04em; color: {theme.TEXT}; background: rgba(255, 255, 255, 0.10);
                border: 1px dashed rgba(255, 255, 255, 0.55); width: fit-content; }}
 
+/* Liste */
+.tsnav-badge {{ display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px; font-family: {theme.FONT_SANS};
+                font-size: 0.8rem; color: {theme.TEXT}; background: rgba(255, 255, 255, 0.08);
+                border: 1px solid {theme.BORDER}; margin: 0 0 0.75rem 0; }}
+.tsnav-skeleton {{ display: inline-block; width: 5.5rem; height: 0.8rem; border-radius: 4px; vertical-align: middle;
+                   background: linear-gradient(90deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.22) 50%,
+                   rgba(255,255,255,0.08) 100%); background-size: 200% 100%;
+                   animation: tsnav-shimmer 1.4s ease-in-out infinite; }}
+@keyframes tsnav-shimmer {{ 0% {{ background-position: 200% 0; }} 100% {{ background-position: -200% 0; }} }}
+@media (prefers-reduced-motion: reduce) {{ .tsnav-skeleton {{ animation: none; }} }}
+
 /* Fil d'Ariane */
 .st-key-ts_light [class*="st-key-tsnav_crumbs"] {{ gap: 0.15rem !important; align-items: center !important;
                                                    margin-bottom: 0.2rem; }}
@@ -254,6 +265,19 @@ def breadcrumb(parts: list[tuple[str, str | None]], key: str = "tsnav_crumbs") -
             elif st.button(label, key=f"{key}_{i}_{theme._safe_key_part(target)}", type="tertiary"):
                 clicked = target
     return clicked
+
+
+def change_pill(value: float | None, decimals: int = 2) -> str:
+    """Variation (liste) : même pastille que la performance, sans année."""
+    return perf_pill(value, decimals)
+
+
+def status_badge(text: str) -> str:
+    return f'<span class="tsnav-badge">{html.escape(text)}</span>'
+
+
+def skeleton(label: str = "Chargement en cours") -> str:
+    return f'<span class="tsnav-skeleton" role="status" aria-label="{html.escape(label)}"></span>'
 
 
 def page_header(eyebrow: str, title: str, lead: str = "") -> None:

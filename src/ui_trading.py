@@ -18,6 +18,7 @@ pédagogiques (_render_explanations) vivent dans une zone séparée sous ce
 bloc, pas dans le panneau d'ordre lui-même.
 """
 
+import html as html_lib
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -121,10 +122,13 @@ ACTION_BY_ORDER_TYPE = {
 
 LIST_ROW_COLUMNS = [
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge", "width": 0.9},
-    {"key": "name", "label": "Nom", "kind": "link", "width": 1.4},
-    {"key": "price", "label": "Prix indicatif", "kind": "mono_text", "width": 1.3},
-    {"key": "change_30d_pct", "label": "Var. 30j", "kind": "signed_pct", "width": 0.9},
+    {"key": "name", "label": "Actif", "kind": "link", "width": 1.5},
+    {"key": "place", "label": "Pays / zone", "kind": "text", "width": 1.0},
+    {"key": "price_html", "label": "Prix indicatif", "kind": "html", "width": 1.3},
+    {"key": "change_html", "label": "Var. 30 j", "kind": "html", "width": 1.1},
 ]
+LIST_PAGE_SIZE = 20
+_LIST_SORTS = ["Nom (A → Z)", "Variation 30 j : meilleure d'abord", "Variation 30 j : moins bonne d'abord"]
 
 
 def _format_list_price(price: float | None, currency: str | None) -> str | None:
@@ -140,13 +144,35 @@ def _age_label(seconds: float) -> str:
     return f"{round(seconds / 3600)} h"
 
 
+def _place_label(row: dict) -> str:
+    country, zone = row.get("country"), row.get("zone")
+    if country in trading_nav_config.PAYS:
+        return trading_nav_config.PAYS[country]["nom"]
+    if zone in trading_nav_config.ZONES:
+        return trading_nav_config.ZONES[zone]["nom"]
+    return "—"
+
+
+def _sort_and_filter(rows: list[dict], query: str, sort: str) -> list[dict]:
+    query = (query or "").strip().lower()
+    if query:
+        rows = [r for r in rows if query in r["ticker"].lower() or query in r["name"].lower()]
+    if sort == _LIST_SORTS[0]:
+        return sorted(rows, key=lambda r: r["name"].lower())
+    best_first = sort == _LIST_SORTS[1]
+    # Actifs sans variation connue toujours en fin de liste.
+    known = sorted((r for r in rows if r.get("change_30d_pct") is not None),
+                   key=lambda r: r["change_30d_pct"], reverse=best_first)
+    return known + [r for r in rows if r.get("change_30d_pct") is None]
+
+
 def _render_category_list(category: str, zone: str | None = None, country: str | None = None) -> None:
     """Page de liste d'une catégorie : prix INDICATIFS lus en base
     (daily_snapshot, clôture de la veille + variation 30 j), JAMAIS de
     requête Yahoo/Kraken depuis l'affichage. Les lignes de plus de 24 h
     sont rafraîchies en arrière-plan (daily_snapshot.start_refresh_if_due),
-    la liste s'affiche immédiatement avec ce qui est en base.
-    `zone`/`country` : niveau prévu pour une phase ultérieure."""
+    la liste s'affiche immédiatement avec ce qui est en base. Filtre et tri
+    calculés localement sur les lignes lues (aucune requête)."""
     label = asset_universe.CATEGORY_LABELS.get(category, category)
     ui_trading_nav.render_breadcrumb(ui_trading_nav.current())
     if country:
@@ -171,6 +197,7 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
         status = "unavailable"
     else:
         status = daily_snapshot.start_refresh_if_due(category, rows=snapshot_rows)
+    refreshing = status in ("started", "busy") and daily_snapshot.is_refreshing(category)
 
     now = time.time()
     filled = [r for r in snapshot_rows if r.get("close_price") is not None]
@@ -179,28 +206,50 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
         fmt = [datetime.fromisoformat(d).strftime("%d/%m") for d in (dates[0], dates[-1])]
         closing = f"Clôture du {fmt[0]}" if fmt[0] == fmt[1] else f"Clôtures du {fmt[0]} au {fmt[-1]}"
         oldest = min(daily_snapshot.from_iso(r["updated_at"]) or now for r in filled)
-        st.caption(f"Prix indicatifs · {closing} · mis à jour il y a {_age_label(now - oldest)} · "
-                   "prix en direct sur la fiche de chaque actif")
+        st.markdown(ui_cards.status_badge(f"{closing} · mis à jour il y a {_age_label(now - oldest)}"),
+                    unsafe_allow_html=True)
     if len(filled) < len(snapshot_rows) and status != "unavailable":
         st.caption("Certaines données sont en cours de chargement (—).")
-    if status in ("started", "busy") and daily_snapshot.is_refreshing(category):
+    if refreshing:
         if st.button("Mise à jour des prix en cours… Afficher les derniers prix", key="reload_category_list"):
             st.rerun()
+
+    table_key = f"compact_category_{theme._safe_key_part(category)}"
+    col_filter, col_sort = st.columns([2, 1])
+    query = col_filter.text_input("Filtrer", key=f"list_filter_{table_key}", label_visibility="collapsed",
+                                  placeholder="Filtrer par nom ou ticker")
+    sort = col_sort.selectbox("Trier", _LIST_SORTS, key=f"list_sort_{table_key}", label_visibility="collapsed")
+    ordered = _sort_and_filter(snapshot_rows, query, sort)
+    limit_key = f"list_limit_{table_key}"
+    limit = st.session_state.get(limit_key, LIST_PAGE_SIZE)
+    shown = ordered[:limit]
+
+    def _price_html(r: dict) -> str:
+        price = _format_list_price(r.get("close_price"), r.get("currency"))
+        if price:
+            return f'<span class="ts-light-num">{html_lib.escape(price)}</span>'
+        return ui_cards.skeleton() if refreshing else "—"
 
     rows = [{
         "ticker": r["ticker"],
         "name": r["name"],
         "category": category,
+        "place": _place_label(r),
         "price": _format_list_price(r.get("close_price"), r.get("currency")),
+        "price_html": _price_html(r),
         "change_30d_pct": r.get("change_30d_pct"),
-    } for r in snapshot_rows]
-    table_key = f"compact_category_{theme._safe_key_part(category)}"
+        "change_html": ui_cards.change_pill(r.get("change_30d_pct")) if r.get("change_30d_pct") is not None else "—",
+    } for r in shown]
+    if not rows:
+        st.caption("Aucun actif ne correspond à ce filtre.")
     with st.container(key=f"tslight_desktop_wrap_{table_key}"):
         theme.render_table_light(rows, LIST_ROW_COLUMNS, row_key="ticker", table_key=table_key)
     compact_rows = [{
         **row,
         "primary": row["price"] or "—",
-        "secondary": f"{row['change_30d_pct']:+.2f}% (30j)" if row["change_30d_pct"] is not None else "—",
+        "secondary": (f"{'▲ +' if row['change_30d_pct'] >= 0 else '▼ −'}"
+                      f"{ui_cards._fr_number(row['change_30d_pct'], 2)} % (30 j)"
+                      if row["change_30d_pct"] is not None else "—"),
         "secondary_color": (
             (theme.LIGHT_GREEN if row["change_30d_pct"] >= 0 else theme.LIGHT_RED)
             if row["change_30d_pct"] is not None else theme.LIGHT_TEXT
@@ -208,6 +257,12 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
     } for row in rows]
     theme.render_compact_list(compact_rows, table_key=table_key,
                               detail=lambda row: _render_search_result_detail(row, table_key))
+    if len(ordered) > limit:
+        if st.button(f"Afficher plus ({len(ordered) - limit} restants)", key=f"list_more_{table_key}"):
+            st.session_state[limit_key] = limit + LIST_PAGE_SIZE
+            st.rerun()
+    ui_cards.footnote("Prix indicatifs : clôture de la veille dans la devise de l'actif, mise à jour une fois par "
+                      "jour. Le prix en direct et les ordres sont sur la fiche de chaque actif.")
 
 
 # -- Recherche -----------------------------------------------------------------

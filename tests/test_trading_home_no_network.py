@@ -138,10 +138,20 @@ def test_category_list_shows_indicative_prices():
     at = _open_crypto(_test_fill=True)
     text = " ".join(str(m.value) for m in at.markdown) + " " + " ".join(str(c.value) for c in at.caption)
     assert "65,432.10 USD" in text, text[:1500]
-    assert "-3.50%" in text
+    assert "▼" in text and "−3,50 %" in text, "variation en pastille avec flèche"
     assert f"Clôture du {(date.today() - timedelta(days=1)).strftime('%d/%m')}" in text, text[:1500]
     assert "mis à jour il y a 2 h" in text
     assert "en cours de chargement" in text  # les 3 autres cryptos n'ont pas encore de données
+    # Filtre et tri locaux (aucune requête).
+    at.text_input(key="list_filter_compact_category_Crypto").input("eth").run()
+    assert not at.exception, at.exception
+    _assert_no_network(at)
+    tickers = [b.label for b in at.button if b.label.endswith("-USD")]
+    assert tickers == ["ETH-USD"], tickers
+    at.text_input(key="list_filter_compact_category_Crypto").input("").run()
+    at.selectbox(key="list_sort_compact_category_Crypto").select("Variation 30 j : moins bonne d'abord").run()
+    assert [b.label for b in at.button if b.label.endswith("-USD")][0] == "BTC-USD", "variation connue d'abord"
+    _assert_no_network(at)
     print("OK: liste Crypto lue en base (prix indicatif, devise, var. 30 j, date de clôture, âge)")
 
 
