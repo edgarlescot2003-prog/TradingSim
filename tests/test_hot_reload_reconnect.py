@@ -62,7 +62,7 @@ def test_reimported_store_is_reconnected_for_all_three_mechanisms():
 
     # 1. Listes : lecture en base de nouveau possible.
     rows = ds.list_assets("Crypto")
-    assert rows is not None and len(rows) == 4, rows
+    assert rows is not None and len(rows) == 20, len(rows or [])
     # 2. Dernier prix connu : réécrit en base (pas seulement en mémoire).
     ms.remember_prices([{"ticker": "ZZTEST", "price": 1.0, "currency": "USD", "fetched_at": time.time()}])
     assert _count("SELECT count(*) FROM last_known_prices WHERE ticker = 'ZZTEST'") == 1

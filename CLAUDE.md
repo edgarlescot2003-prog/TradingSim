@@ -327,11 +327,15 @@ partagée de Streamlit Cloud)** :
   (clôture de la veille, « aujourd'hui » = date UTC), 1 requête par actif
   espacée de ~1 s (Yahoo `history(2mo, 1d)`, Kraken OHLC quotidien pour la
   crypto, Yahoo en secours), sous bail atomique `refresh_leases` (10 min).
-  Deux déclencheurs : pré-chargement par le cron GitHub
-  (`scripts/refresh_daily_lists.py`, dernier step de `check-tp-sl.yml`, IP
-  GitHub) au premier passage après minuit UTC, et filet de sécurité à la
-  visite d'une liste (thread d'arrière-plan ; la page se réaffiche seule à la
-  fin via `_watch_list_refresh`, vérification en mémoire toutes les 3 s). Un échec n'est retenté
+  Deux déclencheurs, même bail PAR LISTE (« portée » : une zone pour les
+  Actions, la catégorie sinon, `daily_snapshot.scope_of`) : pré-chargement par
+  le workflow dédié `precharge-listes.yml` (`scripts/refresh_daily_lists.py`,
+  00:17/02:17/04:17 UTC, IP GitHub, chaque passage reprend ce qui manque), et
+  filet de sécurité à la visite d'une liste, LIMITÉ à cette liste, un seul
+  chargement à la fois par serveur (autre liste = « en attente »), rien si la
+  source est en pause ; la page se réaffiche toutes les 4 s pendant le
+  chargement (`_watch_list_refresh`, ne relance que sur ses propres tics —
+  un rerun pendant le rendu complet boucle avant d'afficher le tableau). Un échec n'est retenté
   qu'après 3 h ; une donnée incomplète n'écrase jamais une bonne valeur ;
   coupe-circuit ouvert = zéro appel. Colonnes `zone`/`country` réservées aux
   phases suivantes. Migration de référence :
@@ -359,6 +363,21 @@ partagée de Streamlit Cloud)** :
   exécution de `app.py` (log `[MARKET] event=store_reconnected`). Tout futur
   état de ce type doit suivre le même principe. Garde :
   `tests/test_hot_reload_reconnect.py`.
+- **Univers élargi (26/09/2026, `src/asset_universe.py`, 160 actifs vérifiés
+  chez Yahoo/Kraken, voir `docs/proposition_elargissement_univers.md`)** :
+  Actions = 30 plus grosses capitalisations par ZONE (Europe, Amérique =
+  25 US + 5 Canada, Asie = Japon/Taïwan/Inde/Corée ; Chine et Hong Kong
+  exclus), navigation Accueil → Actions → Zone → liste (plus de niveau pays,
+  pays affiché dans la liste) ; Crypto 20 ; Forex 18 paires, 8 devises
+  (dont CAD, NZD) ; Matières premières 16 en 3 familles ; Obligations 16 ETF
+  en 6 cartes. Les listes ne sont qu'une vitrine : la recherche reste
+  indépendante (tout ticker Yahoo/Kraken tradable).
+- **Pence et cents (critique)** : Yahoo cote Londres en `GBp` et les grains/
+  softs américains en `USX`. `market_data.normalize_currency` ramène TOUT
+  prix (direct, historique, clôtures, lot Admin) à l'unité principale (÷100)
+  — sinon x100 sur les ordres, positions, ordres limites. Ne jamais lire
+  une devise Yahoo sans passer par cette fonction. Kraken : `DOGE` → `XDG`,
+  suffixe numérique Yahoo retiré (`UNI7083` → `UNI`).
 - `market_data.get_quotes_batch` n'est plus utilisé que par
   `admin_snapshot.py` (cron). Positions/Classement : inchangés (phase 2).
 - Diagnostic manuel `diagnostic-quote-groupe.yml` (workflow_dispatch

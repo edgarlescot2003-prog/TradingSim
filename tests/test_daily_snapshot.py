@@ -39,13 +39,13 @@ def _fresh_engine():
 def test_seed_inserts_universe_without_indices_and_never_overwrites():
     engine = _fresh_engine()
     rows = ds.list_assets(asset_universe.CRYPTO)
-    assert [r["ticker"] for r in rows] == ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD"], rows
+    assert {r["ticker"] for r in rows} == {t for t, _ in asset_universe.ASSETS_BY_CATEGORY[asset_universe.CRYPTO]}
     assert all(r["close_price"] is None and r["zone"] is None for r in rows)
     with engine.begin() as conn:
         total = conn.execute(text("SELECT COUNT(*) FROM asset_daily_snapshot")).scalar()
         indices = conn.execute(text("SELECT COUNT(*) FROM asset_daily_snapshot WHERE ticker LIKE '^%'")).scalar()
         conn.execute(text("UPDATE asset_daily_snapshot SET close_price = 42.0 WHERE ticker = 'AAPL'"))
-    assert total == len(asset_universe.all_assets()) == 24 and indices == 0, (total, indices)
+    assert total == len(asset_universe.all_assets()) == 160 and indices == 0, (total, indices)
     ds._ready_engine = None  # simule un redémarrage : ré-amorçage
     aapl = next(r for r in ds.list_assets(asset_universe.ACTIONS) if r["ticker"] == "AAPL")
     assert aapl["close_price"] == 42.0, "l'amorçage ne doit jamais écraser une ligne existante"
@@ -175,7 +175,7 @@ def test_circuit_open_means_zero_calls_and_values_kept():
     yahoo = _Counter(_good)
     with patch.object(md, "get_daily_closes", yahoo):
         updated, skipped = ds.refresh_category(asset_universe.ACTIONS, sleep=lambda s: None)
-    assert yahoo.calls == [] and updated == 0 and skipped == 5, (yahoo.calls, updated, skipped)
+    assert yahoo.calls == [] and updated == 0 and skipped == 90, (yahoo.calls, updated, skipped)
     row = _row("AAPL", asset_universe.ACTIONS)
     assert row["close_price"] == 150.0 and row["last_attempt_at"] is None, row
     print("OK: coupe-circuit ouvert -> zéro appel, valeurs conservées, pas de tentative comptée")
@@ -209,12 +209,12 @@ def test_successful_refresh_spacing_and_daily_guard():
     with patch.object(md, "get_daily_closes", yahoo):
         updated, skipped = ds.refresh_category(asset_universe.BONDS, sleep=sleeps.append)
         again = ds.refresh_category(asset_universe.BONDS, sleep=sleeps.append)
-    assert (updated, skipped) == (5, 0) and len(yahoo.calls) == 5, (updated, skipped, yahoo.calls)
-    assert len(sleeps) == 4 and all(1.0 <= s <= 1.5 for s in sleeps), sleeps
-    assert again == (0, 0) and len(yahoo.calls) == 5, "déjà à jour : aucune requête dans les 24 h"
+    assert (updated, skipped) == (16, 0) and len(yahoo.calls) == 16, (updated, skipped, yahoo.calls)
+    assert len(sleeps) == 15 and all(1.0 <= s <= 1.5 for s in sleeps), sleeps
+    assert again == (0, 0) and len(yahoo.calls) == 16, "déjà à jour : aucune requête de la journée"
     row = _row("TLT", asset_universe.BONDS)
     assert row["currency"] == "USD" and row["as_of_date"] == (date.today() - timedelta(days=1)).isoformat()
-    print("OK: 5 requêtes espacées de 1 à 1,5 s, puis plus rien de la journée")
+    print("OK: 16 requêtes espacées de 1 à 1,5 s, puis plus rien de la journée")
 
 
 def test_crypto_uses_kraken_then_yahoo_fallback():
@@ -223,16 +223,16 @@ def test_crypto_uses_kraken_then_yahoo_fallback():
     kraken = _Counter(_good)
     yahoo = _Counter(_good)
     with patch.object(kraken_data, "get_daily_closes", kraken), patch.object(md, "get_daily_closes", yahoo):
-        assert ds.refresh_category(asset_universe.CRYPTO, sleep=lambda s: None) == (4, 0)
-    assert len(kraken.calls) == 4 and yahoo.calls == [], (kraken.calls, yahoo.calls)
+        assert ds.refresh_category(asset_universe.CRYPTO, sleep=lambda s: None) == (20, 0)
+    assert len(kraken.calls) == 20 and yahoo.calls == [], (kraken.calls, yahoo.calls)
 
     _fresh_engine()
     _reset_circuits()
     kraken = _Counter(error=md.MarketDataError("Unknown asset pair"))
     yahoo = _Counter(_good)
     with patch.object(kraken_data, "get_daily_closes", kraken), patch.object(md, "get_daily_closes", yahoo):
-        assert ds.refresh_category(asset_universe.CRYPTO, sleep=lambda s: None) == (4, 0)
-    assert len(yahoo.calls) == 4, "Kraken en échec -> secours Yahoo"
+        assert ds.refresh_category(asset_universe.CRYPTO, sleep=lambda s: None) == (20, 0)
+    assert len(yahoo.calls) == 20, "Kraken en échec -> secours Yahoo"
 
     _fresh_engine()
     _reset_circuits()
@@ -314,10 +314,12 @@ def test_refresh_all_due_for_cron():
         first = ds.refresh_all_due(holder="test")
         second = ds.refresh_all_due(holder="test")
     assert first[asset_universe.FOREX] == "déjà en cours ailleurs", first
-    assert first["Actions:amerique"] == "5 mis à jour, 0 ignoré(s)" and first[asset_universe.CRYPTO].startswith("4"), first
-    assert len(kraken.calls) == 4 and len(yahoo.calls) == 15, (len(kraken.calls), len(yahoo.calls))
+    assert first["Actions:amerique"] == "30 mis à jour, 0 ignoré(s)" and first[asset_universe.CRYPTO].startswith("20"), first
+    assert first["Actions:europe"].startswith("30") and first["Actions:asie"].startswith("30"), first
+    # 90 actions + 16 matières premières + 16 obligations (Forex : bail pris ailleurs)
+    assert len(kraken.calls) == 20 and len(yahoo.calls) == 122, (len(kraken.calls), len(yahoo.calls))
     assert second["Actions:amerique"] == "déjà à jour", "second passage de la journée : aucune requête"
-    assert len(yahoo.calls) == 15
+    assert len(yahoo.calls) == 122
     assert ds.acquire_lease(ds.lease_name("Actions:amerique"), "autre"), "bail relâché par le cron"
     print("OK: pré-chargement cron (toutes les listes dues, bail respecté, rien au 2e passage du jour)")
 
@@ -355,7 +357,7 @@ def test_background_trigger_single_run():
             if not ds.is_refreshing(asset_universe.FOREX):
                 break
             tm.sleep(0.05)
-    assert len(yahoo.calls) == 5, yahoo.calls
+    assert len(yahoo.calls) == 18, yahoo.calls
     assert ds.start_refresh_if_due(asset_universe.FOREX) == "fresh"
     assert ds.acquire_lease(ds.lease_name(asset_universe.FOREX), "other"), "bail relâché à la fin"
     print("OK: déclenchement en arrière-plan, un seul à la fois, bail relâché à la fin")
@@ -387,7 +389,8 @@ def test_fallback_scoped_single_and_paused():
             if ds.active_scope() is None:
                 break
             tm.sleep(0.05)
-    assert sorted(yahoo.calls) == ["MSFT", "NVDA"], "seule la liste affichée (zone Europe) est chargée"
+    europe = {t for t, _, _ in asset_universe.STOCKS_BY_ZONE["europe"]} | {"MSFT", "NVDA"}
+    assert set(yahoo.calls) == europe and "AAPL" not in yahoo.calls, "seule la liste affichée (zone Europe) est chargée"
     ms.record_rate_limit(md.YAHOO, RuntimeError("Too Many Requests"))
     assert ds.start_refresh_if_due(asset_universe.ACTIONS, zone="amerique") == "paused", "source en pause"
     print("OK: secours limité à la liste affichée, un seul chargement à la fois (« en attente »), rien si source en pause")

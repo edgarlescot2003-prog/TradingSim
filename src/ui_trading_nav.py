@@ -1,11 +1,12 @@
 """Écrans de navigation de l'onglet Trading : accueil (cartes de
-catégories), zones et pays (Actions), fil d'Ariane. AUCUNE requête
-Yahoo/Kraken : uniquement la configuration statique (trading_nav_config) et
+catégories), zones (Actions), devises (Forex), maturités (Obligations),
+familles (Matières premières), fil d'Ariane. AUCUNE requête Yahoo/Kraken :
+uniquement la configuration statique (asset_universe, trading_nav_config) et
 une lecture légère en base pour la disponibilité (daily_snapshot).
 
 État de navigation : st.session_state[NAV_KEY] = {"category", "view",
-"zone", "country"} avec view parmi "zones" | "countries" | "list" (absent =
-accueil). Chaque changement d'écran passe par un vrai st.button puis
+"zone", "group"} avec view parmi "zones" | "currencies" | "maturities" |
+"families" | "list" (absent = accueil). Chaque changement d'écran passe par un vrai st.button puis
 st.rerun() : jamais de lien, la session (et la connexion) est conservée.
 """
 
@@ -18,16 +19,16 @@ from . import asset_universe, daily_snapshot, trading_nav_config as cfg, ui_card
 NAV_KEY = "trading_category"
 
 CATEGORY_DESCRIPTIONS = {
-    asset_universe.ACTIONS: "Entreprises cotées, par zone puis par pays.",
-    asset_universe.CRYPTO: "Bitcoin, Ethereum et autres cryptomonnaies.",
-    asset_universe.BONDS: "ETF obligataires américains, par maturité.",
-    asset_universe.FOREX: "Paires de devises majeures, par devise.",
-    asset_universe.COMMODITIES: "Or, argent, pétrole et gaz naturel.",
+    asset_universe.ACTIONS: "Grandes entreprises d'Europe, d'Amérique et d'Asie.",
+    asset_universe.CRYPTO: "Bitcoin, Ethereum et les principales cryptomonnaies.",
+    asset_universe.BONDS: "ETF obligataires : Trésor américain, entreprises, inflation.",
+    asset_universe.FOREX: "Paires de devises majeures et croisées, par devise.",
+    asset_universe.COMMODITIES: "Métaux, énergie et produits agricoles.",
 }
 
 # Catégories qui passent par un écran intermédiaire avant la liste.
 _FIRST_VIEW = {asset_universe.ACTIONS: "zones", asset_universe.FOREX: "currencies",
-               asset_universe.BONDS: "maturities"}
+               asset_universe.BONDS: "maturities", asset_universe.COMMODITIES: "families"}
 
 
 def current() -> dict | None:
@@ -55,6 +56,8 @@ def group_label(category: str, group: str | None) -> str | None:
         return f"{cfg.FOREX_CURRENCIES[group]['nom']} ({group})"
     if category == asset_universe.BONDS and group in cfg.BOND_GROUPS:
         return cfg.BOND_GROUPS[group]["nom"]
+    if category == asset_universe.COMMODITIES and group in asset_universe.COMMODITY_FAMILIES:
+        return asset_universe.COMMODITY_FAMILIES[group]["nom"]
     return None
 
 
@@ -66,6 +69,8 @@ def group_contains(category: str, group: str | None, ticker: str) -> bool:
         return group in (cfg.pair_currencies(ticker) or ())
     if category == asset_universe.BONDS:
         return ticker in cfg.BOND_GROUPS.get(group, {}).get("tickers", [])
+    if category == asset_universe.COMMODITIES:
+        return ticker in asset_universe.COMMODITY_FAMILIES.get(group, {}).get("tickers", [])
     return True
 
 
@@ -84,15 +89,9 @@ def _parts_for(nav: dict | None) -> list[tuple[str, dict | str]]:
     label = asset_universe.CATEGORY_LABELS.get(category, category)
     first_view = _FIRST_VIEW.get(category, "list")
     parts.append((label, {"category": category, "view": first_view}))
-    if category == asset_universe.ACTIONS and nav.get("zone"):
+    if category == asset_universe.ACTIONS and nav.get("zone") in cfg.ZONES and nav.get("view") == "list":
         zone = nav["zone"]
-        parts.append((cfg.ZONES[zone]["nom"], {"category": category, "view": "countries", "zone": zone}))
-        if nav.get("view") == "list":
-            if nav.get("country"):
-                parts.append((cfg.PAYS[nav["country"]]["nom"],
-                              {"category": category, "view": "list", "zone": zone, "country": nav["country"]}))
-            else:
-                parts.append((cfg.WIDE_ZONE_LABELS[zone], {"category": category, "view": "list", "zone": zone}))
+        parts.append((cfg.ZONES[zone]["nom"], {"category": category, "view": "list", "zone": zone}))
     label = group_label(category, nav.get("group"))
     if label and nav.get("view") == "list":
         parts.append((label, {"category": category, "view": "list", "group": nav["group"]}))
@@ -117,7 +116,7 @@ def render_breadcrumb(nav: dict | None, current_label: str | None = None) -> Non
         target = targets[clicked]
         if target == "home":
             go(None)
-        go(target["category"], target["view"], target.get("zone"), target.get("country"), target.get("group"))
+        go(target["category"], target["view"], target.get("zone"), group=target.get("group"))
 
 
 def asset_category(ticker: str, quote_type: str = "") -> str:
@@ -139,8 +138,10 @@ def render_asset_breadcrumb(ticker: str, name: str | None, quote_type: str = "")
     correspond à la catégorie de l'actif, sinon la catégorie de l'actif."""
     nav = current()
     category = asset_category(ticker, quote_type)
+    zone = asset_universe.ASSET_PLACES.get(ticker, (None, None))[0]
     if (not nav or nav.get("category") != category or nav.get("view") != "list"
-            or not group_contains(category, nav.get("group"), ticker)):
+            or not group_contains(category, nav.get("group"), ticker)
+            or (category == asset_universe.ACTIONS and nav.get("zone") != zone)):
         nav = ({"category": category, "view": _FIRST_VIEW.get(category, "list")}
                if category in asset_universe.CATEGORY_LABELS else None)
     render_breadcrumb(nav, current_label=name or ticker)
@@ -165,7 +166,7 @@ def render_home_categories() -> None:
                     open_category(category)
 
 
-# -- Actions : zones puis pays ----------------------------------------------------
+# -- Actions : zones ----------------------------------------------------
 
 def _indices_html(indices: list[dict]) -> str:
     label = "Indice de référence" if len(indices) == 1 else "Indices de référence"
@@ -195,12 +196,12 @@ def _outline(key: str | None) -> dict | None:
 def render_zones() -> None:
     render_breadcrumb(current())
     ui_cards.page_header("Actions", "Choisir une zone",
-                         "Les zones sans actif disponible pour l'instant sont marquées « Bientôt ».")
+                         "Chaque zone regroupe ses 30 plus grandes capitalisations, tous pays confondus.")
     places = daily_snapshot.available_places(asset_universe.ACTIONS)
     cols = st.columns(len(cfg.ZONES))
     for col, (zone_key, zone) in zip(cols, cfg.ZONES.items()):
         available = _zone_available(places, zone_key)
-        countries = " · ".join(cfg.PAYS[c]["nom"] for c in zone["pays"])
+        countries = " · ".join(asset_universe.COUNTRY_NAMES[c] for c in asset_universe.countries_of_zone(zone_key))
         body = (f'<div class="tsnav-name">{html.escape(zone["nom"])}</div>'
                 f'<div class="tsnav-desc">{html.escape(zone["description"])}</div>'
                 f'<div class="tsnav-countries">{html.escape(countries)}</div>'
@@ -208,38 +209,7 @@ def render_zones() -> None:
         with col:
             if ui_cards.nav_card(f"zone_{zone_key}", body, size="large", available=available,
                                  aria_label=f"Explorer la zone {zone['nom']}", outline=_outline(zone["contour"])):
-                go(asset_universe.ACTIONS, "countries", zone_key)
-    ui_cards.footnote(cfg.PERF_FOOTNOTE)
-
-
-def render_countries(zone_key: str) -> None:
-    zone = cfg.ZONES[zone_key]
-    render_breadcrumb(current())
-    ui_cards.page_header(f"Actions · {zone['nom']}", "Choisir un pays",
-                         "Ou parcours toute la zone d'un coup. Les pays sans actif pour l'instant sont marqués « Bientôt ».")
-    places = daily_snapshot.available_places(asset_universe.ACTIONS)
-    zone_ok = _zone_available(places, zone_key)
-    wide_label = cfg.WIDE_ZONE_LABELS[zone_key]
-    wide_body = (f'<div class="tsnav-name">{html.escape(wide_label)}</div>'
-                 f'<div class="tsnav-desc">{html.escape(zone["description"])}</div>'
-                 f'{_indices_html(zone["indices"])}{_cta(zone_ok, "Voir toute la liste →")}')
-    if ui_cards.nav_card(f"wide_{zone_key}", wide_body, size="wide", available=zone_ok,
-                         aria_label=f"Voir toute la liste : {wide_label}", outline=_outline(zone["contour"])):
-        go(asset_universe.ACTIONS, "list", zone_key)
-
-    countries = zone["pays"]
-    per_row = 5
-    for start in range(0, len(countries), per_row):
-        cols = st.columns(per_row)
-        for col, country_key in zip(cols, countries[start:start + per_row]):
-            country = cfg.PAYS[country_key]
-            available = bool(places) and (zone_key, country_key) in places
-            body = (f'<div class="tsnav-name">{html.escape(country["nom"])}</div>'
-                    f'{_indices_html([country["indice"]])}{_cta(available)}')
-            with col:
-                if ui_cards.nav_card(f"country_{country_key}", body, size="country", available=available,
-                                     aria_label=f"Explorer {country['nom']}", outline=_outline(country["contour"])):
-                    go(asset_universe.ACTIONS, "list", zone_key, country_key)
+                go(asset_universe.ACTIONS, "list", zone_key)
     ui_cards.footnote(cfg.PERF_FOOTNOTE)
 
 
@@ -264,7 +234,7 @@ def render_currencies() -> None:
         with_code = [t for t in pairs if code in (cfg.pair_currencies(t) or ())]
         if with_code:  # une carte n'apparaît que si elle a au moins une paire
             cards.append((code, currency, with_code))
-    per_row = 3
+    per_row = 4
     for start in range(0, len(cards), per_row):
         cols = st.columns(per_row)
         for col, (code, currency, with_code) in zip(cols, cards[start:start + per_row]):
@@ -303,7 +273,7 @@ def yield_curve_outline(group: str) -> dict:
 def render_maturities() -> None:
     render_breadcrumb(current())
     ui_cards.page_header("Obligations", "Choisir une maturité",
-                         "ETF obligataires américains, du plus court au plus long, puis les fonds diversifiés.")
+                         "Trésor américain par maturité, puis fonds diversifiés, entreprises, inflation et international.")
     names = dict(asset_universe.ASSETS_BY_CATEGORY[asset_universe.BONDS])
     available = _available_tickers(asset_universe.BONDS)
     groups = list(cfg.BOND_GROUPS.items())
@@ -321,3 +291,26 @@ def render_maturities() -> None:
                                  outline=yield_curve_outline(key)):
                 go(asset_universe.BONDS, "list", group=key)
     ui_cards.footnote("Fond de carte : courbe des taux stylisée, à titre d'illustration (aucune donnée réelle).")
+
+
+# -- Matières premières : familles -------------------------------------------------
+
+def render_families() -> None:
+    render_breadcrumb(current())
+    ui_cards.page_header("Matières premières", "Choisir une famille",
+                         "Contrats à terme les plus échangés, regroupés par famille.")
+    names = dict(asset_universe.ASSETS_BY_CATEGORY[asset_universe.COMMODITIES])
+    available = _available_tickers(asset_universe.COMMODITIES)
+    families = list(asset_universe.COMMODITY_FAMILIES.items())
+    cols = st.columns(len(families))
+    for col, (key, family) in zip(cols, families):
+        ok = bool(available) and any(t in available for t in family["tickers"])
+        body = (f'<div class="tsnav-name">{html.escape(family["nom"])}</div>'
+                f'<div class="tsnav-desc">{html.escape(family["description"])}</div>'
+                f'<div class="tsnav-index-label">Contrats</div>'
+                f'<div class="tsnav-countries">{html.escape(" · ".join(names[t] for t in family["tickers"]))}</div>'
+                f'{_cta(ok)}')
+        with col:
+            if ui_cards.nav_card(f"family_{key}", body, size="country", available=ok,
+                                 aria_label=f"Explorer la famille {family['nom']}"):
+                go(asset_universe.COMMODITIES, "list", group=key)

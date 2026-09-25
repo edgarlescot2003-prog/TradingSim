@@ -45,6 +45,7 @@ FORMES = {
     # grossière pour être reconnaissable (vérifié visuellement le 25/09/2026) ;
     # la carte Hong Kong s'affiche donc sans contour.
     "australie":   (lambda p: p["ADMIN"] == "Australia", (112, -44, 154, -10), 150),
+    "nouvelle-zelande": (lambda p: p["ADMIN"] == "New Zealand", (165, -48, 179, -34), 170),  # carte NZD (Forex)
     # Zone euro : liste à VÉRIFIER auprès de la BCE avant mise en production (elle évolue)
     "zone-euro":   (lambda p: p["ADMIN"] in ZONE_EURO, (-12, 34, 35, 61), 150),
 }

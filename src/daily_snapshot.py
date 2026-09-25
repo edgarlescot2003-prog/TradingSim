@@ -196,7 +196,10 @@ def list_assets(category: str, zone: str | None = None, country: str | None = No
     except Exception as error:
         market_store.db_failed(error)
         return None
-    return [dict(zip(_COLUMNS, row)) for row in rows]
+    # Seuls les actifs de l'univers ACTUEL : une ligne d'un actif retiré de
+    # asset_universe reste en base (jamais supprimée) mais n'est plus ni
+    # affichée ni rechargée.
+    return [dict(zip(_COLUMNS, row)) for row in rows if asset_universe.in_universe(row[0])]
 
 
 PLACES_CACHE_SECONDS = 300

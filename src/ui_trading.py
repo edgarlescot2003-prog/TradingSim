@@ -127,7 +127,7 @@ LIST_ROW_COLUMNS = [
     {"key": "price_html", "label": "Prix indicatif", "kind": "html", "width": 1.3},
     {"key": "change_html", "label": "Var. 30 j", "kind": "html", "width": 1.1},
 ]
-LIST_PAGE_SIZE = 20
+LIST_PAGE_SIZE = 30  # une liste de zone (30 actions) s'affiche en entier
 _LIST_SORTS = ["Nom (A → Z)", "Variation 30 j : meilleure d'abord", "Variation 30 j : moins bonne d'abord"]
 
 
@@ -146,8 +146,8 @@ def _age_label(seconds: float) -> str:
 
 def _place_label(row: dict) -> str:
     country, zone = row.get("country"), row.get("zone")
-    if country in trading_nav_config.PAYS:
-        return trading_nav_config.PAYS[country]["nom"]
+    if country in asset_universe.COUNTRY_NAMES:
+        return asset_universe.COUNTRY_NAMES[country]
     if zone in trading_nav_config.ZONES:
         return trading_nav_config.ZONES[zone]["nom"]
     return "—"
@@ -194,10 +194,8 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
     calculés localement sur les lignes lues (aucune requête)."""
     label = asset_universe.CATEGORY_LABELS.get(category, category)
     ui_trading_nav.render_breadcrumb(ui_trading_nav.current())
-    if country:
-        title = trading_nav_config.PAYS[country]["nom"]
-    elif zone:
-        title = trading_nav_config.WIDE_ZONE_LABELS[zone]
+    if zone in trading_nav_config.ZONES:
+        title = trading_nav_config.ZONES[zone]["nom"]
     else:
         title = ui_trading_nav.group_label(category, group) or label
     ui_cards.page_header(label, title)
@@ -262,7 +260,7 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
 
     rows = [{
         "ticker": r["ticker"],
-        "name": r["name"],
+        "name": asset_universe.name_of(r["ticker"]) or r["name"],
         "category": category,
         "place": _place_label(r),
         "price": _format_list_price(r.get("close_price"), r.get("currency")),
@@ -1867,14 +1865,16 @@ def render(portfolio) -> None:
                 ui_trading_nav.render_home_categories()
             elif view == "zones":
                 ui_trading_nav.render_zones()
-            elif view == "countries" and nav.get("zone") in trading_nav_config.ZONES:
-                ui_trading_nav.render_countries(nav["zone"])
             elif view == "currencies":
                 ui_trading_nav.render_currencies()
             elif view == "maturities":
                 ui_trading_nav.render_maturities()
+            elif view == "families":
+                ui_trading_nav.render_families()
+            elif view != "list":  # ancien écran (ex. « countries » retiré le 26/09) : retour à la catégorie
+                ui_trading_nav.open_category(nav["category"])
             else:
-                _render_category_list(nav["category"], nav.get("zone"), nav.get("country"), nav.get("group"))
+                _render_category_list(nav["category"], nav.get("zone"), None, nav.get("group"))
             return
 
         # Rechargement complet = interaction, sauf celui qui déclenche la
@@ -1898,9 +1898,9 @@ def render(portfolio) -> None:
         # manuel sans nom connu, voir _render_search).
         category = ui_trading_nav.asset_category(ticker, quote_type)
         place = None
-        places = trading_nav_config.ASSET_PLACES.get(ticker)
-        if places and places[1] in trading_nav_config.PAYS:
-            place = trading_nav_config.PAYS[places[1]]["nom"]
+        places = asset_universe.ASSET_PLACES.get(ticker)
+        if places and places[1] in asset_universe.COUNTRY_NAMES:
+            place = asset_universe.COUNTRY_NAMES[places[1]]
         ui_cards.asset_header(name or ticker, ticker, category, place)
 
         # Layout façon Hyperliquid (desktop) : graphique à gauche (majorité de

@@ -143,11 +143,11 @@ def test_category_list_shows_indicative_prices():
     assert "mis à jour il y a 2 h" in text
     assert "en cours de chargement" in text  # les 3 autres cryptos n'ont pas encore de données
     # Filtre et tri locaux (aucune requête).
-    at.text_input(key="list_filter_compact_category_Crypto").input("eth").run()
+    at.text_input(key="list_filter_compact_category_Crypto").input("solana").run()
     assert not at.exception, at.exception
     _assert_no_network(at)
     tickers = [b.label for b in at.button if b.label.endswith("-USD")]
-    assert tickers == ["ETH-USD"], tickers
+    assert tickers == ["SOL-USD"], tickers
     at.text_input(key="list_filter_compact_category_Crypto").input("").run()
     at.selectbox(key="list_sort_compact_category_Crypto").select("Variation 30 j : moins bonne d'abord").run()
     assert [b.label for b in at.button if b.label.endswith("-USD")][0] == "BTC-USD", "variation connue d'abord"
@@ -170,30 +170,28 @@ def _click(at, label):
     _assert_no_network(at)
 
 
-def test_actions_zones_countries_list_make_no_request():
+def test_actions_zones_list_make_no_request():
     at = _run()
     _click(at, "Explorer Actions")
     labels = [b.label for b in at.button]
     text = " ".join(str(m.value) for m in at.markdown if "<style>" not in str(m.value))
-    assert "Choisir une zone" in text and "S&amp;P 500" in text and "Nikkei 225" in text, text[:600]
-    assert "Explorer la zone Amérique" in labels, labels
-    assert "Explorer la zone Europe" not in labels and "Explorer la zone Asie" not in labels,         "zones sans actif : « Bientôt », non cliquables"
-    assert text.count("Bientôt") >= 2
-    _click(at, "Explorer la zone Amérique")
-    labels = [b.label for b in at.button]
-    assert "Explorer États-Unis" in labels and "Explorer Canada" not in labels, labels
-    assert "Voir toute la liste : Toute l'Amérique" in labels
-    _click(at, "Explorer États-Unis")
+    assert "Choisir une zone" in text and "S&amp;P 500" in text and "KOSPI" in text and "TAIEX" in text, text[:600]
+    assert "Hang Seng" not in text and "Shanghai" not in text, "Chine exclue"
+    for zone in ("Europe", "Amérique", "Asie"):
+        assert f"Explorer la zone {zone}" in labels, labels
+    assert "Bientôt" not in text, "les 3 zones ont maintenant des actifs"
+    _click(at, "Explorer la zone Asie")
     tickers = {b.label for b in at.button}
-    assert {"AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"} <= tickers, tickers
-    assert not {"TLT", "BTC-USD"} & tickers, "liste filtrée sur les actions des États-Unis"
+    assert {"2330.TW", "7203.T", "RELIANCE.NS", "005930.KS"} <= tickers, tickers
+    assert not {"AAPL", "ASML.AS", "BTC-USD"} & tickers, "liste filtrée sur la zone Asie"
+    assert "Taïwan" in " ".join(str(m.value) for m in at.markdown), "pays affiché dans la liste"
     assert at.session_state["_refresh_triggers"] == ["Actions"]
-    _click(at, "Amérique")  # fil d'Ariane
-    assert "Explorer États-Unis" in [b.label for b in at.button]
-    _click(at, "Voir toute la liste : Toute l'Amérique")
-    _click(at, "Actions")
-    assert "Explorer la zone Amérique" in [b.label for b in at.button]
-    print("OK: Actions -> zones -> pays -> liste (+ fil d'Ariane), Bientôt non cliquable, zéro requête réseau")
+    _click(at, "Actions")  # fil d'Ariane
+    _click(at, "Explorer la zone Amérique")
+    tickers = {b.label for b in at.button}
+    assert {"AAPL", "RY.TO", "SHOP.TO"} <= tickers and "TLT" not in tickers
+    assert len([t for t in tickers if t in {"AAPL", "NVDA", "MSFT", "KO", "BNS.TO"}]) == 5, "30 lignes affichées"
+    print("OK: Actions -> zones (indices, pays) -> liste de la zone (+ fil d'Ariane), zéro requête réseau")
 
 
 def test_forex_by_currency_makes_no_request():
@@ -201,34 +199,50 @@ def test_forex_by_currency_makes_no_request():
     _click(at, "Explorer Forex/Monnaies")
     labels = [b.label for b in at.button]
     expected = {f"Explorer les paires en {n}" for n in
-                ("Euro", "Dollar américain", "Livre sterling", "Yen japonais", "Franc suisse", "Dollar australien")}
+                ("Euro", "Dollar américain", "Livre sterling", "Yen japonais", "Franc suisse", "Dollar australien",
+                 "Dollar canadien", "Dollar néo-zélandais")}
     assert expected <= set(labels), labels
     text = " ".join(str(m.value) for m in at.markdown if "<style>" not in str(m.value))
-    assert "Banque centrale européenne" in text and "taux" not in text.lower(), "banque centrale, jamais de taux"
+    assert "Banque du Canada" in text and "taux" not in text.lower(), "banque centrale, jamais de taux"
     _click(at, "Explorer les paires en Euro")
-    tickers = [b.label for b in at.button if b.label.endswith("=X")]
-    assert tickers == ["EURUSD=X"], tickers
+    tickers = sorted(b.label for b in at.button if b.label.endswith("=X"))
+    assert tickers == ["EURAUD=X", "EURCAD=X", "EURCHF=X", "EURGBP=X", "EURJPY=X", "EURUSD=X"], tickers
     _click(at, "Forex/Monnaies")  # fil d'Ariane
-    _click(at, "Explorer les paires en Dollar américain")
-    assert len([b.label for b in at.button if b.label.endswith("=X")]) == 5
-    print("OK: Forex -> devises (banque centrale, sans taux) -> paires de la devise, zéro requête réseau")
+    _click(at, "Explorer les paires en Dollar néo-zélandais")
+    assert sorted(b.label for b in at.button if b.label.endswith("=X")) == ["AUDNZD=X", "NZDUSD=X"]
+    print("OK: Forex -> 8 devises (banque centrale, sans taux) -> paires de la devise, zéro requête réseau")
 
 
 def test_bonds_by_maturity_makes_no_request():
     at = _run()
     _click(at, "Explorer Obligations")
     labels = [b.label for b in at.button]
-    for group in ("court terme", "moyen terme", "long terme", "diversifiés"):
+    for group in ("court terme", "moyen terme", "long terme", "diversifiés", "entreprises",
+                  "inflation & international"):
         assert f"Explorer les obligations {group}" in labels, labels
     text = " ".join(str(m.value) for m in at.markdown if "<style>" not in str(m.value))
     assert "aucune donnée réelle" in text and "investment grade" in text
+    bonds = {t for t, _ in __import__("src.asset_universe", fromlist=["x"]).ASSETS_BY_CATEGORY["Obligations"]}
     _click(at, "Explorer les obligations court terme")
-    assert [b.label for b in at.button if b.label in {"SHY", "IEF", "TLT", "BND", "AGG"}] == ["SHY"]
+    assert sorted(b.label for b in at.button if b.label in bonds) == ["SGOV", "SHY"]
     _click(at, "Obligations")  # fil d'Ariane
-    _click(at, "Explorer les obligations diversifiés")
-    assert sorted(b.label for b in at.button if b.label in {"SHY", "IEF", "TLT", "BND", "AGG"}) == ["AGG", "BND"]
-    print("OK: Obligations -> maturités (courbe stylisée) -> fonds de la maturité, zéro requête réseau")
+    _click(at, "Explorer les obligations entreprises")
+    assert sorted(b.label for b in at.button if b.label in bonds) == ["HYG", "JNK", "LQD"]
+    print("OK: Obligations -> 6 cartes (courbe stylisée) -> fonds de la carte, zéro requête réseau")
 
+
+def test_commodities_by_family_makes_no_request():
+    at = _run()
+    _click(at, "Explorer Matières premières")
+    labels = [b.label for b in at.button]
+    for family in ("Métaux", "Énergie", "Agriculture"):
+        assert f"Explorer la famille {family}" in labels, labels
+    _click(at, "Explorer la famille Agriculture")
+    tickers = sorted(b.label for b in at.button if b.label.endswith("=F"))
+    assert tickers == ["CC=F", "KC=F", "SB=F", "ZC=F", "ZS=F", "ZW=F"], tickers
+    text = " ".join(str(m.value) for m in at.markdown if "<style>" not in str(m.value))
+    assert "Cacao" in text and "Maïs" in text, "noms de l'univers affichés"
+    print("OK: Matières premières -> 3 familles -> contrats de la famille, zéro requête réseau")
 
 if __name__ == "__main__":
     test_home_makes_no_request()
@@ -236,7 +250,8 @@ if __name__ == "__main__":
     test_category_navigation_makes_no_request()
     test_category_list_shows_indicative_prices()
     test_category_list_database_down()
-    test_actions_zones_countries_list_make_no_request()
+    test_actions_zones_list_make_no_request()
     test_forex_by_currency_makes_no_request()
     test_bonds_by_maturity_makes_no_request()
+    test_commodities_by_family_makes_no_request()
     print("Tous les tests 'accueil sans requête' sont passés.")

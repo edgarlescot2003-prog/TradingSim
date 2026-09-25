@@ -1,9 +1,11 @@
-"""Configuration statique de la navigation de l'onglet Trading (zones, pays,
-indices de référence), SANS dépendance à Streamlit ni au réseau.
+"""Configuration statique de la navigation de l'onglet Trading (zones,
+indices de référence, devises, maturités), SANS dépendance à Streamlit ni au
+réseau.
 
 Performances d'indices = valeurs FIGÉES de l'année ANNEE_PERF, recopiées
-telles quelles depuis l'annexe B du prompt de conception (recueillies par
-Claude (chat) sur des sources publiques le 24/09/2026). Aucune requête, aucun
+telles quelles depuis leurs sources (annexe B du prompt de conception,
+recueillies par Claude (chat) le 24/09/2026 ; KOSPI, Nifty 50 et TAIEX
+recueillis par Claude Code le 25/09/2026). Aucune requête, aucun
 rafraîchissement : ce sont des variations d'indices (devise locale, indice
 « prix » sauf mention contraire), pas le rendement d'un placement.
 
@@ -11,9 +13,13 @@ MISE À JOUR ANNUELLE (chaque janvier) : changer ANNEE_PERF et TOUTES les
 valeurs `perf` avec leurs sources, en une seule modification de ce fichier.
 Ne jamais « corriger » une valeur sans source.
 
-Disponibilité (carte cliquable ou « Bientôt ») : jamais écrite ici, calculée
-depuis la table des prix indicatifs (daily_snapshot.available_places).
+Navigation des actions (26/09/2026) : Accueil → Actions → ZONE → liste (plus
+de niveau pays ; le pays reste affiché dans la liste). Disponibilité d'une
+zone (carte cliquable ou « Bientôt ») : jamais écrite ici, calculée depuis la
+table des prix indicatifs (daily_snapshot.available_places).
 """
+
+from .asset_universe import ASSET_PLACES  # noqa: F401 (réexporté pour daily_snapshot et la fiche)
 
 ANNEE_PERF = 2025
 
@@ -27,65 +33,46 @@ _STOXX_600 = {"nom": "STOXX Europe 600", "perf": 17.0, "decimales": 0, "approx":
                         "(« 17 % », clôture ~592). Certaines sources arrondissent à 16 %."}
 _SP_500 = {"nom": "S&P 500", "perf": 16.4, "decimales": 1, "nature": "prix (rendement total ≈ +17,9 %)",
            "source": "YCharts (16,39 %) ; Statista (16,4 %) ; First Trust (17,9 % dividendes inclus)"}
+_TSX = {"nom": "S&P/TSX Composite", "perf": 28.2, "decimales": 1,
+        "nature": "prix (rendement total ≈ +31,7 % selon S&P DJI)",
+        "source": "IBISWorld ; Trading Economics (« 28 % ») ; Reuters (« presque 29 % »)"}
 _NIKKEI = {"nom": "Nikkei 225", "perf": 26.2, "decimales": 1, "nature": "prix",
            "source": "Club Patrimoine ; Kyodo / Nikkei Asia (« 26 % », clôture 50 339,48)"}
-_HANG_SENG = {"nom": "Hang Seng", "perf": 27.77, "decimales": 1, "nature": "prix",
-              "source": "Global Times ; SCMP (« 28 % »)"}
-_SHANGHAI = {"nom": "Shanghai Composite", "perf": 18.41, "decimales": 1, "nature": "prix",
-             "source": "Global Times ; People's Daily (CSI 300 : +17,66 %)"}
+_KOSPI = {"nom": "KOSPI", "perf": 75.6, "decimales": 1, "nature": "prix",
+          "source": "Korea Herald (clôture 4 214,17 contre 2 399 fin 2024) ; Korea JoongAng Daily (« 76 % ») "
+                    "— https://www.koreaherald.com/article/10646103"}
+_NIFTY = {"nom": "Nifty 50", "perf": 10.51, "decimales": 1, "nature": "prix",
+          "source": "Samco (+10,51 %, clôture 26 129,60) ; Business Standard (« environ 10 % »)"}
+_TAIEX = {"nom": "TAIEX", "perf": 25.73, "decimales": 1, "nature": "prix",
+          "source": "Focus Taiwan 31/12/2025 (+25,73 %, clôture 28 963,60) ; Taipei Times 01/01/2026"}
 
 ZONES = {
     "europe": {
         "nom": "Europe", "contour": "europe",
-        "description": "Grandes places boursières européennes.",
-        "pays": ["france", "allemagne", "royaume-uni", "suisse", "pays-bas"],
+        "description": "Les 30 plus grandes capitalisations européennes.",
         "indices": [_STOXX_600],
     },
     "amerique": {
         "nom": "Amérique", "contour": "amerique",
-        "description": "Marchés d'Amérique du Nord, dont Wall Street.",
-        "pays": ["etats-unis", "canada"],
-        "indices": [_SP_500],
+        "description": "Les 25 plus grandes capitalisations américaines et 5 canadiennes.",
+        "indices": [_SP_500, _TSX],
     },
     "asie": {
         "nom": "Asie", "contour": "asie",
-        "description": "Japon, Chine et Hong Kong. Pas d'indice unique pour la zone.",
-        "pays": ["japon", "chine", "hong-kong"],
-        "indices": [_NIKKEI, _HANG_SENG, _SHANGHAI],
+        "description": "Les 30 plus grandes capitalisations du Japon, de Taïwan, d'Inde et de Corée du Sud.",
+        "indices": [_NIKKEI, _TAIEX, _NIFTY, _KOSPI],
     },
 }
 
-PAYS = {
-    "france": {"nom": "France", "zone": "europe", "contour": "france",
-               "indice": {"nom": "CAC 40", "perf": 10.42, "decimales": 1, "nature": "prix (CAC 40 GR ≈ +14,3 %)",
-                          "source": "Option Finance / AOF 31/12/2025 ; BFM Bourse (clôture 8 149,50)"}},
-    "allemagne": {"nom": "Allemagne", "zone": "europe", "contour": "allemagne",
-                  "indice": {"nom": "DAX 40", "perf": 23.01, "decimales": 1, "note": "dividendes inclus",
-                             "nature": "indice de performance (dividendes réinvestis)",
-                             "source": "Option Finance / AOF 31/12/2025 ; Beursgorilla (22,9 %)"}},
-    "royaume-uni": {"nom": "Royaume-Uni", "zone": "europe", "contour": "royaume-uni",
-                    "indice": {"nom": "FTSE 100", "perf": 21.51, "decimales": 1, "nature": "prix",
-                               "source": "Option Finance / AOF ; CNBC 31/12/2025"}},
-    "suisse": {"nom": "Suisse", "zone": "europe", "contour": "suisse",
-               "indice": {"nom": "SMI", "perf": 14.5, "decimales": 1, "nature": "prix",
-                          "source": "SRF 31/12/2025 (clôture 13 267 ; une autre source donne 9,01 %, "
-                                    "incohérente avec les niveaux : ignorée)"}},
-    "pays-bas": {"nom": "Pays-Bas", "zone": "europe", "contour": "pays-bas",
-                 "indice": {"nom": "AEX", "perf": 8.3, "decimales": 1, "nature": "prix, hors dividendes",
-                            "source": "FD ; ABM FN-Dow Jones via beleggen.nl (clôture 951,29)"}},
-    "etats-unis": {"nom": "États-Unis", "zone": "amerique", "contour": "etats-unis", "indice": _SP_500},
-    "canada": {"nom": "Canada", "zone": "amerique", "contour": "canada",
-               "indice": {"nom": "S&P/TSX Composite", "perf": 28.2, "decimales": 1,
-                          "nature": "prix (rendement total ≈ +31,7 % selon S&P DJI)",
-                          "source": "IBISWorld ; Trading Economics (« 28 % ») ; Reuters (« presque 29 % »)"}},
-    "japon": {"nom": "Japon", "zone": "asie", "contour": "japon", "indice": _NIKKEI},
-    "chine": {"nom": "Chine", "zone": "asie", "contour": "chine", "indice": _SHANGHAI},
-    # Pas de contour : trop grossier à la résolution disponible (voir tools/generer_contours.py).
-    "hong-kong": {"nom": "Hong Kong", "zone": "asie", "contour": None, "indice": _HANG_SENG},
-}
+# Indices des anciennes cartes pays (niveau retiré le 26/09/2026), conservés
+# avec leurs sources pour une éventuelle V2 par pays :
+# CAC 40 +10,42 % (Option Finance / AOF 31/12/2025) ; DAX 40 +23,01 %,
+# dividendes inclus (Option Finance / AOF) ; FTSE 100 +21,51 % (AOF, CNBC) ;
+# SMI +14,5 % (SRF) ; AEX +8,3 % (FD, beleggen.nl) ; IBEX 35 +49,27 %
+# (Trading Economics, clôture 17 307,80) ; FTSE MIB +31,4 % (Il Denaro,
+# clôture 45 005,02) ; Hang Seng +27,77 % (Global Times, SCMP) ; Shanghai
+# Composite +18,41 % (Global Times, People's Daily).
 
-# Carte large « Toute la zone » affichée au-dessus des pays d'une zone.
-WIDE_ZONE_LABELS = {"europe": "Toute l'Europe", "amerique": "Toute l'Amérique", "asie": "Toute l'Asie"}
 
 # -- Forex : regroupement par devise ---------------------------------------------
 # Une carte par devise présente dans au moins une paire de l'univers. Banque
@@ -101,6 +88,9 @@ FOREX_CURRENCIES = {
     "JPY": {"nom": "Yen japonais", "banque_centrale": "Banque du Japon", "contour": "japon"},
     "CHF": {"nom": "Franc suisse", "banque_centrale": "Banque nationale suisse", "contour": "suisse"},
     "AUD": {"nom": "Dollar australien", "banque_centrale": "Banque de réserve d'Australie", "contour": "australie"},
+    "CAD": {"nom": "Dollar canadien", "banque_centrale": "Banque du Canada", "contour": "canada"},
+    "NZD": {"nom": "Dollar néo-zélandais", "banque_centrale": "Banque de réserve de Nouvelle-Zélande",
+            "contour": "nouvelle-zelande"},
 }
 
 
@@ -112,42 +102,41 @@ def pair_currencies(ticker: str) -> tuple[str, str] | None:
     return None
 
 
-# -- Obligations : regroupement par maturité -----------------------------------------
-# Descriptions vérifiées le 25/09/2026 sur les fiches officielles des fonds :
-# iShares (SHY, IEF, TLT, AGG : « seeks to track an index that includes U.S.
-# Treasury bonds with remaining maturities between one and three years »,
-# « …seven and ten years », « …greater than twenty years » ; AGG : « U.S.
-# investment-grade bonds ») et Vanguard (BND : Bloomberg U.S. Aggregate
-# Float Adjusted Index, marché obligataire américain investment grade :
-# Trésor, entreprises, titres adossés). BND et AGG ne sont donc PAS des
-# fonds d'obligations d'État seulement.
+# -- Obligations : 6 cartes -------------------------------------------------------
+# Descriptions vérifiées sur les fiches officielles des fonds :
+# - 25/09/2026 : iShares SHY (Trésor 1-3 ans), IEF (7-10 ans), TLT (plus de
+#   20 ans), AGG (« U.S. investment-grade bonds ») ; Vanguard BND (Bloomberg
+#   U.S. Aggregate Float Adjusted : Trésor, entreprises, titres adossés).
+# - 26/09/2026 : iShares SGOV (bons du Trésor 0-3 mois), IEI (3-7 ans), TLH
+#   (10-20 ans), GOVT (Trésor, toutes maturités), TIP (Trésor indexé sur
+#   l'inflation), MUB (municipales investment grade), LQD (entreprises en
+#   dollars investment grade), HYG (entreprises en dollars à haut rendement),
+#   EMB (émergents en dollars) ; SPDR JNK (haut rendement américain) ;
+#   Vanguard BNDX (obligations investment grade hors États-Unis, couvertes
+#   contre le change).
 # `zone` : prévu pour un futur niveau « zone » (ETF européens...), mêmes
 # cartes à contours, sans refonte.
 BOND_GROUPS = {
-    "court-terme": {"nom": "Court terme", "tickers": ["SHY"], "zone": "amerique", "maturite": "1 à 3 ans",
-                    "description": "Obligations du Trésor américain de 1 à 3 ans (SHY)."},
-    "moyen-terme": {"nom": "Moyen terme", "tickers": ["IEF"], "zone": "amerique", "maturite": "7 à 10 ans",
-                    "description": "Obligations du Trésor américain de 7 à 10 ans (IEF)."},
-    "long-terme": {"nom": "Long terme", "tickers": ["TLT"], "zone": "amerique", "maturite": "plus de 20 ans",
-                   "description": "Obligations du Trésor américain de plus de 20 ans (TLT)."},
-    "diversifies": {"nom": "Diversifiés", "tickers": ["BND", "AGG"], "zone": "amerique", "maturite": "toutes",
-                    "description": "Tout le marché obligataire américain « investment grade » : État, entreprises "
-                                   "et titres adossés (BND, AGG)."},
-}
-
-# Zone et pays des actifs EXISTANTS (renseignés en base par
-# daily_snapshot, sans jamais écraser une valeur déjà présente). Les ETF
-# obligataires sont des fonds obligataires américains (voir BOND_GROUPS).
-# Crypto, Forex et Matières premières : aucune zone (regroupements propres).
-ASSET_PLACES = {
-    **{t: ("amerique", "etats-unis") for t in ("AAPL", "MSFT", "NVDA", "GOOGL", "AMZN")},
-    **{t: ("amerique", "etats-unis") for t in ("TLT", "IEF", "BND", "AGG", "SHY")},
+    "court-terme": {"nom": "Court terme", "tickers": ["SGOV", "SHY"], "zone": "amerique",
+                    "description": "Trésor américain de 0 à 3 mois (SGOV) et de 1 à 3 ans (SHY)."},
+    "moyen-terme": {"nom": "Moyen terme", "tickers": ["IEI", "IEF"], "zone": "amerique",
+                    "description": "Trésor américain de 3 à 7 ans (IEI) et de 7 à 10 ans (IEF)."},
+    "long-terme": {"nom": "Long terme", "tickers": ["TLH", "TLT"], "zone": "amerique",
+                   "description": "Trésor américain de 10 à 20 ans (TLH) et de plus de 20 ans (TLT)."},
+    "diversifies": {"nom": "Diversifiés", "tickers": ["GOVT", "BND", "AGG", "MUB"], "zone": "amerique",
+                    "description": "Tout le Trésor américain (GOVT), le marché obligataire américain « investment "
+                                   "grade » : État, entreprises et titres adossés (BND, AGG), et les "
+                                   "obligations municipales (MUB)."},
+    "entreprises": {"nom": "Entreprises", "tickers": ["LQD", "HYG", "JNK"], "zone": "amerique",
+                    "description": "Obligations d'entreprises américaines « investment grade » (LQD) et à "
+                                   "haut rendement (HYG, JNK)."},
+    "inflation-international": {"nom": "Inflation & international", "tickers": ["TIP", "BNDX", "EMB"],
+                                "zone": "amerique",
+                                "description": "Trésor américain indexé sur l'inflation (TIP), obligations "
+                                               "internationales hors États-Unis couvertes contre le change (BNDX) "
+                                               "et pays émergents en dollars (EMB)."},
 }
 
 
 def zone_indices(zone_key: str) -> list[dict]:
     return ZONES[zone_key]["indices"]
-
-
-def country_indices(country_key: str) -> list[dict]:
-    return [PAYS[country_key]["indice"]]
