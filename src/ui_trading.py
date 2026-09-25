@@ -211,7 +211,9 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
     if len(filled) < len(snapshot_rows) and status != "unavailable":
         st.caption("Certaines données sont en cours de chargement (—).")
     if refreshing:
-        if st.button("Mise à jour des prix en cours… Afficher les derniers prix", key="reload_category_list"):
+        ui_cards.state_banner("updating", "Les prix manquants apparaissent au fur et à mesure (quelques secondes).",
+                              title="Liste en cours de mise à jour")
+        if st.button("Afficher les derniers prix", key="reload_category_list"):
             st.rerun()
 
     table_key = f"compact_category_{theme._safe_key_part(category)}"
@@ -689,9 +691,11 @@ def _render_paused_price(ticker: str) -> None:
         when = datetime.fromtimestamp(fetched).strftime("%H:%M:%S") if fetched else "?"
         ui_cards.live_price(st.session_state.get("trading_price_native", 0.0), currency, price_eur,
                             f"Prix obtenu à {when} · actualisation automatique en pause")
-        theme.render_stale_banner(
-            f"Actualisation en pause (aucune activité depuis "
-            f"{live_quote.AUTO_REFRESH_PAUSE_INACTIVITE_S // 60} min) · prix obtenu à {when}."
+        ui_cards.state_banner(
+            "paused",
+            f"Aucune activité depuis {live_quote.AUTO_REFRESH_PAUSE_INACTIVITE_S // 60} min : le prix n'est plus "
+            f"actualisé (obtenu à {when}). Clique sur « Actualiser » ou n'importe où pour reprendre.",
+            title="Actualisation en pause",
         )
     if st.button("Actualiser", key="resume_auto_refresh", type="primary"):
         _note_interaction()
@@ -752,9 +756,10 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
     if quote["stale"]:
         age_min = max(0, (time.time() - quote["fetched_at"]) / 60)
         limit_min = valuation.max_order_price_age_seconds(ticker, st.session_state.trading_quote_type) // 60
-        theme.render_stale_banner(
+        ui_cards.state_banner(
+            "dated",
             f"Prix daté de {age_min:.0f} min : source de cotation en pause, dernier prix connu affiché. "
-            f"Ordres possibles tant que le prix a moins de {limit_min} min."
+            f"Ordres possibles tant que le prix a moins de {limit_min} min.",
         )
         if st.session_state.get("_stale_mode_logged") != ticker:
             st.session_state["_stale_mode_logged"] = ticker
@@ -1232,7 +1237,7 @@ def _order_panel_body(portfolio, ticker: str, name: str | None, price_eur: float
         theme.render_order_confirmation_popup(confirmation_msg, seconds=ORDER_CONFIRMATION_POPUP_SECONDS)
     refresh_notice = st.session_state.pop("_price_refresh_notice", None)
     if refresh_notice:
-        st.warning(refresh_notice)
+        ui_cards.state_banner("revalidate", refresh_notice, title="Ordre à revalider")
 
     # Prix AFFICHÉ, relu à chaque exécution du fragment (voir _displayed_price) ;
     # les arguments ne servent que de repli.

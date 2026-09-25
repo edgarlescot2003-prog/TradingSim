@@ -90,6 +90,10 @@ def _click(at):
     return at
 
 
+def _texts(at):
+    return " ".join(str(m.value) for m in at.markdown if "<style>" not in str(m.value))
+
+
 def test_order_uses_displayed_price():
     at = _start()
     assert abs(at.session_state["trading_price_eur"] - 180.0) < 1e-9
@@ -108,7 +112,7 @@ def test_old_displayed_price_refreshed_then_revalidated():
     assert not at.session_state["portfolio"].history, "premier clic : aucun ordre exécuté"
     assert at.session_state["_yahoo_calls"] == 2, "le prix a été rafraîchi une fois"
     assert abs(at.session_state["trading_price_eur"] - 189.0) < 1e-9  # 210 USD x 0,9
-    assert any("valide à nouveau" in str(w.value) for w in at.warning), [w.value for w in at.warning]
+    assert "Ordre à revalider" in _texts(at) and "valide à nouveau" in _texts(at), _texts(at)[:800]
     _click(at)
     trade = at.session_state["portfolio"].history[-1]
     assert abs(trade.price_eur - 189.0) < 1e-9 and at.session_state["_yahoo_calls"] == 2, trade
@@ -132,7 +136,7 @@ def test_refresh_blocked_falls_back_to_dated_price_rules():
     _click(at)
     assert not at.session_state["portfolio"].history
     assert at.session_state["trading_price_source"] == "last_known"
-    assert any("source est indisponible" in str(w.value) for w in at.warning), [w.value for w in at.warning]
+    assert "source est indisponible" in _texts(at), _texts(at)[:800]
     _click(at)  # prix daté de ~7 min < 60 min : règles du mode prix daté -> accepté
     trade = at.session_state["portfolio"].history[-1]
     assert trade.price_source == "last_known" and abs(trade.price_eur - 180.0) < 1e-9, trade

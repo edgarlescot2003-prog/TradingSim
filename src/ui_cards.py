@@ -152,6 +152,17 @@ _CSS = f"""
 .tsnav-order-note {{ font-family: {theme.FONT_SANS}; font-size: 0.8rem; color: {theme.MUTED}; margin-top: 0.3rem; }}
 @media (max-width: 640px) {{ .tsnav-live-price {{ font-size: 2rem; }} .tsnav-asset-name {{ font-size: 1.5rem; }} }}
 
+/* Bandeaux d'état (prix daté, pause, mise à jour, ordre à revalider) */
+.tsnav-state {{ display: flex; gap: 0.7rem; align-items: flex-start; padding: 0.7rem 1rem; margin: 0.3rem 0 0.8rem 0;
+                border-radius: 12px; border: 1px solid {theme.BORDER}; background: rgba(255, 255, 255, 0.06);
+                font-family: {theme.FONT_SANS}; font-size: 0.88rem; color: {theme.TEXT}; line-height: 1.45; }}
+.tsnav-state-icon {{ font-size: 1.05rem; line-height: 1.3; flex-shrink: 0; }}
+.tsnav-state-title {{ font-weight: 700; display: block; }}
+.tsnav-state-dated, .tsnav-state-revalidate {{ border-left: 4px solid {theme.ACCENT}; }}
+.tsnav-state-revalidate {{ background: rgba(249, 115, 22, 0.14); }}
+.tsnav-state-paused {{ border-left: 4px solid {theme.MUTED}; }}
+.tsnav-state-updating {{ border-left: 4px solid {theme.CATEGORY_COLORS["Forex"]}; }}
+
 /* Fil d'Ariane */
 .st-key-ts_light [class*="st-key-tsnav_crumbs"] {{ gap: 0.15rem !important; align-items: center !important;
                                                    margin-bottom: 0.2rem; }}
@@ -335,6 +346,22 @@ def stat_cards(items: list[tuple[str, str]]) -> None:
     cells = "".join(f'<div class="tsnav-stat"><div class="tsnav-stat-label">{html.escape(label)}</div>'
                     f'<div class="tsnav-stat-value">{value}</div></div>' for label, value in items)
     st.markdown(f'<div class="tsnav-stats">{cells}</div>', unsafe_allow_html=True)
+
+
+_STATE_ICONS = {"dated": "⏱", "paused": "⏸", "updating": "↻", "revalidate": "⚠"}
+
+
+def state_banner(kind: str, message: str, title: str | None = None) -> None:
+    """Bandeau d'état de l'onglet Trading (`kind` : dated, paused, updating,
+    revalidate). Simple information : n'ajoute ni ne retire aucune règle."""
+    icon = _STATE_ICONS.get(kind, "ℹ")
+    title_html = f'<span class="tsnav-state-title">{html.escape(title)}</span>' if title else ""
+    st.markdown(
+        f'<div class="tsnav-state tsnav-state-{kind}" role="status">'
+        f'<span class="tsnav-state-icon" aria-hidden="true">{icon}</span>'
+        f'<div>{title_html}{html.escape(message)}</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def page_header(eyebrow: str, title: str, lead: str = "") -> None:
