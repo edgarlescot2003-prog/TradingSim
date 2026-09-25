@@ -104,11 +104,20 @@ def _engine():
 
 def _seed(conn) -> None:
     """Amorce la table avec l'univers actuel de l'app : insère les actifs
-    absents, ne modifie JAMAIS une ligne existante (ON CONFLICT DO NOTHING)."""
+    absents, ne modifie JAMAIS une ligne existante (ON CONFLICT DO NOTHING),
+    puis renseigne zone/pays (trading_nav_config.ASSET_PLACES) là où ils
+    sont encore vides seulement — idempotent, aucune valeur écrasée."""
+    from .trading_nav_config import ASSET_PLACES
+
     conn.execute(
         text("INSERT INTO asset_daily_snapshot (ticker, name, category) VALUES (:ticker, :name, :category) "
              "ON CONFLICT (ticker) DO NOTHING"),
         [{"ticker": t, "name": n, "category": c} for t, n, c in asset_universe.all_assets()],
+    )
+    conn.execute(
+        text("UPDATE asset_daily_snapshot SET zone = COALESCE(zone, :zone), country = COALESCE(country, :country) "
+             "WHERE ticker = :ticker AND (zone IS NULL OR country IS NULL)"),
+        [{"ticker": t, "zone": z, "country": c} for t, (z, c) in ASSET_PLACES.items()],
     )
 
 
@@ -188,6 +197,41 @@ def list_assets(category: str, zone: str | None = None, country: str | None = No
         market_store.db_failed(error)
         return None
     return [dict(zip(_COLUMNS, row)) for row in rows]
+
+
+PLACES_CACHE_SECONDS = 300
+_places_cache: dict[str, tuple[set[tuple[str, str | None]], float]] = {}
+_places_lock = threading.Lock()
+
+
+def available_places(category: str) -> set[tuple[str, str | None]] | None:
+    """Couples (zone, pays) ayant au moins un actif de `category` dans la
+    table — c'est ce qui rend une carte de zone/pays cliquable (sinon
+    « Bientôt »). Une seule requête légère, mise en cache 5 min par
+    processus. None si la base est indisponible (l'appelant affiche alors
+    tout en « Bientôt », sans erreur)."""
+    now = time.time()
+    with _places_lock:
+        cached = _places_cache.get(category)
+        if cached and now - cached[1] < PLACES_CACHE_SECONDS:
+            return cached[0]
+    engine = _engine()
+    if engine is None:
+        return None
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT DISTINCT zone, country FROM asset_daily_snapshot "
+                     "WHERE category = :category AND zone IS NOT NULL"),
+                {"category": category},
+            ).fetchall()
+    except Exception as error:
+        market_store.db_failed(error)
+        return None
+    places = {(row[0], row[1]) for row in rows}
+    with _places_lock:
+        _places_cache[category] = (places, now)
+    return places
 
 
 # -- Rafraîchissement paresseux ------------------------------------------------------
