@@ -134,8 +134,8 @@ _CSS = f"""
 @media (max-width: 640px) {{
     .tsnav-title {{ font-size: 1.5rem; }}
     .st-key-ts_light [class*="st-key-tsnav_card_"][class*="_category_"] {{ min-height: 0; }}
-    .st-key-ts_light [class*="st-key-tsnav_card_"][class*="_large_"] {{ min-height: 16rem; }}
-    .st-key-ts_light [class*="st-key-tsnav_card_"][class*="_country_"] {{ min-height: 11rem; }}
+    .st-key-ts_light [class*="st-key-tsnav_card_"][class*="_large_"] {{ min-height: 21rem; }}
+    .st-key-ts_light [class*="st-key-tsnav_card_"][class*="_country_"] {{ min-height: 14rem; }}
     .st-key-ts_light [class*="st-key-tsnav_card_"][class*="_wide_"] {{ min-height: 10rem; }}
     .tsnav-card-large .tsnav-name, .tsnav-card-wide .tsnav-name {{ font-size: 1.5rem; }}
 }}
@@ -180,7 +180,9 @@ def outline_css(card_key: str, outline: dict | None, size: str) -> str:
            f'stroke-width="1.4" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>')
     width = _outline_width_pct(outline, size)
     position = "right 1.5rem center" if size == "wide" else "right -4% bottom -5%"
-    mobile_width = min(width, 45.0) if size == "wide" else min(width * 0.62, 58.0)
+    # Téléphone : contour réduit, logé dans le coin bas-droit libéré par
+    # la hauteur minimale des cartes (voir le media query de _CSS).
+    mobile_width = min(width, 40.0) if size == "wide" else min(width * 0.5, 42.0)
     return (f'.st-key-ts_light .st-key-{card_key} {{ background-image: url("data:image/svg+xml,{quote(svg)}"); '
             f'background-size: {width:.0f}% auto; background-position: {position}; }}'
             f'@media (max-width: 640px) {{ .st-key-ts_light .st-key-{card_key} {{ '

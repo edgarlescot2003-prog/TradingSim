@@ -37,6 +37,9 @@ from . import search_history
 from . import storage
 from . import theme
 from . import tp_sl
+from . import trading_nav_config
+from . import ui_cards
+from . import ui_trading_nav
 from . import valuation
 
 # -- Univers d'actifs de l'accueil (voir asset_universe.py) -----------------
@@ -116,39 +119,6 @@ ACTION_BY_ORDER_TYPE = {
 # lus en base, voir _render_category_list) et sur la fiche actif (seul
 # endroit en direct). Garde : tests/test_trading_home_no_network.py.
 
-def _render_home_categories() -> None:
-    with st.container(key="ts_card_home_categories"):
-        st.markdown("##### Parcourir par catégorie")
-        style_rules = []
-        rows = [asset_universe.CATEGORIES[:3], asset_universe.CATEGORIES[3:]]
-        with st.container(key="ts_home_grid"):
-            for row in rows:
-                cols = st.columns(3)
-                for col, category in zip(cols, row):
-                    key = f"ts_home_cat_{theme._safe_key_part(category)}"
-                    color, _ = theme.badge_color(category)
-                    count = len(asset_universe.ASSETS_BY_CATEGORY[category])
-                    # Sélecteur à 3 classes : voir le piège de spécificité CSS
-                    # documenté dans _render_action_tabs.
-                    style_rules.append(
-                        f'.st-key-ts_light .st-key-{key}.stElementContainer .stButton > button '
-                        f'{{ border-left:4px solid {color} !important; min-height:3.4rem; '
-                        f'justify-content:flex-start !important; }}'
-                    )
-                    label = f"{asset_universe.CATEGORY_LABELS[category]}  ·  {count} actifs"
-                    if col.button(label, key=key, use_container_width=True):
-                        _open_category(category)
-        st.markdown(f"<style>{''.join(style_rules)}</style>", unsafe_allow_html=True)
-
-
-def _open_category(category: str, zone: str | None = None, country: str | None = None) -> None:
-    """Navigation vers une page de liste. `zone`/`country` : niveau prévu
-    pour une phase ultérieure (colonnes déjà présentes en base), ignorés
-    pour l'instant."""
-    st.session_state["trading_category"] = {"category": category, "zone": zone, "country": country}
-    st.rerun()
-
-
 LIST_ROW_COLUMNS = [
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge", "width": 0.9},
     {"key": "name", "label": "Nom", "kind": "link", "width": 1.4},
@@ -178,10 +148,14 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
     la liste s'affiche immédiatement avec ce qui est en base.
     `zone`/`country` : niveau prévu pour une phase ultérieure."""
     label = asset_universe.CATEGORY_LABELS.get(category, category)
-    if st.button("← Retour à l'accueil", key="back_from_category"):
-        st.session_state.pop("trading_category", None)
-        st.rerun()
-    st.markdown(f"### {label}")
+    ui_trading_nav.render_breadcrumb(ui_trading_nav.current())
+    if country:
+        title = trading_nav_config.PAYS[country]["nom"]
+    elif zone:
+        title = trading_nav_config.WIDE_ZONE_LABELS[zone]
+    else:
+        title = label
+    ui_cards.page_header(label, title)
 
     snapshot_rows = daily_snapshot.list_assets(category, zone=zone, country=country)
     if snapshot_rows is None:
@@ -1782,19 +1756,25 @@ def render(portfolio) -> None:
         st.session_state["search_query"] = ""
 
     with st.container(key="ts_light"):
-        _render_search()
-
+        ui_cards.inject_css()
         ticker = st.session_state.get("selected_ticker")
         name = st.session_state.get("selected_name")
         quote_type = st.session_state.get("selected_quote_type", "")
 
         if not ticker:
-            category_nav = st.session_state.get("trading_category")
-            if category_nav:
-                _render_category_list(category_nav["category"], category_nav.get("zone"),
-                                      category_nav.get("country"))
+            nav = ui_trading_nav.current()
+            view = (nav or {}).get("view", "list")
+            if not nav:
+                # Accueil : en-tête, recherche (+ récents), cartes de catégories.
+                ui_trading_nav.render_home_header()
+                _render_search()
+                ui_trading_nav.render_home_categories()
+            elif view == "zones":
+                ui_trading_nav.render_zones()
+            elif view == "countries" and nav.get("zone") in trading_nav_config.ZONES:
+                ui_trading_nav.render_countries(nav["zone"])
             else:
-                _render_home_categories()
+                _render_category_list(nav["category"], nav.get("zone"), nav.get("country"))
             return
 
         # Rechargement complet = interaction, sauf celui qui déclenche la
@@ -1809,10 +1789,7 @@ def render(portfolio) -> None:
                 pass  # l'historique de recherche est un confort, jamais bloquant
             st.session_state["_last_recorded_search"] = ticker
 
-        back_label = "← Retour à la liste" if st.session_state.get("trading_category") else "← Retour à l'accueil"
-        if st.button(back_label, key="back_to_trading_home"):
-            st.session_state.selected_ticker = None
-            st.rerun()
+        ui_trading_nav.render_asset_breadcrumb(ticker, name, quote_type)
 
         # Nom/ticker de l'actif consulté, absent jusqu'ici en haut de la fiche
         # (seul le prix, plus bas, permettait de confirmer quel actif était

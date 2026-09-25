@@ -97,7 +97,7 @@ def test_home_makes_no_request():
     _assert_no_network(at)
     labels = [b.label for b in at.button]
     for expected in ("Actions", "Crypto", "Obligations", "Forex/Monnaies", "Matières premières"):
-        assert any(label.startswith(expected) for label in labels), labels
+        assert f"Explorer {expected}" in labels, labels
     text = " ".join(str(m.value) for m in at.markdown if "<style>" not in str(m.value))
     assert "CAC 40" not in text and "Indices" not in text, "les indices ne doivent plus apparaître"
     print("OK: accueil rendu (5 catégories, aucun indice), zéro requête réseau")
@@ -113,13 +113,13 @@ def test_recent_searches_make_no_request():
 
 def test_category_navigation_makes_no_request():
     at = _run()
-    crypto = next(b for b in at.button if b.label.startswith("Crypto"))
+    crypto = next(b for b in at.button if b.label == "Explorer Crypto")
     crypto.click().run()
     assert not at.exception, at.exception
     _assert_no_network(at)
     assert any(b.label == "BTC-USD" for b in at.button), [b.label for b in at.button]
     assert at.session_state["_refresh_triggers"] == ["Crypto"], "le rafraîchissement doit être déclenché"
-    at.button(key="back_from_category").click().run()
+    next(b for b in at.button if b.label == "Trading").click().run()  # fil d'Ariane
     assert not at.exception, at.exception
     _assert_no_network(at)
     print("OK: page de liste Crypto ouverte puis fermée, zéro requête réseau")
@@ -127,7 +127,7 @@ def test_category_navigation_makes_no_request():
 
 def _open_crypto(**state):
     at = _run(**state)
-    next(b for b in at.button if b.label.startswith("Crypto")).click().run()
+    next(b for b in at.button if b.label == "Explorer Crypto").click().run()
     assert not at.exception, at.exception
     _assert_no_network(at)
     return at
@@ -154,10 +154,43 @@ def test_category_list_database_down():
     print("OK: base indisponible -> message neutre, actifs toujours accessibles, aucune erreur")
 
 
+def _click(at, label):
+    next(b for b in at.button if b.label == label).click().run()
+    assert not at.exception, at.exception
+    _assert_no_network(at)
+
+
+def test_actions_zones_countries_list_make_no_request():
+    at = _run()
+    _click(at, "Explorer Actions")
+    labels = [b.label for b in at.button]
+    text = " ".join(str(m.value) for m in at.markdown if "<style>" not in str(m.value))
+    assert "Choisir une zone" in text and "S&amp;P 500" in text and "Nikkei 225" in text, text[:600]
+    assert "Explorer la zone Amérique" in labels, labels
+    assert "Explorer la zone Europe" not in labels and "Explorer la zone Asie" not in labels,         "zones sans actif : « Bientôt », non cliquables"
+    assert text.count("Bientôt") >= 2
+    _click(at, "Explorer la zone Amérique")
+    labels = [b.label for b in at.button]
+    assert "Explorer États-Unis" in labels and "Explorer Canada" not in labels, labels
+    assert "Voir toute la liste : Toute l'Amérique" in labels
+    _click(at, "Explorer États-Unis")
+    tickers = {b.label for b in at.button}
+    assert {"AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"} <= tickers, tickers
+    assert not {"TLT", "BTC-USD"} & tickers, "liste filtrée sur les actions des États-Unis"
+    assert at.session_state["_refresh_triggers"] == ["Actions"]
+    _click(at, "Amérique")  # fil d'Ariane
+    assert "Explorer États-Unis" in [b.label for b in at.button]
+    _click(at, "Voir toute la liste : Toute l'Amérique")
+    _click(at, "Actions")
+    assert "Explorer la zone Amérique" in [b.label for b in at.button]
+    print("OK: Actions -> zones -> pays -> liste (+ fil d'Ariane), Bientôt non cliquable, zéro requête réseau")
+
+
 if __name__ == "__main__":
     test_home_makes_no_request()
     test_recent_searches_make_no_request()
     test_category_navigation_makes_no_request()
     test_category_list_shows_indicative_prices()
     test_category_list_database_down()
+    test_actions_zones_countries_list_make_no_request()
     print("Tous les tests 'accueil sans requête' sont passés.")
