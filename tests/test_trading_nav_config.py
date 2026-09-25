@@ -119,9 +119,22 @@ def test_forex_config():
     print("OK: devises Forex (contours existants, banque centrale sans taux), toutes les paires couvertes")
 
 
+def test_bond_groups_config():
+    from src import asset_universe
+    grouped = [t for g in cfg.BOND_GROUPS.values() for t in g["tickers"]]
+    universe = [t for t, _ in asset_universe.ASSETS_BY_CATEGORY[asset_universe.BONDS]]
+    assert sorted(grouped) == sorted(universe), "chaque ETF obligataire est dans exactement une maturité"
+    assert "Trésor américain de 1 à 3 ans" in cfg.BOND_GROUPS["court-terme"]["description"]
+    assert "investment grade" in cfg.BOND_GROUPS["diversifies"]["description"], "BND/AGG ne sont pas que de l'État"
+    for group in cfg.BOND_GROUPS.values():
+        assert group["zone"] in cfg.ZONES, "niveau zone prévu pour plus tard"
+    print("OK: maturités obligataires (descriptions vérifiées, chaque ETF classé une fois, zone prévue)")
+
+
 if __name__ == "__main__":
     test_index_values_copied_from_annex_b()
     test_outline_keys_exist()
     test_zone_country_filled_without_overwrite_and_availability()
     test_forex_config()
+    test_bond_groups_config()
     print("Tous les tests de configuration de la navigation sont passés.")

@@ -1845,6 +1845,8 @@ def render(portfolio) -> None:
                 ui_trading_nav.render_countries(nav["zone"])
             elif view == "currencies":
                 ui_trading_nav.render_currencies()
+            elif view == "maturities":
+                ui_trading_nav.render_maturities()
             else:
                 _render_category_list(nav["category"], nav.get("zone"), nav.get("country"), nav.get("group"))
             return

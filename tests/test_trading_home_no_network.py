@@ -214,6 +214,22 @@ def test_forex_by_currency_makes_no_request():
     print("OK: Forex -> devises (banque centrale, sans taux) -> paires de la devise, zéro requête réseau")
 
 
+def test_bonds_by_maturity_makes_no_request():
+    at = _run()
+    _click(at, "Explorer Obligations")
+    labels = [b.label for b in at.button]
+    for group in ("court terme", "moyen terme", "long terme", "diversifiés"):
+        assert f"Explorer les obligations {group}" in labels, labels
+    text = " ".join(str(m.value) for m in at.markdown if "<style>" not in str(m.value))
+    assert "aucune donnée réelle" in text and "investment grade" in text
+    _click(at, "Explorer les obligations court terme")
+    assert [b.label for b in at.button if b.label in {"SHY", "IEF", "TLT", "BND", "AGG"}] == ["SHY"]
+    _click(at, "Obligations")  # fil d'Ariane
+    _click(at, "Explorer les obligations diversifiés")
+    assert sorted(b.label for b in at.button if b.label in {"SHY", "IEF", "TLT", "BND", "AGG"}) == ["AGG", "BND"]
+    print("OK: Obligations -> maturités (courbe stylisée) -> fonds de la maturité, zéro requête réseau")
+
+
 if __name__ == "__main__":
     test_home_makes_no_request()
     test_recent_searches_make_no_request()
@@ -222,4 +238,5 @@ if __name__ == "__main__":
     test_category_list_database_down()
     test_actions_zones_countries_list_make_no_request()
     test_forex_by_currency_makes_no_request()
+    test_bonds_by_maturity_makes_no_request()
     print("Tous les tests 'accueil sans requête' sont passés.")

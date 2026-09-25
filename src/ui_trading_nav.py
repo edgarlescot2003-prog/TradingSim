@@ -26,7 +26,8 @@ CATEGORY_DESCRIPTIONS = {
 }
 
 # Catégories qui passent par un écran intermédiaire avant la liste.
-_FIRST_VIEW = {asset_universe.ACTIONS: "zones", asset_universe.FOREX: "currencies"}
+_FIRST_VIEW = {asset_universe.ACTIONS: "zones", asset_universe.FOREX: "currencies",
+               asset_universe.BONDS: "maturities"}
 
 
 def current() -> dict | None:
@@ -279,3 +280,44 @@ def render_currencies() -> None:
                                      aria_label=f"Explorer les paires en {currency['nom']}",
                                      outline=_outline(currency["contour"])):
                     go(asset_universe.FOREX, "list", group=code)
+
+
+# -- Obligations : maturités --------------------------------------------------------
+
+# Courbe des taux STYLISÉE (tracé générique, aucune donnée réelle) posée en
+# fond des cartes de maturité, avec un point à l'abscisse de la maturité de
+# la carte (aucun point pour « Diversifiés », qui couvre toute la courbe).
+_CURVE_PATH = "M0 262 C 60 170, 140 125, 230 104 S 360 84, 400 80"
+_CURVE_POINTS = {"court-terme": (40, 208), "moyen-terme": (150, 122), "long-terme": (330, 88)}
+
+
+def yield_curve_outline(group: str) -> dict:
+    d = _CURVE_PATH
+    point = _CURVE_POINTS.get(group)
+    if point:
+        x, y = point
+        d += f" M{x - 7} {y} a7 7 0 1 0 14 0 a7 7 0 1 0 -14 0"
+    return {"w": 400, "h": 280, "d": d}
+
+
+def render_maturities() -> None:
+    render_breadcrumb(current())
+    ui_cards.page_header("Obligations", "Choisir une maturité",
+                         "ETF obligataires américains, du plus court au plus long, puis les fonds diversifiés.")
+    names = dict(asset_universe.ASSETS_BY_CATEGORY[asset_universe.BONDS])
+    available = _available_tickers(asset_universe.BONDS)
+    groups = list(cfg.BOND_GROUPS.items())
+    cols = st.columns(len(groups))
+    for col, (key, group) in zip(cols, groups):
+        ok = bool(available) and any(t in available for t in group["tickers"])
+        funds = " · ".join(f"{t} ({names.get(t, t)})" for t in group["tickers"])
+        body = (f'<div class="tsnav-name">{html.escape(group["nom"])}</div>'
+                f'<div class="tsnav-desc">{html.escape(group["description"])}</div>'
+                f'<div class="tsnav-index-label">Fonds</div>'
+                f'<div class="tsnav-countries">{html.escape(funds)}</div>{_cta(ok)}')
+        with col:
+            if ui_cards.nav_card(f"bond_{key}", body, size="country", available=ok,
+                                 aria_label=f"Explorer les obligations {group['nom'].lower()}",
+                                 outline=yield_curve_outline(key)):
+                go(asset_universe.BONDS, "list", group=key)
+    ui_cards.footnote("Fond de carte : courbe des taux stylisée, à titre d'illustration (aucune donnée réelle).")
