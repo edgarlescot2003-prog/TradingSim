@@ -130,6 +130,28 @@ _CSS = f"""
 @keyframes tsnav-shimmer {{ 0% {{ background-position: 200% 0; }} 100% {{ background-position: -200% 0; }} }}
 @media (prefers-reduced-motion: reduce) {{ .tsnav-skeleton {{ animation: none; }} }}
 
+/* Fiche actif */
+.tsnav-asset-head {{ display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0.2rem 0 0.9rem 0;
+                     font-family: {theme.FONT_SANS}; }}
+.tsnav-asset-name {{ font-size: 1.9rem; font-weight: 700; color: {theme.TEXT}; line-height: 1.15; margin-right: 0.3rem; }}
+.tsnav-asset-class {{ padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }}
+.tsnav-asset-ticker {{ font-family: {theme.FONT_MONO}; font-size: 0.9rem; color: {theme.MUTED}; }}
+.tsnav-live {{ font-family: {theme.FONT_SANS}; margin-bottom: 0.6rem; }}
+.tsnav-live-price {{ font-family: {theme.FONT_MONO}; font-size: 2.6rem; font-weight: 700; color: {theme.TEXT};
+                     line-height: 1.1; }}
+.tsnav-live-ccy {{ font-size: 1.1rem; font-weight: 600; color: {theme.MUTED}; }}
+.tsnav-live-eur {{ font-family: {theme.FONT_MONO}; font-size: 1rem; color: {theme.MUTED}; margin-top: 0.15rem; }}
+.tsnav-meta {{ font-size: 0.8rem; color: {theme.MUTED}; margin-top: 0.35rem; }}
+.tsnav-stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.75rem;
+                margin: 0.4rem 0 1rem 0; }}
+.tsnav-stat {{ background: {theme.PANEL}; border: 1px solid {theme.BORDER}; border-radius: 12px; padding: 0.75rem 1rem;
+               font-family: {theme.FONT_SANS}; }}
+.tsnav-stat-label {{ font-size: 0.7rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+                     color: {theme.MUTED}; margin-bottom: 0.3rem; }}
+.tsnav-stat-value {{ font-family: {theme.FONT_MONO}; font-size: 1.05rem; font-weight: 600; color: {theme.TEXT}; }}
+.tsnav-order-note {{ font-family: {theme.FONT_SANS}; font-size: 0.8rem; color: {theme.MUTED}; margin-top: 0.3rem; }}
+@media (max-width: 640px) {{ .tsnav-live-price {{ font-size: 2rem; }} .tsnav-asset-name {{ font-size: 1.5rem; }} }}
+
 /* Fil d'Ariane */
 .st-key-ts_light [class*="st-key-tsnav_crumbs"] {{ gap: 0.15rem !important; align-items: center !important;
                                                    margin-bottom: 0.2rem; }}
@@ -278,6 +300,41 @@ def status_badge(text: str) -> str:
 
 def skeleton(label: str = "Chargement en cours") -> str:
     return f'<span class="tsnav-skeleton" role="status" aria-label="{html.escape(label)}"></span>'
+
+
+def asset_header(name: str, ticker: str, category: str, place: str | None = None) -> None:
+    bg, fg = theme.badge_color(category)
+    place_html = f'<span class="tsnav-asset-ticker">· {html.escape(place)}</span>' if place else ""
+    st.markdown(
+        f'<div class="tsnav-asset-head"><h2 class="tsnav-asset-name">{html.escape(name)}</h2>'
+        f'<span class="tsnav-asset-class" style="background:{bg};color:{fg}">{html.escape(category)}</span>'
+        f'<span class="tsnav-asset-ticker">{html.escape(ticker)}</span>{place_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def format_price(value: float) -> str:
+    """Même format de prix que le reste de la fiche (4 décimales sous 10)."""
+    return f"{value:,.{4 if abs(value) < 10 else 2}f}"
+
+
+def live_price(price_native: float, currency: str, price_eur: float, meta: str) -> None:
+    """Prix en direct en gros chiffres monospace + équivalent en euros +
+    ligne d'information (âge, fréquence, source). `meta` : texte brut."""
+    eur = "" if currency == "EUR" else f'<div class="tsnav-live-eur">≈ {format_price(price_eur)} €</div>'
+    st.markdown(
+        f'<div class="tsnav-live"><div class="tsnav-live-price">{format_price(price_native)} '
+        f'<span class="tsnav-live-ccy">{html.escape(currency)}</span></div>{eur}'
+        f'<div class="tsnav-meta">{html.escape(meta)}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def stat_cards(items: list[tuple[str, str]]) -> None:
+    """Cartes de chiffres : [(libellé, valeur HTML déjà échappée)]."""
+    cells = "".join(f'<div class="tsnav-stat"><div class="tsnav-stat-label">{html.escape(label)}</div>'
+                    f'<div class="tsnav-stat-value">{value}</div></div>' for label, value in items)
+    st.markdown(f'<div class="tsnav-stats">{cells}</div>', unsafe_allow_html=True)
 
 
 def page_header(eyebrow: str, title: str, lead: str = "") -> None:

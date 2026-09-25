@@ -685,11 +685,10 @@ def _render_paused_price(ticker: str) -> None:
     price_eur = st.session_state.get("trading_price_eur")
     if st.session_state.get("trading_price_ticker") == ticker and price_eur is not None:
         currency = st.session_state.get("trading_currency")
-        col1, col2 = st.columns(2)
-        col1.metric(f"Prix ({currency})", f"{st.session_state.get('trading_price_native', 0.0):,.2f}")
-        col2.metric("Prix (€)", f"{price_eur:,.2f}")
         fetched = st.session_state.get("trading_price_fetched_at")
         when = datetime.fromtimestamp(fetched).strftime("%H:%M:%S") if fetched else "?"
+        ui_cards.live_price(st.session_state.get("trading_price_native", 0.0), currency, price_eur,
+                            f"Prix obtenu à {when} · actualisation automatique en pause")
         theme.render_stale_banner(
             f"Actualisation en pause (aucune activité depuis "
             f"{live_quote.AUTO_REFRESH_PAUSE_INACTIVITE_S // 60} min) · prix obtenu à {when}."
@@ -744,9 +743,12 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
     previous_close = quote.get("previous_close")
     day_up = previous_close is None or price_native >= previous_close
 
-    col1, col2 = st.columns(2)
-    col1.metric(f"Prix actuel ({currency})", f"{price_native:,.2f}")
-    col2.metric("Prix actuel (€)", f"{price_eur:,.2f}")
+    source_label = _SOURCE_LABELS.get(quote.get("source"), quote.get("source"))
+    age_s = max(0, round(time.time() - quote["fetched_at"]))
+    age_text = f"{age_s} s" if age_s < 120 else f"{age_s // 60} min"
+    refresh_s = live_quote.price_cache_seconds(ticker, quote_type)
+    ui_cards.live_price(price_native, currency, price_eur,
+                        f"Obtenu il y a {age_text} · Auto · toutes les {refresh_s} s · source : {source_label}")
     if quote["stale"]:
         age_min = max(0, (time.time() - quote["fetched_at"]) / 60)
         limit_min = valuation.max_order_price_age_seconds(ticker, st.session_state.trading_quote_type) // 60
@@ -759,12 +761,6 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
             market_store.log_event("stale_price_mode", ticker=ticker, age_s=round(age_min * 60))
     else:
         st.session_state.pop("_stale_mode_logged", None)
-        source_label = _SOURCE_LABELS.get(quote.get("source"), quote.get("source"))
-        fetched = datetime.fromtimestamp(quote["fetched_at"]).strftime("%H:%M:%S")
-        st.caption(
-            f"Prix légèrement différé (source : {source_label}) · actualisation automatique toutes les "
-            f"{live_quote.price_cache_seconds(ticker, quote_type)} secondes · prix obtenu à {fetched}"
-        )
 
     col_a, col_b = st.columns([3, 1])
     period_key = col_a.radio(
@@ -856,6 +852,14 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
         f"{len(hist)} bougies chargées · intervalle {effective_interval}{fallback_note} · source {source}"
     )
     st.caption(theme.PLOTLY_FULLSCREEN_ZOOM_HINT)
+    # Trois chiffres tirés de la cotation DÉJÀ obtenue (aucune requête de plus).
+    day_change = (price_native / previous_close - 1) * 100 if previous_close else None
+    ui_cards.stat_cards([
+        ("Variation du jour", ui_cards.change_pill(day_change)),
+        ("Clôture précédente", f"{ui_cards.format_price(previous_close)} {html_lib.escape(currency)}"
+         if previous_close else "—"),
+        ("Prix en euros", f"{ui_cards.format_price(price_eur)} €"),
+    ])
 
 
 # -- Carnet d'ordre simulé (prompt 20) ----------------------------------------
@@ -1450,6 +1454,8 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
             _render_tp_sl_section(portfolio, ticker)
 
         if order_mode == "Ordre au marché":
+            st.markdown('<div class="tsnav-order-note">L\'ordre est exécuté au prix affiché.</div>',
+                        unsafe_allow_html=True)
             if st.button("Valider l'ordre", type="primary", key="submit_market_order"):
                 if _refresh_price_before_order(ticker, quote_type):
                     return tp_sl_section_rendered
@@ -1851,8 +1857,12 @@ def render(portfolio) -> None:
         # affiché). Nom en titre + ticker à part quand il diffère du nom
         # (cas courant : "Apple Inc." / AAPL) ; juste le ticker sinon (repli
         # manuel sans nom connu, voir _render_search).
-        title = f"{name}  ·  `{ticker}`" if name and name != ticker else ticker
-        st.markdown(f"### {title}")
+        category = ui_trading_nav.asset_category(ticker, quote_type)
+        place = None
+        places = trading_nav_config.ASSET_PLACES.get(ticker)
+        if places and places[1] in trading_nav_config.PAYS:
+            place = trading_nav_config.PAYS[places[1]]["nom"]
+        ui_cards.asset_header(name or ticker, ticker, category, place)
 
         # Layout façon Hyperliquid (desktop) : graphique à gauche (majorité de
         # la largeur), carnet d'ordre simulé (prompt 20, colonne fine, PUREMENT

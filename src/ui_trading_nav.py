@@ -92,11 +92,25 @@ def render_breadcrumb(nav: dict | None, current_label: str | None = None) -> Non
         go(target["category"], target["view"], target.get("zone"), target.get("country"))
 
 
+def asset_category(ticker: str, quote_type: str = "") -> str:
+    """Classe d'actif affichée sur la fiche, sans aucune requête : univers de
+    l'app d'abord, puis le type renvoyé par la cotation déjà obtenue (en
+    session), puis la syntaxe du ticker. Le type n'est jamais connu après
+    une navigation (theme.go_to_trading le remet à vide) : sans les deux
+    premières étapes, une action classique s'affichait « Autres »."""
+    known = asset_universe.category_of(ticker)
+    if known:
+        return known
+    if not quote_type and st.session_state.get("trading_price_ticker") == ticker:
+        quote_type = st.session_state.get("trading_quote_type") or ""
+    return valuation.category_for(quote_type, ticker)
+
+
 def render_asset_breadcrumb(ticker: str, name: str | None, quote_type: str = "") -> None:
     """Fil d'Ariane de la fiche actif : chemin de navigation mémorisé s'il
     correspond à la catégorie de l'actif, sinon la catégorie de l'actif."""
     nav = current()
-    category = valuation.category_for(quote_type, ticker)
+    category = asset_category(ticker, quote_type)
     if not nav or nav.get("category") != category or nav.get("view") != "list":
         nav = ({"category": category, "view": _FIRST_VIEW.get(category, "list")}
                if category in asset_universe.CATEGORY_LABELS else None)

@@ -95,6 +95,10 @@ def test_pause_stops_timers_and_requests_then_resumes():
     assert at.session_state["_run_every"] == {"_price_and_chart_body": 90, "_order_book_body": 1.5}, \
         at.session_state["_run_every"]
     assert at.session_state["_trading_last_interaction_at"] is not None
+    text = _texts(at)
+    for expected in ("Variation du jour", "Clôture précédente", "Prix en euros", "exécuté au prix affiché",
+                     "toutes les 90 s", ">Actions<"):
+        assert expected in text, (expected, text[:1500])
 
     # Ce que fait un tic de minuteur après 10 min sans interaction : pause +
     # rechargement complet marqué comme NON interactif.

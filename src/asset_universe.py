@@ -58,3 +58,11 @@ ASSETS_BY_CATEGORY: dict[str, list[tuple[str, str]]] = {
 def all_assets() -> list[tuple[str, str, str]]:
     """(ticker, nom, catégorie) pour tout l'univers, dans l'ordre d'affichage."""
     return [(t, n, c) for c in CATEGORIES for t, n in ASSETS_BY_CATEGORY[c]]
+
+
+def category_of(ticker: str) -> str | None:
+    """Catégorie d'un ticker de l'univers, None s'il n'en fait pas partie."""
+    for category, assets in ASSETS_BY_CATEGORY.items():
+        if any(t == ticker for t, _ in assets):
+            return category
+    return None
