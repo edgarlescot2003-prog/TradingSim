@@ -524,6 +524,73 @@ def _trade_markers_trace(trades: list, ticker: str, hist, fx_rate: float):
 _SOURCE_LABELS = {"yahoo": "Yahoo Finance", "kraken": "Kraken", "last_known": "dernier prix connu"}
 
 
+def _load_display_quote(ticker: str, quote_type: str) -> tuple[dict, float]:
+    """(cotation affichée, taux de change -> EUR). Lève MarketDataError."""
+    quote = live_quote.get_display_quote(ticker, quote_type)
+    fx_rate, _ = md.get_fx_rate_info(quote["currency"], allow_stale=True)
+    return quote, fx_rate
+
+
+def _store_displayed_quote(ticker: str, quote_type: str, quote: dict, fx_rate: float) -> None:
+    """Dépose le prix AFFICHÉ (et son heure d'obtention) en session : c'est
+    exactement ce prix que le formulaire d'ordre relit au moment du clic
+    (voir _displayed_price) — jamais une nouvelle cotation."""
+    st.session_state.trading_price_eur = quote["price"] * fx_rate
+    st.session_state.trading_currency = quote["currency"]
+    st.session_state.trading_price_fetched_at = quote["fetched_at"]
+    st.session_state.trading_price_source = quote["source"]
+    st.session_state.trading_price_ticker = ticker
+    st.session_state.trading_quote_type = quote.get("quote_type") or quote_type
+
+
+def _displayed_price(ticker: str) -> tuple[float, str] | None:
+    """(prix affiché en €, devise) pour `ticker`, lu en session au moment
+    de l'appel. Le fragment du formulaire d'ordre se relance seul à chaque
+    clic avec les ARGUMENTS du dernier rechargement complet de la page : sans
+    cette relecture, un ordre partait sur le prix de ce rechargement, parfois
+    plus ancien que celui affiché (mis à jour entre-temps par le fragment prix),
+    alors que le contrôle d'âge, lui, lisait l'heure du prix le plus récent."""
+    if st.session_state.get("trading_price_ticker") != ticker:
+        return None
+    price_eur = st.session_state.get("trading_price_eur")
+    if price_eur is None:
+        return None
+    return price_eur, st.session_state.get("trading_currency")
+
+
+def _refresh_price_before_order(ticker: str, quote_type: str) -> bool:
+    """Garde-fou d'âge du prix affiché (live_quote.displayed_price_too_old) :
+    si le prix affiché est trop ancien au clic, le rafraîchit, l'affiche et
+    demande une nouvelle validation (l'ordre n'est PAS exécuté). Retourne
+    False si l'ordre peut être exécuté sur le prix affiché. Si le
+    rafraîchissement échoue (source en pause), le prix daté obtenu à la
+    place est affiché et ce sont les règles du mode « prix daté » qui
+    s'appliqueront au clic suivant."""
+    fetched_at = st.session_state.get("trading_price_fetched_at")
+    source = st.session_state.get("trading_price_source")
+    if not live_quote.displayed_price_too_old(fetched_at, source, ticker, quote_type):
+        return False
+    age = time.time() - fetched_at
+    try:
+        quote, fx_rate = _load_display_quote(ticker, quote_type)
+    except md.MarketDataError as e:
+        st.error(f"Prix indisponible, ordre non exécuté : {e}")
+        return True
+    _store_displayed_quote(ticker, quote_type, quote, fx_rate)
+    new_price = quote["price"] * fx_rate
+    market_store.log_event("order_price_refreshed", ticker=ticker, displayed_age_s=round(age),
+                           new_source=quote["source"])
+    if quote["source"] == "last_known":
+        notice = (f"Le prix affiché datait de {age / 60:.0f} min et la source est indisponible : dernier prix "
+                  f"connu affiché ({new_price:,.2f} €). Vérifie puis valide à nouveau.")
+    else:
+        notice = (f"Le prix affiché datait de {age / 60:.0f} min : il vient d'être actualisé "
+                  f"({new_price:,.2f} €). Vérifie puis valide à nouveau.")
+    st.session_state["_price_refresh_notice"] = notice
+    st.rerun(scope="app")
+    return True
+
+
 def _render_price_and_chart(ticker: str, quote_type: str, trades: list) -> None:
     """Prix + graphique de `ticker`, isolés dans leur propre fragment : se
     rafraîchissent seuls (run_every), sans recharger le reste de la page
@@ -547,8 +614,7 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
             # Si la source est en pause : dernier prix connu (avec sa vraie
             # devise) plutôt qu'une page vide — ordres possibles sous
             # conditions d'âge (voir _execution_price_error).
-            quote = live_quote.get_display_quote(ticker, quote_type)
-        fx_rate, _ = md.get_fx_rate_info(quote["currency"], allow_stale=True)
+            quote, fx_rate = _load_display_quote(ticker, quote_type)
     except md.MarketDataError as e:
         st.error(str(e))
         st.session_state.trading_price_eur = None
@@ -557,13 +623,7 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
 
     price_native, currency = quote["price"], quote["currency"]
     price_eur = price_native * fx_rate
-
-    st.session_state.trading_price_eur = price_eur
-    st.session_state.trading_currency = currency
-    st.session_state.trading_price_fetched_at = quote["fetched_at"]
-    st.session_state.trading_price_source = quote["source"]
-    st.session_state.trading_price_ticker = ticker
-    st.session_state.trading_quote_type = quote.get("quote_type") or quote_type
+    _store_displayed_quote(ticker, quote_type, quote, fx_rate)
 
     previous_close = quote.get("previous_close")
     day_up = previous_close is None or price_native >= previous_close
@@ -1030,6 +1090,15 @@ def _render_order_panel(portfolio, ticker: str, name: str | None, price_eur: flo
     confirmation_msg = st.session_state.pop("_order_confirmation_message", None)
     if confirmation_msg:
         theme.render_order_confirmation_popup(confirmation_msg, seconds=ORDER_CONFIRMATION_POPUP_SECONDS)
+    refresh_notice = st.session_state.pop("_price_refresh_notice", None)
+    if refresh_notice:
+        st.warning(refresh_notice)
+
+    # Prix AFFICHÉ, relu à chaque exécution du fragment (voir _displayed_price) ;
+    # les arguments ne servent que de repli.
+    displayed = _displayed_price(ticker)
+    if displayed is not None:
+        price_eur, currency = displayed
 
     # Prompt 23 : quand le formulaire renforce une position existante, il
     # affiche lui-même la section TP/SL AVANT son bouton "Valider l'ordre"
@@ -1056,6 +1125,8 @@ def _render_close_panel(portfolio, ticker: str, existing, price_eur: float) -> N
     position_value = existing.quantity * price_eur
 
     def close(quantity: float) -> None:
+        if _refresh_price_before_order(ticker, st.session_state.get("trading_quote_type") or ""):
+            return
         price_error = _execution_price_error()
         if price_error:
             st.error(price_error)
@@ -1244,6 +1315,8 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
 
         if order_mode == "Ordre au marché":
             if st.button("Valider l'ordre", type="primary", key="submit_market_order"):
+                if _refresh_price_before_order(ticker, quote_type):
+                    return tp_sl_section_rendered
                 price_error = _execution_price_error()
                 if price_error:
                     st.error(price_error)

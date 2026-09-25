@@ -206,8 +206,22 @@ def test_kraken_rate_limit_opens_its_own_circuit():
     print("OK: 429 Kraken -> coupe-circuit Kraken seul, secours Yahoo")
 
 
+def test_displayed_price_age_threshold():
+    assert live_quote.FACTEUR_AGE_MAX_PRIX_AFFICHE == 2
+    now = 1_000_000.0
+    too_old = live_quote.displayed_price_too_old
+    assert live_quote.max_displayed_price_age_seconds("AAPL") == 180
+    assert live_quote.max_displayed_price_age_seconds("BTC-USD") == 60
+    assert not too_old(now - 180, "yahoo", "AAPL", now=now) and too_old(now - 181, "yahoo", "AAPL", now=now)
+    assert not too_old(now - 60, "kraken", "BTC-USD", now=now) and too_old(now - 61, "kraken", "BTC-USD", now=now)
+    assert not too_old(now - 3000, "last_known", "AAPL", now=now), "prix daté : règles du mode prix daté"
+    assert not too_old(None, None, "AAPL", now=now)
+    print("OK: seuil d'âge du prix affiché = 2 x cache (3 min Yahoo, 60 s Kraken), hors prix daté")
+
+
 if __name__ == "__main__":
     test_cache_durations_by_class()
+    test_displayed_price_age_threshold()
     test_yahoo_display_quote_reused_for_90_seconds()
     test_concurrent_viewers_share_one_request()
     test_kraken_symbol_mapping()

@@ -9,6 +9,8 @@ Toutes les règles de fraîcheur de la fiche vivent ici, à un seul endroit :
 - pause de l'actualisation automatique après inactivité.
 """
 
+import time
+
 from . import kraken_data
 from . import market_data as md
 from . import valuation
@@ -28,6 +30,30 @@ def live_source(ticker: str, quote_type: str = "") -> str:
 
 def price_cache_seconds(ticker: str, quote_type: str = "") -> int:
     return PRICE_CACHE_SECONDS[live_source(ticker, quote_type)]
+
+
+# Garde-fou d'âge du prix AFFICHÉ au moment d'un ordre au marché : au-delà
+# de FACTEUR_AGE_MAX_PRIX_AFFICHE x la durée de cache de sa classe (3 min
+# Yahoo, 60 s Kraken) — typiquement après la pause d'actualisation pour
+# inactivité —, le prix est d'abord rafraîchi et affiché, et l'utilisateur
+# doit valider à nouveau. Ne concerne pas un prix daté (source en pause) :
+# ce sont alors les règles du mode « prix daté » qui s'appliquent
+# (valuation.MAX_ORDER_PRICE_AGE_SECONDS).
+FACTEUR_AGE_MAX_PRIX_AFFICHE = 2
+
+
+def max_displayed_price_age_seconds(ticker: str, quote_type: str = "") -> int:
+    return FACTEUR_AGE_MAX_PRIX_AFFICHE * price_cache_seconds(ticker, quote_type)
+
+
+def displayed_price_too_old(fetched_at: float | None, source: str | None, ticker: str,
+                            quote_type: str = "", now: float | None = None) -> bool:
+    """Vrai si le prix affiché (obtenu à `fetched_at` auprès de `source`)
+    doit être rafraîchi avant d'exécuter un ordre au marché."""
+    if fetched_at is None or source == "last_known":
+        return False
+    current = time.time() if now is None else now
+    return current - fetched_at > max_displayed_price_age_seconds(ticker, quote_type)
 
 
 def get_display_quote(ticker: str, quote_type: str = "") -> dict:
