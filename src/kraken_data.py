@@ -13,6 +13,7 @@ boucle de pagination ci-dessous reste utile pour rattraper le présent quand
 un premier appel ne l'atteint pas encore.
 """
 
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -38,15 +39,23 @@ _INTERVAL_LADDER = [
 ]
 _MINUTES_BY_LABEL = dict(_INTERVAL_LADDER)
 
-# Kraken utilise des codes d'actifs historiques irréguliers (XBT pour BTC...).
-_SYMBOL_OVERRIDES = {"BTC": "XBT"}
+# Kraken utilise des codes d'actifs historiques irréguliers (XBT pour BTC,
+# XDG pour DOGE — vérifiés dans AssetPairs le 25/09/2026).
+_SYMBOL_OVERRIDES = {"BTC": "XBT", "DOGE": "XDG"}
+# Yahoo ajoute un identifiant numérique aux cryptos dont le symbole est
+# ambigu (UNI7083-USD pour Uniswap) : Kraken ne connaît que « UNI ».
+_YAHOO_NUMERIC_SUFFIX = re.compile(r"^([A-Z]+?)\d{3,}$")
 _ERROR_CACHE: dict[tuple[str, int], tuple[str, float]] = {}
 _ERROR_COOLDOWN_SECONDS = 30
 
 
 def _to_kraken_pair(yf_ticker: str) -> str:
     base, _, quote = yf_ticker.partition("-")
-    base = _SYMBOL_OVERRIDES.get(base.upper(), base.upper())
+    base = base.upper()
+    suffixed = _YAHOO_NUMERIC_SUFFIX.match(base)
+    if suffixed:
+        base = suffixed.group(1)
+    base = _SYMBOL_OVERRIDES.get(base, base)
     return f"{base}{quote.upper() or 'USD'}"
 
 

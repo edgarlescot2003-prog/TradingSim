@@ -28,6 +28,24 @@ class MarketDataError(Exception):
 YAHOO = "yahoo"
 
 
+# Sous-unités de devise renvoyées par Yahoo : certaines places cotent en
+# CENTIÈMES (Londres en pence « GBp », contrats agricoles américains en cents
+# « USX », Johannesburg « ZAc », Tel-Aviv « ILA »). Sans conversion, un prix de
+# 2 664 pence serait lu comme 2 664 livres (x100) dans les ordres, positions,
+# ordres à cours limité et classement, et « USX » n'est pas convertible en
+# euros. Tout prix qui sort de ce module est donc ramené à l'unité principale
+# (GBP, USD...) par normalize_currency, à UN seul endroit. Sensible à la
+# casse : « GBP » (livres) n'est jamais divisé, seul « GBp » (pence) l'est.
+_CURRENCY_SUBUNITS = {"GBp": ("GBP", 100.0), "GBX": ("GBP", 100.0), "USX": ("USD", 100.0),
+                      "ZAc": ("ZAR", 100.0), "ILA": ("ILS", 100.0)}
+
+
+def normalize_currency(currency: str | None) -> tuple[str | None, float]:
+    """(devise principale, diviseur à appliquer aux prix). Exemple :
+    "GBp" -> ("GBP", 100.0) ; "USD" -> ("USD", 1.0)."""
+    return _CURRENCY_SUBUNITS.get(currency, (currency, 1.0))
+
+
 def _ensure_yahoo_available(operation: str, ticker: str) -> None:
     remaining = market_store.blocked_remaining(YAHOO)
     if remaining > 0:
@@ -212,11 +230,12 @@ def _fetch_daily_summary(ticker: str) -> dict:
         diag_log.log("empty", "Yahoo", "history_1mo", ticker, "batch", time.perf_counter() - started, real_request=True)
         raise MarketDataError(f"Aucun historique disponible pour '{ticker}'.")
     meta = getattr(getattr(tkr, "_price_history", None), "_history_metadata", None) or {}
-    currency = meta.get("currency")
+    currency, divisor = normalize_currency(meta.get("currency"))
     if not currency:
         diag_log.log("empty", "Yahoo", "history_1mo", ticker, "batch", time.perf_counter() - started,
                      "missing_currency", True)
         raise MarketDataError(f"Devise inconnue pour '{ticker}'.")
+    closes = closes / divisor
     market_store.record_success(YAHOO)
     diag_log.log("success", "Yahoo", "history_1mo", ticker, "batch", time.perf_counter() - started, real_request=True)
     now = time.time()
@@ -251,7 +270,7 @@ def get_daily_closes(ticker: str) -> dict:
         raise MarketDataError(f"Historique indisponible pour '{ticker}' ({e}).") from e
     closes = hist["Close"].dropna() if hist is not None and "Close" in hist else None
     meta = getattr(getattr(tkr, "_price_history", None), "_history_metadata", None) or {}
-    currency = meta.get("currency")
+    currency, divisor = normalize_currency(meta.get("currency"))
     if closes is None or closes.empty or not currency:
         diag_log.log("empty", "Yahoo", "history_2mo", ticker, "daily_list", time.perf_counter() - started,
                      "no_data_or_currency", True)
@@ -265,7 +284,7 @@ def get_daily_closes(ticker: str) -> dict:
     # avec le fuseau de la place, la clôture de Wall Street de la veille
     # serait ignorée et la liste afficherait l'avant-veille toute la journée.
     today = datetime.now(timezone.utc).date()
-    candles = [(ts.date(), float(value)) for ts, value in closes.items()]
+    candles = [(ts.date(), float(value) / divisor) for ts, value in closes.items()]
     return {"candles": sorted(candles), "currency": currency, "today": today}
 
 
@@ -400,10 +419,11 @@ def _fetch_live_quote(ticker: str) -> dict:
         raise MarketDataError(message)
     fetched_at = time.time()
     market_time, market_open = _market_timing(tkr)
+    currency, divisor = normalize_currency(currency)
     quote = {
-        "price": float(price),
+        "price": float(price) / divisor,
         "currency": currency,
-        "previous_close": float(previous_close) if previous_close is not None else None,
+        "previous_close": float(previous_close) / divisor if previous_close is not None else None,
         "quote_type": quote_type,
         "fetched_at": fetched_at,
         "market_time": market_time,
@@ -474,10 +494,11 @@ def get_history(ticker: str, period: str = "6mo", interval: str = "1d", start=No
     _ensure_yahoo_available("history", ticker)
     started = time.perf_counter()
     try:
+        tkr = yf.Ticker(ticker)
         if start is not None:
-            hist = yf.Ticker(ticker).history(start=start, interval=interval)
+            hist = tkr.history(start=start, interval=interval)
         else:
-            hist = yf.Ticker(ticker).history(period=period, interval=interval)
+            hist = tkr.history(period=period, interval=interval)
     except Exception as e:
         diag_log.log("error", "Yahoo", "history", ticker, "individual", time.perf_counter() - started, repr(e), True)
         _note_yahoo_error(e)
@@ -493,6 +514,13 @@ def get_history(ticker: str, period: str = "6mo", interval: str = "1d", start=No
     _HISTORY_ERROR_CACHE.pop(error_key, None)
     market_store.record_success(YAHOO)
     diag_log.log("success", "Yahoo", "history", ticker, "individual", time.perf_counter() - started, real_request=True)
+    meta = getattr(getattr(tkr, "_price_history", None), "_history_metadata", None) or {}
+    _, divisor = normalize_currency(meta.get("currency"))
+    if divisor != 1.0:  # pence/cents -> unité principale (même devise que get_quote)
+        hist = hist.copy()
+        for column in ("Open", "High", "Low", "Close"):
+            if column in hist:
+                hist[column] = hist[column] / divisor
     return hist
 
 

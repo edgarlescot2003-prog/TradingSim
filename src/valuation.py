@@ -30,7 +30,11 @@ _CATEGORY_LABELS = {
 # Les tickers de rendement d'État bruts (^TNX, ^TYX, ^FVX, ^IRX...) sont
 # volontairement absents : ce sont des % de rendement, pas des prix
 # négociables, incompatibles avec le système de marge/P&L/liquidation.
-BOND_ETF_TICKERS = {"TLT", "IEF", "BND", "AGG", "SHY"}
+BOND_ETF_TICKERS = {
+    "TLT", "IEF", "BND", "AGG", "SHY",  # univers d'origine
+    # élargissement de l'univers (25/09/2026)
+    "SGOV", "IEI", "TLH", "GOVT", "TIP", "LQD", "HYG", "JNK", "BNDX", "EMB", "MUB",
+}
 
 # Repli par syntaxe de ticker, utilisé UNIQUEMENT quand quote_type est
 # indisponible (ex. st.session_state.selected_quote_type après une
@@ -67,8 +71,11 @@ _PROFILE_LOOKUP_CATEGORIES = {"Actions", "Indices/ETF", "Obligations"}
 # ajouté à COMMODITIES sans entrée ici retombe sur UNDEFINED_LABEL (voir
 # sector_for) plutôt que de planter — à compléter ici quand ça arrive.
 _COMMODITY_SECTORS = {
-    "GC=F": "Métaux précieux", "SI=F": "Métaux précieux",
-    "CL=F": "Énergie", "BZ=F": "Énergie", "NG=F": "Énergie",
+    "GC=F": "Métaux précieux", "SI=F": "Métaux précieux", "PL=F": "Métaux précieux", "PA=F": "Métaux précieux",
+    "HG=F": "Métaux industriels",
+    "CL=F": "Énergie", "BZ=F": "Énergie", "NG=F": "Énergie", "RB=F": "Énergie", "HO=F": "Énergie",
+    "ZC=F": "Agriculture", "ZW=F": "Agriculture", "ZS=F": "Agriculture", "KC=F": "Agriculture",
+    "SB=F": "Agriculture", "CC=F": "Agriculture",
 }
 
 
