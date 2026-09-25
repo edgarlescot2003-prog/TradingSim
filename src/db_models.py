@@ -212,6 +212,37 @@ class LastKnownPriceRow(Base):
     change_30d_at = Column(String, nullable=True)
 
 
+class AssetDailySnapshotRow(Base):
+    """Prix indicatif quotidien d'un actif des pages de liste Trading
+    (clôture de la veille, devise réelle, variation 30 j) — voir
+    daily_snapshot.py, qui crée aussi la table (CREATE TABLE IF NOT EXISTS)
+    et l'amorce avec asset_universe. Données de marché publiques, aucune
+    donnée utilisateur."""
+    __tablename__ = "asset_daily_snapshot"
+
+    ticker = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    category = Column(String, nullable=False, index=True)
+    zone = Column(String, nullable=True)  # réservé à une phase ultérieure
+    country = Column(String, nullable=True)  # réservé à une phase ultérieure
+    close_price = Column(Float, nullable=True)  # devise native
+    currency = Column(String, nullable=True)
+    change_30d_pct = Column(Float, nullable=True)
+    as_of_date = Column(String, nullable=True)  # date de la clôture (AAAA-MM-JJ)
+    updated_at = Column(String, nullable=True)  # dernière mise à jour réussie (ISO)
+    last_attempt_at = Column(String, nullable=True)  # dernière tentative, réussie ou non (ISO)
+
+
+class RefreshLeaseRow(Base):
+    """Bail de rafraîchissement (un seul processus à la fois par nom), voir
+    daily_snapshot.acquire_lease."""
+    __tablename__ = "refresh_leases"
+
+    name = Column(String, primary_key=True)
+    leased_until = Column(String, nullable=False)  # ISO 8601 UTC, format fixe
+    holder = Column(String, nullable=True)
+
+
 class TpSlOrderRow(Base):
     """Palier Take Profit / Stop Loss sur une position : prix cible EXACT (en
     euros, pas un pourcentage) et quantité exprimée en % de la position

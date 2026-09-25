@@ -121,6 +121,18 @@ def _engine():
         return None
 
 
+def engine_or_none():
+    """Accès public au moteur protégé (voir _engine) pour les autres modules
+    de données de marché (daily_snapshot.py) : None si la base est non
+    configurée ou récemment en panne, jamais d'exception."""
+    return _engine()
+
+
+def db_failed(error: Exception) -> None:
+    """Version publique de _db_failed (même repli mémoire, même log unique)."""
+    _db_failed(error)
+
+
 def _db_failed(error: Exception) -> None:
     """Met la base de côté 60 s (évite qu'une base en panne ralentisse chaque
     appel de prix par un timeout de connexion) et le journalise une fois."""
