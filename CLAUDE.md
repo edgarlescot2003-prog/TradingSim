@@ -346,6 +346,15 @@ partagée de Streamlit Cloud)** :
   (2) x le cache (3 min Yahoo, 60 s Kraken), il est d'abord rafraîchi et
   l'utilisateur doit revalider (`_refresh_price_before_order`) ; source
   bloquée -> règles du mode « prix daté » inchangées.
+- **Piège du rechargement à chaud (incident du 25/09)** : après un push,
+  Streamlit Cloud ne redémarre pas le serveur, il réimporte tous les modules
+  `src.*` sans relancer `db.bootstrap` (en cache). Tout état posé une seule
+  fois au démarrage est alors perdu : `market_store` repartait débranché
+  (listes « indisponibles », coupe-circuit et derniers prix en mémoire seule,
+  sans aucun log). Correctif : `db.ensure_market_store()` appelé à CHAQUE
+  exécution de `app.py` (log `[MARKET] event=store_reconnected`). Tout futur
+  état de ce type doit suivre le même principe. Garde :
+  `tests/test_hot_reload_reconnect.py`.
 - `market_data.get_quotes_batch` n'est plus utilisé que par
   `admin_snapshot.py` (cron). Positions/Classement : inchangés (phase 2).
 - Diagnostic manuel `diagnostic-quote-groupe.yml` (workflow_dispatch

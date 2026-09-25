@@ -26,6 +26,9 @@ theme.inject()
 if "db_ready" not in st.session_state:
     db.bootstrap()
     st.session_state.db_ready = True
+# À chaque exécution, hors cache : rebranche les données de marché sur la
+# base si Streamlit a réimporté les modules après un push (voir sa docstring).
+db.ensure_market_store()
 
 # Résumé hebdomadaire automatique (onglet News) : vérifié à chaque démarrage
 # serveur plutôt qu'à heure fixe (pas de vrai scheduler dans ce projet), mais

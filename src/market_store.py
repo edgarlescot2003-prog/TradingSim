@@ -47,6 +47,15 @@ def configure(engine_getter, scope: str = "") -> None:
     _scope = scope
 
 
+def is_configured() -> bool:
+    """Vrai si la persistance en base est branchée (voir configure). Faux
+    dans un module fraîchement réimporté : Streamlit réimporte tous les
+    modules src.* après une modification de fichier (push sur Streamlit
+    Cloud) sans relancer db.bootstrap (mis en cache), d'où
+    db.ensure_market_store appelé à chaque exécution de app.py."""
+    return _engine_getter is not None
+
+
 def log_event(event: str, **fields) -> None:
     """Ligne de log permanente (indépendante de TS_DIAG_LOG), volontairement
     rare : ouverture/fermeture du coupe-circuit, passage en prix daté, refus

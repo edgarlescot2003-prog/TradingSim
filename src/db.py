@@ -77,6 +77,32 @@ def ensure_default_user() -> str:
         return user.id
 
 
+def ensure_market_store() -> None:
+    """Rebranche market_store sur la base s'il ne l'est plus — à appeler à
+    CHAQUE exécution de app.py (hors cache).
+
+    Pourquoi : après un push, Streamlit Cloud ne redémarre pas le serveur.
+    Il remplace les fichiers et, à la prochaine exécution d'une session déjà
+    ouverte, retire TOUS les modules src.* de la mémoire pour les réimporter
+    (streamlit/watcher/local_sources_watcher.py). Le market_store réimporté
+    repart non configuré, et bootstrap(), mis en cache par st.cache_resource
+    (source de db.py inchangée), ne se relance pas : coupe-circuit, derniers
+    prix connus et prix indicatifs des listes tombaient alors en mémoire
+    seule, sans aucun message (constaté en prod le 25/09 après la phase 1).
+    Coût quand tout va bien : une simple vérification en mémoire."""
+    from . import market_store
+
+    if market_store.is_configured():
+        return
+    try:
+        engine = get_engine()  # même moteur (cache_resource), pas de nouveau pool
+    except Exception as error:  # jamais bloquant : repli mémoire, nouvel essai au prochain run
+        market_store.log_event("store_reconnect_failed", error=repr(error))
+        return
+    market_store.configure(lambda: engine)
+    market_store.log_event("store_reconnected", reason="modules_reimportes")
+
+
 @st.cache_resource(show_spinner=False)
 def bootstrap() -> None:
     """Crée les tables manquantes, une seule fois par processus serveur (pas

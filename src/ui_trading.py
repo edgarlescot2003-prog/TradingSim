@@ -185,6 +185,11 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
 
     snapshot_rows = daily_snapshot.list_assets(category, zone=zone, country=country)
     if snapshot_rows is None:
+        # Jamais silencieux (incident du 25/09) : une fois par catégorie et par session.
+        if st.session_state.get("_list_unavailable_logged") != category:
+            st.session_state["_list_unavailable_logged"] = category
+            market_store.log_event("daily_list_unavailable", category=category,
+                                   store_configured=market_store.is_configured())
         # Base indisponible : liste des actifs sans prix, fiche toujours accessible.
         st.caption("Prix indicatifs momentanément indisponibles. Ouvre la fiche d'un actif pour son prix en direct.")
         snapshot_rows = [{"ticker": t, "name": n, "category": category}
