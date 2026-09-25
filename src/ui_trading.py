@@ -536,6 +536,7 @@ def _store_displayed_quote(ticker: str, quote_type: str, quote: dict, fx_rate: f
     exactement ce prix que le formulaire d'ordre relit au moment du clic
     (voir _displayed_price) — jamais une nouvelle cotation."""
     st.session_state.trading_price_eur = quote["price"] * fx_rate
+    st.session_state.trading_price_native = quote["price"]
     st.session_state.trading_currency = quote["currency"]
     st.session_state.trading_price_fetched_at = quote["fetched_at"]
     st.session_state.trading_price_source = quote["source"]
@@ -591,6 +592,82 @@ def _refresh_price_before_order(ticker: str, quote_type: str) -> bool:
     return True
 
 
+# -- Pause de l'actualisation automatique après inactivité ----------------------
+#
+# Mécanisme (vérifié dans le code de Streamlit 1.61) : un fragment run_every
+# n'enregistre son minuteur côté navigateur que lorsqu'il est rendu pendant
+# un rechargement COMPLET de la page, et chaque rechargement complet efface
+# tous les minuteurs avant de réenregistrer ceux des fragments rendus. Pour
+# une vraie pause (plus aucune relance, donc plus aucune requête), un tic du
+# minuteur qui constate l'inactivité relance donc toute la page une fois, et
+# ce rechargement rend les fragments SANS run_every. Seules les vraies
+# interactions (rechargement complet, clic dans le formulaire d'ordre,
+# changement de période) mettent à jour l'heure de dernière interaction.
+
+def _is_fragment_rerun() -> bool:
+    """Vrai si l'exécution en cours est la relance d'un fragment seul (tic
+    de minuteur ou clic dans un fragment), faux pour un rechargement complet."""
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        ctx = get_script_run_ctx()
+        return bool(ctx is not None and ctx.fragment_ids_this_run)
+    except Exception:
+        return False
+
+
+def _note_interaction() -> bool:
+    """Enregistre une interaction de l'utilisateur. Retourne True si elle
+    vient de lever la pause (l'appelant doit alors recharger la page pour
+    réenregistrer les minuteurs)."""
+    st.session_state["_trading_last_interaction_at"] = time.time()
+    if st.session_state.pop("_auto_refresh_paused", False):
+        market_store.log_event("auto_refresh_resumed", ticker=st.session_state.get("selected_ticker"))
+        return True
+    return False
+
+
+def _auto_refresh_is_paused() -> bool:
+    return bool(st.session_state.get("_auto_refresh_paused"))
+
+
+def _pause_if_inactive(ticker: str) -> None:
+    """Appelé à chaque relance du fragment prix : met l'actualisation en
+    pause après live_quote.AUTO_REFRESH_PAUSE_INACTIVITE_S sans interaction."""
+    if _auto_refresh_is_paused() or not _is_fragment_rerun():
+        return
+    last = st.session_state.get("_trading_last_interaction_at")
+    if not live_quote.auto_refresh_paused(last):
+        return
+    st.session_state["_auto_refresh_paused"] = True
+    st.session_state["_auto_refresh_pause_rerun"] = True  # ce rechargement n'est pas une interaction
+    market_store.log_event("auto_refresh_paused", ticker=ticker, inactive_s=round(time.time() - last))
+    st.rerun(scope="app")
+
+
+def _render_paused_price(ticker: str) -> None:
+    """Fiche en pause : dernier prix et dernier graphique gardés en session,
+    AUCUNE requête. « Actualiser » (ou tout autre clic) relance."""
+    price_eur = st.session_state.get("trading_price_eur")
+    if st.session_state.get("trading_price_ticker") == ticker and price_eur is not None:
+        currency = st.session_state.get("trading_currency")
+        col1, col2 = st.columns(2)
+        col1.metric(f"Prix ({currency})", f"{st.session_state.get('trading_price_native', 0.0):,.2f}")
+        col2.metric("Prix (€)", f"{price_eur:,.2f}")
+        fetched = st.session_state.get("trading_price_fetched_at")
+        when = datetime.fromtimestamp(fetched).strftime("%H:%M:%S") if fetched else "?"
+        theme.render_stale_banner(
+            f"Actualisation en pause (aucune activité depuis "
+            f"{live_quote.AUTO_REFRESH_PAUSE_INACTIVITE_S // 60} min) · prix obtenu à {when}."
+        )
+    if st.button("Actualiser", key="resume_auto_refresh", type="primary"):
+        _note_interaction()
+        st.rerun(scope="app")
+    last_chart = st.session_state.get("_trading_last_chart")
+    if last_chart and last_chart["ticker"] == ticker:
+        with st.container(key=theme.TRADING_CHART_KEY):
+            st.plotly_chart(last_chart["fig"], use_container_width=True, config=theme.PLOTLY_CONFIG)
+
+
 def _render_price_and_chart(ticker: str, quote_type: str, trades: list) -> None:
     """Prix + graphique de `ticker`, isolés dans leur propre fragment : se
     rafraîchissent seuls (run_every), sans recharger le reste de la page
@@ -598,9 +675,9 @@ def _render_price_and_chart(ticker: str, quote_type: str, trades: list) -> None:
     la classe d'actif (live_quote.PRICE_CACHE_SECONDS : 90 s Yahoo, 30 s
     Kraken) — relancer plus vite ne ferait que relire le cache. Fragment
     créé à l'appel (et non par décorateur) pour que cette fréquence dépende
-    de l'actif ; son identifiant Streamlit reste stable (nom de la fonction
-    + position dans la page)."""
-    run_every = live_quote.price_cache_seconds(ticker, quote_type)
+    de l'actif et s'arrête pendant la pause d'inactivité ; son identifiant
+    Streamlit reste stable (nom de la fonction + position dans la page)."""
+    run_every = None if _auto_refresh_is_paused() else live_quote.price_cache_seconds(ticker, quote_type)
     st.fragment(_price_and_chart_body, run_every=run_every)(ticker, quote_type, trades)
 
 
@@ -609,6 +686,10 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
     Comme un fragment ne peut pas faire vivre une valeur "live" en dehors de
     lui, le prix affiché est déposé dans st.session_state : le formulaire
     d'ordre (autre fragment) et le carnet simulé le relisent de là."""
+    _pause_if_inactive(ticker)
+    if _auto_refresh_is_paused():
+        _render_paused_price(ticker)
+        return
     try:
         with st.spinner(f"Chargement de {ticker}..."):
             # Si la source est en pause : dernier prix connu (avec sa vraie
@@ -653,8 +734,10 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
     col_a, col_b = st.columns([3, 1])
     period_key = col_a.radio(
         "Période", list(PERIOD_INTERVAL.keys()), horizontal=True, index=4, key="chart_period_radio",
+        on_change=_note_interaction,
     )
-    chart_type = col_b.radio("Type", ["Courbe", "Chandeliers"], key="chart_type_radio")
+    chart_type = col_b.radio("Type", ["Courbe", "Chandeliers"], key="chart_type_radio",
+                             on_change=_note_interaction)
 
     try:
         with st.spinner(f"Chargement du graphique {ticker}..."):
@@ -731,6 +814,7 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
     fig.update_layout(dragmode="zoom")
     with st.container(key=theme.TRADING_CHART_KEY):
         st.plotly_chart(fig, use_container_width=True, config={**theme.PLOTLY_CONFIG, "scrollZoom": True})
+    st.session_state["_trading_last_chart"] = {"ticker": ticker, "fig": fig}  # réaffiché pendant la pause
 
     fallback_note = "" if effective_interval == PERIOD_INTERVAL[period_key] else " (repli, plage trop longue)"
     st.caption(
@@ -757,8 +841,14 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
 _ORDERBOOK_REFRESH_SECONDS = 1.5
 
 
-@st.fragment(run_every=_ORDERBOOK_REFRESH_SECONDS)
 def _render_order_book(ticker: str) -> None:
+    """Crée le fragment du carnet simulé ; son animation s'arrête elle aussi
+    pendant la pause d'inactivité (aucun appel réseau dans tous les cas)."""
+    run_every = None if _auto_refresh_is_paused() else _ORDERBOOK_REFRESH_SECONDS
+    st.fragment(_order_book_body, run_every=run_every)(ticker)
+
+
+def _order_book_body(ticker: str) -> None:
     """Carnet d'ordre simulé, isolé dans son propre fragment (comme
     _render_price_and_chart et _render_order_panel) : son timer ne
     redéclenche jamais le reste de la page, et une interaction ailleurs
@@ -1082,6 +1172,17 @@ def _render_action_tabs(key: str, buy_enabled: bool, short_enabled: bool,
 @st.fragment
 def _render_order_panel(portfolio, ticker: str, name: str | None, price_eur: float, currency: str,
                          quote_type: str = "") -> None:
+    # Un clic dans le formulaire est une interaction (pause d'inactivité) ;
+    # s'il lève la pause, la page est rechargée APRÈS le traitement du clic
+    # (jamais avant : l'action demandée serait perdue).
+    resumed = _is_fragment_rerun() and _note_interaction()
+    _order_panel_body(portfolio, ticker, name, price_eur, currency, quote_type)
+    if resumed:
+        st.rerun(scope="app")
+
+
+def _order_panel_body(portfolio, ticker: str, name: str | None, price_eur: float, currency: str,
+                      quote_type: str = "") -> None:
     # Affiché une seule fois (.pop) tout en haut du fragment : couvre les 2
     # sous-fonctions ci-dessous (formulaire d'ordre ET section TP/SL), qui
     # posent toutes deux le message dans session_state juste avant leur
@@ -1689,6 +1790,11 @@ def render(portfolio) -> None:
             else:
                 _render_home_categories()
             return
+
+        # Rechargement complet = interaction, sauf celui qui déclenche la
+        # pause d'inactivité lui-même (voir _pause_if_inactive).
+        if not st.session_state.pop("_auto_refresh_pause_rerun", False):
+            _note_interaction()
 
         if st.session_state.get("_last_recorded_search") != ticker:
             try:

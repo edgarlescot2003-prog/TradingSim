@@ -219,9 +219,19 @@ def test_displayed_price_age_threshold():
     print("OK: seuil d'âge du prix affiché = 2 x cache (3 min Yahoo, 60 s Kraken), hors prix daté")
 
 
+def test_auto_refresh_pause_rule():
+    assert live_quote.AUTO_REFRESH_PAUSE_INACTIVITE_S == 600
+    now = 1_000_000.0
+    assert not live_quote.auto_refresh_paused(now - 599, now=now)
+    assert live_quote.auto_refresh_paused(now - 600, now=now)
+    assert not live_quote.auto_refresh_paused(None, now=now), "pas d'interaction connue : pas de pause"
+    print("OK: pause de l'actualisation après 10 min sans interaction (temps injecté)")
+
+
 if __name__ == "__main__":
     test_cache_durations_by_class()
     test_displayed_price_age_threshold()
+    test_auto_refresh_pause_rule()
     test_yahoo_display_quote_reused_for_90_seconds()
     test_concurrent_viewers_share_one_request()
     test_kraken_symbol_mapping()

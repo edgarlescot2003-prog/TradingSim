@@ -56,6 +56,22 @@ def displayed_price_too_old(fetched_at: float | None, source: str | None, ticker
     return current - fetched_at > max_displayed_price_age_seconds(ticker, quote_type)
 
 
+# Actualisation automatique de la fiche mise en PAUSE après 10 minutes sans
+# interaction (un onglet oublié ouvert ne doit pas interroger Yahoo/Kraken
+# indéfiniment). Une actualisation automatique ne compte pas comme une
+# interaction ; la reprise se fait au premier clic ou avec « Actualiser ».
+AUTO_REFRESH_PAUSE_INACTIVITE_S = 600
+
+
+def auto_refresh_paused(last_interaction_at: float | None, now: float | None = None) -> bool:
+    """Vrai si l'actualisation automatique doit être en pause (dernière
+    interaction il y a au moins AUTO_REFRESH_PAUSE_INACTIVITE_S)."""
+    if last_interaction_at is None:
+        return False
+    current = time.time() if now is None else now
+    return current - last_interaction_at >= AUTO_REFRESH_PAUSE_INACTIVITE_S
+
+
 def get_display_quote(ticker: str, quote_type: str = "") -> dict:
     """Prix affiché sur la fiche (même format que market_data.get_quote),
     réutilisé tant qu'il a moins que la durée de cache de sa classe.
