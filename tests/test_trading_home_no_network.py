@@ -196,6 +196,24 @@ def test_actions_zones_countries_list_make_no_request():
     print("OK: Actions -> zones -> pays -> liste (+ fil d'Ariane), Bientôt non cliquable, zéro requête réseau")
 
 
+def test_forex_by_currency_makes_no_request():
+    at = _run()
+    _click(at, "Explorer Forex/Monnaies")
+    labels = [b.label for b in at.button]
+    expected = {f"Explorer les paires en {n}" for n in
+                ("Euro", "Dollar américain", "Livre sterling", "Yen japonais", "Franc suisse", "Dollar australien")}
+    assert expected <= set(labels), labels
+    text = " ".join(str(m.value) for m in at.markdown if "<style>" not in str(m.value))
+    assert "Banque centrale européenne" in text and "taux" not in text.lower(), "banque centrale, jamais de taux"
+    _click(at, "Explorer les paires en Euro")
+    tickers = [b.label for b in at.button if b.label.endswith("=X")]
+    assert tickers == ["EURUSD=X"], tickers
+    _click(at, "Forex/Monnaies")  # fil d'Ariane
+    _click(at, "Explorer les paires en Dollar américain")
+    assert len([b.label for b in at.button if b.label.endswith("=X")]) == 5
+    print("OK: Forex -> devises (banque centrale, sans taux) -> paires de la devise, zéro requête réseau")
+
+
 if __name__ == "__main__":
     test_home_makes_no_request()
     test_recent_searches_make_no_request()
@@ -203,4 +221,5 @@ if __name__ == "__main__":
     test_category_list_shows_indicative_prices()
     test_category_list_database_down()
     test_actions_zones_countries_list_make_no_request()
+    test_forex_by_currency_makes_no_request()
     print("Tous les tests 'accueil sans requête' sont passés.")

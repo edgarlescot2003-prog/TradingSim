@@ -99,6 +99,8 @@ _CSS = f"""
                       text-transform: uppercase; margin-top: 0.4rem; }}
 .tsnav-index-row {{ display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.92rem; }}
 .tsnav-index-note {{ color: {theme.MUTED}; font-size: 0.75rem; }}
+.tsnav-code {{ font-family: {theme.FONT_SANS}; font-size: 0.85rem; font-weight: 600; color: {theme.MUTED};
+               letter-spacing: 0.06em; margin-left: 0.3rem; }}
 .tsnav-cta {{ color: {theme.ACCENT}; font-weight: 600; font-size: 0.9rem; margin-top: 0.3rem; }}
 .tsnav-soon-body {{ opacity: 0.72; }}
 .tsnav-icon {{ display: inline-flex; align-items: center; justify-content: center; width: 2.6rem; height: 2.6rem;

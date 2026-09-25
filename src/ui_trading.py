@@ -166,7 +166,8 @@ def _sort_and_filter(rows: list[dict], query: str, sort: str) -> list[dict]:
     return known + [r for r in rows if r.get("change_30d_pct") is None]
 
 
-def _render_category_list(category: str, zone: str | None = None, country: str | None = None) -> None:
+def _render_category_list(category: str, zone: str | None = None, country: str | None = None,
+                          group: str | None = None) -> None:
     """Page de liste d'une catégorie : prix INDICATIFS lus en base
     (daily_snapshot, clôture de la veille + variation 30 j), JAMAIS de
     requête Yahoo/Kraken depuis l'affichage. Les lignes de plus de 24 h
@@ -180,10 +181,12 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
     elif zone:
         title = trading_nav_config.WIDE_ZONE_LABELS[zone]
     else:
-        title = label
+        title = ui_trading_nav.group_label(category, group) or label
     ui_cards.page_header(label, title)
 
     snapshot_rows = daily_snapshot.list_assets(category, zone=zone, country=country)
+    if snapshot_rows is not None and group:
+        snapshot_rows = [r for r in snapshot_rows if ui_trading_nav.group_contains(category, group, r["ticker"])]
     if snapshot_rows is None:
         # Jamais silencieux (incident du 25/09) : une fois par catégorie et par session.
         if st.session_state.get("_list_unavailable_logged") != category:
@@ -193,7 +196,8 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
         # Base indisponible : liste des actifs sans prix, fiche toujours accessible.
         st.caption("Prix indicatifs momentanément indisponibles. Ouvre la fiche d'un actif pour son prix en direct.")
         snapshot_rows = [{"ticker": t, "name": n, "category": category}
-                         for t, n in asset_universe.ASSETS_BY_CATEGORY.get(category, [])]
+                         for t, n in asset_universe.ASSETS_BY_CATEGORY.get(category, [])
+                         if ui_trading_nav.group_contains(category, group, t)]
         status = "unavailable"
     else:
         status = daily_snapshot.start_refresh_if_due(category, rows=snapshot_rows)
@@ -1839,8 +1843,10 @@ def render(portfolio) -> None:
                 ui_trading_nav.render_zones()
             elif view == "countries" and nav.get("zone") in trading_nav_config.ZONES:
                 ui_trading_nav.render_countries(nav["zone"])
+            elif view == "currencies":
+                ui_trading_nav.render_currencies()
             else:
-                _render_category_list(nav["category"], nav.get("zone"), nav.get("country"))
+                _render_category_list(nav["category"], nav.get("zone"), nav.get("country"), nav.get("group"))
             return
 
         # Rechargement complet = interaction, sauf celui qui déclenche la

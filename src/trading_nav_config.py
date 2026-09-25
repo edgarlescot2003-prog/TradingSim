@@ -87,10 +87,58 @@ PAYS = {
 # Carte large « Toute la zone » affichée au-dessus des pays d'une zone.
 WIDE_ZONE_LABELS = {"europe": "Toute l'Europe", "amerique": "Toute l'Amérique", "asie": "Toute l'Asie"}
 
+# -- Forex : regroupement par devise ---------------------------------------------
+# Une carte par devise présente dans au moins une paire de l'univers. Banque
+# centrale : nom seul, JAMAIS de taux directeur (il change). Contours : zone
+# monétaire correspondante. Zone euro = 21 pays depuis l'entrée de la
+# Bulgarie le 1er janvier 2026 (vérifié le 25/09/2026 : communiqué BCE
+# https://www.ecb.europa.eu/press/pr/date/2026/html/ecb.pr260101~c830245e42.en.html),
+# identique à ZONE_EURO dans tools/generer_contours.py.
+FOREX_CURRENCIES = {
+    "EUR": {"nom": "Euro", "banque_centrale": "Banque centrale européenne (BCE)", "contour": "zone-euro"},
+    "USD": {"nom": "Dollar américain", "banque_centrale": "Réserve fédérale (Fed)", "contour": "etats-unis"},
+    "GBP": {"nom": "Livre sterling", "banque_centrale": "Banque d'Angleterre", "contour": "royaume-uni"},
+    "JPY": {"nom": "Yen japonais", "banque_centrale": "Banque du Japon", "contour": "japon"},
+    "CHF": {"nom": "Franc suisse", "banque_centrale": "Banque nationale suisse", "contour": "suisse"},
+    "AUD": {"nom": "Dollar australien", "banque_centrale": "Banque de réserve d'Australie", "contour": "australie"},
+}
+
+
+def pair_currencies(ticker: str) -> tuple[str, str] | None:
+    """("EUR", "USD") pour "EURUSD=X", None si ce n'est pas une paire."""
+    code = ticker.upper()
+    if len(code) == 8 and code.endswith("=X") and code[:6].isalpha():
+        return code[:3], code[3:6]
+    return None
+
+
+# -- Obligations : regroupement par maturité -----------------------------------------
+# Descriptions vérifiées le 25/09/2026 sur les fiches officielles des fonds :
+# iShares (SHY, IEF, TLT, AGG : « seeks to track an index that includes U.S.
+# Treasury bonds with remaining maturities between one and three years »,
+# « …seven and ten years », « …greater than twenty years » ; AGG : « U.S.
+# investment-grade bonds ») et Vanguard (BND : Bloomberg U.S. Aggregate
+# Float Adjusted Index, marché obligataire américain investment grade :
+# Trésor, entreprises, titres adossés). BND et AGG ne sont donc PAS des
+# fonds d'obligations d'État seulement.
+# `zone` : prévu pour un futur niveau « zone » (ETF européens...), mêmes
+# cartes à contours, sans refonte.
+BOND_GROUPS = {
+    "court-terme": {"nom": "Court terme", "tickers": ["SHY"], "zone": "amerique", "maturite": "1 à 3 ans",
+                    "description": "Obligations du Trésor américain de 1 à 3 ans (SHY)."},
+    "moyen-terme": {"nom": "Moyen terme", "tickers": ["IEF"], "zone": "amerique", "maturite": "7 à 10 ans",
+                    "description": "Obligations du Trésor américain de 7 à 10 ans (IEF)."},
+    "long-terme": {"nom": "Long terme", "tickers": ["TLT"], "zone": "amerique", "maturite": "plus de 20 ans",
+                   "description": "Obligations du Trésor américain de plus de 20 ans (TLT)."},
+    "diversifies": {"nom": "Diversifiés", "tickers": ["BND", "AGG"], "zone": "amerique", "maturite": "toutes",
+                    "description": "Tout le marché obligataire américain « investment grade » : État, entreprises "
+                                   "et titres adossés (BND, AGG)."},
+}
+
 # Zone et pays des actifs EXISTANTS (renseignés en base par
 # daily_snapshot, sans jamais écraser une valeur déjà présente). Les ETF
-# obligataires sont des fonds d'obligations d'État américaines. Crypto,
-# Forex et Matières premières : aucune zone (regroupements propres).
+# obligataires sont des fonds obligataires américains (voir BOND_GROUPS).
+# Crypto, Forex et Matières premières : aucune zone (regroupements propres).
 ASSET_PLACES = {
     **{t: ("amerique", "etats-unis") for t in ("AAPL", "MSFT", "NVDA", "GOOGL", "AMZN")},
     **{t: ("amerique", "etats-unis") for t in ("TLT", "IEF", "BND", "AGG", "SHY")},

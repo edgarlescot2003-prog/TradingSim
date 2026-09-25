@@ -107,8 +107,21 @@ def test_zone_country_filled_without_overwrite_and_availability():
     print("OK: zone/pays renseignés sans écraser ; disponibilité calculée depuis la base (cache 5 min)")
 
 
+def test_forex_config():
+    for code, currency in cfg.FOREX_CURRENCIES.items():
+        assert currency["contour"] in GEO_OUTLINES, code
+        assert currency["banque_centrale"] and "%" not in currency["banque_centrale"]
+    assert cfg.pair_currencies("EURUSD=X") == ("EUR", "USD") and cfg.pair_currencies("AAPL") is None
+    from src import asset_universe
+    for ticker, _ in asset_universe.ASSETS_BY_CATEGORY[asset_universe.FOREX]:
+        base, quote = cfg.pair_currencies(ticker)
+        assert base in cfg.FOREX_CURRENCIES and quote in cfg.FOREX_CURRENCIES, ticker
+    print("OK: devises Forex (contours existants, banque centrale sans taux), toutes les paires couvertes")
+
+
 if __name__ == "__main__":
     test_index_values_copied_from_annex_b()
     test_outline_keys_exist()
     test_zone_country_filled_without_overwrite_and_availability()
+    test_forex_config()
     print("Tous les tests de configuration de la navigation sont passés.")

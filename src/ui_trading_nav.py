@@ -20,13 +20,13 @@ NAV_KEY = "trading_category"
 CATEGORY_DESCRIPTIONS = {
     asset_universe.ACTIONS: "Entreprises cotées, par zone puis par pays.",
     asset_universe.CRYPTO: "Bitcoin, Ethereum et autres cryptomonnaies.",
-    asset_universe.BONDS: "ETF d'obligations d'État américaines.",
-    asset_universe.FOREX: "Paires de devises majeures.",
+    asset_universe.BONDS: "ETF obligataires américains, par maturité.",
+    asset_universe.FOREX: "Paires de devises majeures, par devise.",
     asset_universe.COMMODITIES: "Or, argent, pétrole et gaz naturel.",
 }
 
 # Catégories qui passent par un écran intermédiaire avant la liste.
-_FIRST_VIEW = {asset_universe.ACTIONS: "zones"}
+_FIRST_VIEW = {asset_universe.ACTIONS: "zones", asset_universe.FOREX: "currencies"}
 
 
 def current() -> dict | None:
@@ -34,14 +34,38 @@ def current() -> dict | None:
 
 
 def go(category: str | None = None, view: str = "list", zone: str | None = None,
-       country: str | None = None) -> None:
-    """Change d'écran (category=None : accueil) et relance la page."""
+       country: str | None = None, group: str | None = None) -> None:
+    """Change d'écran (category=None : accueil) et relance la page.
+    `group` : regroupement propre à la catégorie (devise pour le Forex,
+    maturité pour les Obligations)."""
     st.session_state.selected_ticker = None
     if category is None:
         st.session_state.pop(NAV_KEY, None)
     else:
-        st.session_state[NAV_KEY] = {"category": category, "view": view, "zone": zone, "country": country}
+        st.session_state[NAV_KEY] = {"category": category, "view": view, "zone": zone, "country": country,
+                                     "group": group}
     st.rerun()
+
+
+def group_label(category: str, group: str | None) -> str | None:
+    if not group:
+        return None
+    if category == asset_universe.FOREX and group in cfg.FOREX_CURRENCIES:
+        return f"{cfg.FOREX_CURRENCIES[group]['nom']} ({group})"
+    if category == asset_universe.BONDS and group in cfg.BOND_GROUPS:
+        return cfg.BOND_GROUPS[group]["nom"]
+    return None
+
+
+def group_contains(category: str, group: str | None, ticker: str) -> bool:
+    """Vrai si `ticker` fait partie du regroupement `group` (ou s'il n'y en a pas)."""
+    if not group:
+        return True
+    if category == asset_universe.FOREX:
+        return group in (cfg.pair_currencies(ticker) or ())
+    if category == asset_universe.BONDS:
+        return ticker in cfg.BOND_GROUPS.get(group, {}).get("tickers", [])
+    return True
 
 
 def open_category(category: str) -> None:
@@ -68,6 +92,9 @@ def _parts_for(nav: dict | None) -> list[tuple[str, dict | str]]:
                               {"category": category, "view": "list", "zone": zone, "country": nav["country"]}))
             else:
                 parts.append((cfg.WIDE_ZONE_LABELS[zone], {"category": category, "view": "list", "zone": zone}))
+    label = group_label(category, nav.get("group"))
+    if label and nav.get("view") == "list":
+        parts.append((label, {"category": category, "view": "list", "group": nav["group"]}))
     return parts
 
 
@@ -89,7 +116,7 @@ def render_breadcrumb(nav: dict | None, current_label: str | None = None) -> Non
         target = targets[clicked]
         if target == "home":
             go(None)
-        go(target["category"], target["view"], target.get("zone"), target.get("country"))
+        go(target["category"], target["view"], target.get("zone"), target.get("country"), target.get("group"))
 
 
 def asset_category(ticker: str, quote_type: str = "") -> str:
@@ -111,7 +138,8 @@ def render_asset_breadcrumb(ticker: str, name: str | None, quote_type: str = "")
     correspond à la catégorie de l'actif, sinon la catégorie de l'actif."""
     nav = current()
     category = asset_category(ticker, quote_type)
-    if not nav or nav.get("category") != category or nav.get("view") != "list":
+    if (not nav or nav.get("category") != category or nav.get("view") != "list"
+            or not group_contains(category, nav.get("group"), ticker)):
         nav = ({"category": category, "view": _FIRST_VIEW.get(category, "list")}
                if category in asset_universe.CATEGORY_LABELS else None)
     render_breadcrumb(nav, current_label=name or ticker)
@@ -212,3 +240,42 @@ def render_countries(zone_key: str) -> None:
                                      aria_label=f"Explorer {country['nom']}", outline=_outline(country["contour"])):
                     go(asset_universe.ACTIONS, "list", zone_key, country_key)
     ui_cards.footnote(cfg.PERF_FOOTNOTE)
+
+
+# -- Forex : devises ------------------------------------------------------------------
+
+def _available_tickers(category: str) -> set[str] | None:
+    """Tickers présents dans la table des prix indicatifs (disponibilité :
+    même règle que les zones et pays). None si la base est indisponible."""
+    rows = daily_snapshot.list_assets(category)
+    return None if rows is None else {r["ticker"] for r in rows}
+
+
+def render_currencies() -> None:
+    render_breadcrumb(current())
+    ui_cards.page_header("Forex / Monnaies", "Choisir une devise",
+                         "Chaque carte regroupe les paires qui contiennent cette devise.")
+    pairs = [t for t, _ in asset_universe.ASSETS_BY_CATEGORY[asset_universe.FOREX]]
+    names = dict(asset_universe.ASSETS_BY_CATEGORY[asset_universe.FOREX])
+    available = _available_tickers(asset_universe.FOREX)
+    cards = []
+    for code, currency in cfg.FOREX_CURRENCIES.items():
+        with_code = [t for t in pairs if code in (cfg.pair_currencies(t) or ())]
+        if with_code:  # une carte n'apparaît que si elle a au moins une paire
+            cards.append((code, currency, with_code))
+    per_row = 3
+    for start in range(0, len(cards), per_row):
+        cols = st.columns(per_row)
+        for col, (code, currency, with_code) in zip(cols, cards[start:start + per_row]):
+            ok = bool(available) and any(t in available for t in with_code)
+            pair_names = " · ".join(names.get(t, t) for t in with_code)
+            body = (f'<div class="tsnav-name">{html.escape(currency["nom"])} '
+                    f'<span class="tsnav-code">{code}</span></div>'
+                    f'<div class="tsnav-desc">{html.escape(currency["banque_centrale"])}</div>'
+                    f'<div class="tsnav-index-label">Paires</div>'
+                    f'<div class="tsnav-countries">{html.escape(pair_names)}</div>{_cta(ok)}')
+            with col:
+                if ui_cards.nav_card(f"ccy_{code}", body, size="country", available=ok,
+                                     aria_label=f"Explorer les paires en {currency['nom']}",
+                                     outline=_outline(currency["contour"])):
+                    go(asset_universe.FOREX, "list", group=code)
