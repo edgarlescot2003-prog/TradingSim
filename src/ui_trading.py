@@ -1,6 +1,7 @@
 """Contenu de l'onglet Trading : thème clair scopé (voir theme.inject_light,
-comme l'onglet Portefeuille) — page d'accueil avec encadrés d'actifs cliquables
-tant qu'aucun actif n'est sélectionné, recherche unifiée avec historique par
+comme l'onglet Portefeuille) — page d'accueil SANS aucun prix (recherche,
+recherches récentes, cases de catégories), pages de liste par catégorie (prix
+indicatifs lus en base), recherche unifiée avec historique par
 utilisateur, fiche prix/graphique (mécanique inchangée : fragment 30s,
 sélecteur de période), formulaire d'ordre avec récapitulatif (coût/marge/
 liquidation/simulation P&L).
@@ -23,6 +24,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from . import asset_universe
 from . import db
 from . import kraken_data
 from . import market_data as md
@@ -34,57 +36,14 @@ from . import theme
 from . import tp_sl
 from . import valuation
 
-# -- Univers d'actifs "vitrine" de la page d'accueil -------------------------
-# 5 actifs par encadré (Indices/Top capitalisation) : FTSE 100 et Meta
-# retirés pour désencombrer la page (CAC 40 + DAX + Nikkei 225 gardent une
-# couverture Europe/Asie, S&P 500 + Nasdaq les US ; NVDA/AAPL/MSFT/GOOGL/AMZN
-# restent la sélection la plus large en styles de business).
-INDICES = [
-    ("^FCHI", "CAC 40"), ("^GDAXI", "DAX"), ("^GSPC", "S&P 500"),
-    ("^IXIC", "Nasdaq"), ("^N225", "Nikkei 225"),
-]
-TOP_CAP = [
-    ("AAPL", "Apple"), ("MSFT", "Microsoft"), ("NVDA", "Nvidia"),
-    ("GOOGL", "Alphabet"), ("AMZN", "Amazon"),
-]
-CRYPTO = [
-    ("BTC-USD", "Bitcoin"), ("ETH-USD", "Ethereum"), ("SOL-USD", "Solana"), ("XRP-USD", "XRP"),
-]
-# 5 paires majeures pour la vitrine — 10 autres paires majeures/croisées
-# restent disponibles via la recherche (voir valuation.category_for, qui
-# détecte le quoteType "CURRENCY" générique de yfinance, pas une liste figée
-# de tickers) : GBPUSD=X, USDJPY=X, USDCHF=X, USDCAD=X, NZDUSD=X, EURJPY=X,
-# EURCHF=X, GBPJPY=X, AUDJPY=X, EURAUD=X, GBPCHF=X, CHFJPY=X — toutes
-# vérifiées disponibles (prix + historique) avant intégration.
-FOREX = [
-    ("EURUSD=X", "EUR/USD"), ("GBPUSD=X", "GBP/USD"), ("USDJPY=X", "USD/JPY"),
-    ("USDCHF=X", "USD/CHF"), ("AUDUSD=X", "AUD/USD"),
-]
-COMMODITIES = [
-    ("GC=F", "Or"), ("SI=F", "Argent"), ("CL=F", "Pétrole WTI"),
-    ("BZ=F", "Pétrole Brent"), ("NG=F", "Gaz naturel"),
-]
-# ETF obligataires (voir valuation.BOND_ETF_TICKERS) : les tickers de
-# rendement d'État bruts (^TNX, ^TYX...) ne sont PAS des prix négociables,
-# incompatibles avec le système de marge/P&L/liquidation — voir la doc de
-# conception d'origine de ce chantier.
-BONDS = [
-    ("TLT", "Treasury 20+ ans"), ("IEF", "Treasury 7-10 ans"), ("BND", "Obligations US (total market)"),
-    ("AGG", "Obligations US (agrégé)"), ("SHY", "Treasury 1-3 ans"),
-]
+# -- Univers d'actifs de l'accueil (voir asset_universe.py) -----------------
 # Suggestions par défaut de la recherche quand l'utilisateur n'a pas encore
 # d'historique de recherche (ticker, nom, catégorie — pour le badge coloré).
 DEFAULT_SUGGESTIONS = (
-    [(t, n, "Actions") for t, n in TOP_CAP[:4]] + [(t, n, "Crypto") for t, n in CRYPTO[:2]]
+    [(t, n, asset_universe.ACTIONS) for t, n in asset_universe.ASSETS_BY_CATEGORY[asset_universe.ACTIONS][:4]]
+    + [(t, n, asset_universe.CRYPTO) for t, n in asset_universe.ASSETS_BY_CATEGORY[asset_universe.CRYPTO][:2]]
 )
 
-ASSET_ROW_COLUMNS = [
-    {"key": "ticker", "label": "Symbole", "kind": "ticker_badge", "width": 0.9},
-    {"key": "name", "label": "Nom", "kind": "link", "width": 1.0},
-    {"key": "price", "label": "Prix", "kind": "mono_text", "width": 1.5},
-    {"key": "change_pct", "label": "Var. jour", "kind": "signed_pct", "width": 1.0},
-    {"key": "change_30d_pct", "label": "Var. 30j", "kind": "signed_pct", "width": 1.0},
-]
 SEARCH_RESULT_COLUMNS = [
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
     {"key": "name", "label": "Nom", "kind": "link"},
@@ -147,137 +106,86 @@ ACTION_BY_ORDER_TYPE = {
 }
 
 
-# -- Cotations pour la page d'accueil -----------------------------------------
+# -- Accueil : cases de catégories, SANS aucun prix -------------------------
+# L'accueil ne fait plus AUCUNE requête Yahoo/Kraken (avant : ~29 requêtes
+# history_1mo à chaque chargement à froid, la rafale qui a précédé le 429 du
+# 24/09). Les prix vivent désormais sur les pages de liste (prix indicatifs
+# lus en base, voir _render_category_list) et sur la fiche actif (seul
+# endroit en direct). Garde : tests/test_trading_home_no_network.py.
 
-@st.cache_data(ttl=60, show_spinner=False)
-def _fetch_quotes(tickers: tuple[str, ...]) -> dict[str, dict]:
-    """Prix et variations de l'accueil : derniers prix connus en base,
-    complétés par Yahoo pour les seuls actifs périmés (voir
-    md.get_quotes_batch), puis mis en cache 60 s par processus."""
-    return md.get_quotes_batch(tickers)
-
-
-def _format_price(ticker: str, price: float, currency: str) -> str:
-    if ticker.startswith("^"):
-        return f"{price:,.2f} pts"
-    return f"{price:,.2f} {currency}"
-
-
-def _render_asset_detail(row: dict) -> None:
-    """Contenu de l'expander "Détails" sous une ligne compacte mobile d'un
-    encadré d'actifs (voir theme.render_compact_list) : la var. 30j, qui n'a
-    pas sa place dans la ligne compacte (déjà 2 valeurs : prix + var. jour),
-    et un moyen d'ouvrir la fiche de l'actif — sans lui, une ligne compacte
-    mobile (contrairement à sa version desktop, un vrai st.button cliquable)
-    n'a aucune interaction du tout, donc aucun moyen d'atteindre le
-    formulaire d'ordre depuis cette liste sur mobile (repéré en vérifiant le
-    rendu mobile du prompt 13 : impossible d'ouvrir un actif à partir des
-    encadrés d'accueil sur un écran étroit)."""
-    change_30d = row.get("change_30d_pct")
-    if change_30d is not None:
-        color = theme.LIGHT_GREEN if change_30d >= 0 else theme.LIGHT_RED
-        sign = "+" if change_30d >= 0 else ""
-        st.markdown(
-            f"Variation 30j : {theme.mono(f'{sign}{change_30d:.2f}%', color=color)}", unsafe_allow_html=True,
-        )
-    else:
-        st.caption("Variation 30j indisponible.")
-    if st.button("Voir la fiche →", key=f"mobile_goto_asset_{row['ticker']}", use_container_width=True):
-        theme.go_to_trading(row["ticker"], row.get("nav_name", row["name"]))
+def _render_home_categories() -> None:
+    with st.container(key="ts_card_home_categories"):
+        st.markdown("##### Parcourir par catégorie")
+        style_rules = []
+        rows = [asset_universe.CATEGORIES[:3], asset_universe.CATEGORIES[3:]]
+        with st.container(key="ts_home_grid"):
+            for row in rows:
+                cols = st.columns(3)
+                for col, category in zip(cols, row):
+                    key = f"ts_home_cat_{theme._safe_key_part(category)}"
+                    color, _ = theme.badge_color(category)
+                    count = len(asset_universe.ASSETS_BY_CATEGORY[category])
+                    # Sélecteur à 3 classes : voir le piège de spécificité CSS
+                    # documenté dans _render_action_tabs.
+                    style_rules.append(
+                        f'.st-key-ts_light .st-key-{key}.stElementContainer .stButton > button '
+                        f'{{ border-left:4px solid {color} !important; min-height:3.4rem; '
+                        f'justify-content:flex-start !important; }}'
+                    )
+                    label = f"{asset_universe.CATEGORY_LABELS[category]}  ·  {count} actifs"
+                    if col.button(label, key=key, use_container_width=True):
+                        _open_category(category)
+        st.markdown(f"<style>{''.join(style_rules)}</style>", unsafe_allow_html=True)
 
 
-def _render_asset_box(card_key: str, title: str, assets: list[tuple[str, str]],
-                       quotes: dict, category: str) -> None:
-    with st.container(key=f"ts_card_{card_key}"):
-        st.markdown(f"##### {title}")
-        rows = []
-        for ticker, name in assets:
-            q = quotes.get(ticker)
-            rows.append({
-                "ticker": ticker,
-                "name": name,
-                "category": category,
-                "price": _format_price(ticker, q["price"], q["currency"]) if q else None,
-                "change_pct": q["change_pct"] if q else None,
-                "change_30d_pct": q.get("change_30d_pct") if q else None,
-            })
-
-        table_key = f"compact_{card_key}"
-        # Rendu double (desktop table / mobile liste compacte) : auparavant
-        # seul le rendu desktop existait, donc chaque ligne (5 colonnes)
-        # s'empilait en grosse carte sur mobile plutôt qu'en une ligne
-        # resserrée façon Kraken/TradingView — repéré au test réel ("chiffres
-        # qui se chevauchent" : la var. jour d'une ligne chevauchait le
-        # libellé de prix de la ligne suivante une fois les cartes tassées).
-        with st.container(key=f"tslight_desktop_wrap_{table_key}"):
-            theme.render_table_light(rows, ASSET_ROW_COLUMNS, row_key="ticker", table_key=table_key)
-
-        compact_rows = [{
-            **row,
-            "primary": row["price"] or "—",
-            "secondary": f"{row['change_pct']:+.2f}%" if row["change_pct"] is not None else "—",
-            "secondary_color": (
-                (theme.LIGHT_GREEN if row["change_pct"] >= 0 else theme.LIGHT_RED)
-                if row["change_pct"] is not None else theme.LIGHT_TEXT
-            ),
-        } for row in rows]
-        theme.render_compact_list(compact_rows, table_key=table_key, detail=_render_asset_detail)
+def _open_category(category: str, zone: str | None = None, country: str | None = None) -> None:
+    """Navigation vers une page de liste. `zone`/`country` : niveau prévu
+    pour une phase ultérieure (colonnes déjà présentes en base), ignorés
+    pour l'instant."""
+    st.session_state["trading_category"] = {"category": category, "zone": zone, "country": country}
+    st.rerun()
 
 
-def _render_home_boxes() -> None:
-    universe = INDICES + TOP_CAP + CRYPTO + FOREX + COMMODITIES + BONDS
-    tickers = tuple(t for t, _ in universe)
-    quotes = _fetch_quotes(tickers)
-    stale_times = [q["fetched_at"] for q in quotes.values() if q.get("stale") and q.get("fetched_at")]
-    if stale_times:
-        oldest_min = max(0, (time.time() - min(stale_times)) / 60)
-        theme.render_stale_banner(
-            f"Certains prix ci-dessous sont datés (jusqu'à {oldest_min:.0f} min) : source de cotation en pause."
-        )
-
-    # Conteneur dédié : sert d'ancrage CSS pour forcer le passage à 1 colonne
-    # sur mobile (voir le media query dans theme.py), sans dépendre du seul
-    # comportement natif de Streamlit.
-    with st.container(key="ts_home_grid"):
-        row1 = st.columns(2)
-        with row1[0]:
-            _render_asset_box("home_indices", "Indices majeurs", INDICES, quotes, category="Indices/ETF")
-        with row1[1]:
-            _render_asset_box("home_topcap", "Top capitalisation", TOP_CAP, quotes, category="Actions")
-
-        row2 = st.columns(2)
-        with row2[0]:
-            _render_asset_box("home_crypto", "Crypto les plus suivies", CRYPTO, quotes, category="Crypto")
-        with row2[1]:
-            _render_asset_box("home_forex", "Forex", FOREX, quotes, category="Forex")
-
-        row3 = st.columns(2)
-        with row3[0]:
-            _render_asset_box(
-                "home_commodities", "Matières premières", COMMODITIES, quotes, category="Matières premières",
-            )
-        with row3[1]:
-            _render_asset_box("home_bonds", "Obligations (ETF)", BONDS, quotes, category="Obligations")
+def _render_category_list(category: str) -> None:
+    label = asset_universe.CATEGORY_LABELS.get(category, category)
+    if st.button("← Retour à l'accueil", key="back_from_category"):
+        st.session_state.pop("trading_category", None)
+        st.rerun()
+    st.markdown(f"### {label}")
+    rows = [{"ticker": t, "name": n, "category": category}
+            for t, n in asset_universe.ASSETS_BY_CATEGORY.get(category, [])]
+    _render_search_result_list(rows, f"compact_category_{theme._safe_key_part(category)}")
 
 
 # -- Recherche -----------------------------------------------------------------
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _cached_search(query: str) -> list[dict]:
+    """Une requête Yahoo Search par texte recherché et par 10 min (partagé
+    entre sessions) : sans ce cache, la recherche était relancée à CHAQUE
+    rerun de l'onglet tant que le texte restait dans le champ. Un échec
+    (exception) n'est jamais mis en cache."""
+    return md.search_assets(query)
+
+
 def _search_tradable_assets(query: str) -> list[dict]:
     try:
-        results = md.search_assets(query)
+        results = _cached_search(query.strip().lower())
     except md.MarketDataError as e:
         st.error(str(e))
         return []
     return results
 
 
-def _render_search_result_detail(row: dict) -> None:
+def _render_search_result_detail(row: dict, table_key: str = "search") -> None:
     """Contenu de l'expander "Détails" sous une ligne compacte mobile d'une
     liste de recherche (voir _render_search_result_list) : pas d'info
     supplémentaire à afficher ici (ticker+nom seulement, pas de prix), donc
     uniquement le bouton d'ouverture de la fiche — sans lui, une ligne
     compacte mobile n'a aucun moyen d'atteindre le formulaire d'ordre."""
-    if st.button("Voir la fiche →", key=f"mobile_goto_search_{row['ticker']}", use_container_width=True):
+    # Clé préfixée par la liste : un même ticker peut apparaître dans deux
+    # listes de la même page (suggestions + page de liste Crypto...).
+    if st.button("Voir la fiche →", key=f"mobile_goto_{table_key}_{row['ticker']}", use_container_width=True):
         theme.go_to_trading(row["ticker"], row.get("nav_name", row["name"]))
 
 
@@ -291,7 +199,8 @@ def _render_search_result_list(rows: list[dict], table_key: str) -> None:
     with st.container(key=f"tslight_desktop_wrap_{table_key}"):
         theme.render_table_light(rows, SEARCH_RESULT_COLUMNS, row_key="ticker",
                                   table_key=table_key, show_header=False)
-    theme.render_compact_list(rows, table_key=table_key, detail=_render_search_result_detail)
+    theme.render_compact_list(rows, table_key=table_key,
+                              detail=lambda row: _render_search_result_detail(row, table_key))
 
 
 def _render_search() -> None:
@@ -1613,7 +1522,11 @@ def render(portfolio) -> None:
         quote_type = st.session_state.get("selected_quote_type", "")
 
         if not ticker:
-            _render_home_boxes()
+            category_nav = st.session_state.get("trading_category")
+            if category_nav:
+                _render_category_list(category_nav["category"])
+            else:
+                _render_home_categories()
             return
 
         if st.session_state.get("_last_recorded_search") != ticker:
@@ -1623,7 +1536,8 @@ def render(portfolio) -> None:
                 pass  # l'historique de recherche est un confort, jamais bloquant
             st.session_state["_last_recorded_search"] = ticker
 
-        if st.button("← Retour à l'accueil", key="back_to_trading_home"):
+        back_label = "← Retour à la liste" if st.session_state.get("trading_category") else "← Retour à l'accueil"
+        if st.button(back_label, key="back_to_trading_home"):
             st.session_state.selected_ticker = None
             st.rerun()
 

@@ -1383,7 +1383,7 @@ _LIGHT_CSS = f"""
         gap: 0.15rem !important;
     }}
 
-    /* Vitrine d'accueil Trading (Indices/Top cap/Crypto/Forex) : 1 colonne
+    /* Cases de catégories de l'accueil Trading : 1 colonne
        au lieu de 2, quel que soit le comportement natif exact de Streamlit
        sur les st.columns (non garanti pour un nombre fixe). */
     .st-key-ts_light [class*="st-key-ts_home_grid"] [data-testid="stHorizontalBlock"] {{

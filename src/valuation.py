@@ -24,7 +24,7 @@ _CATEGORY_LABELS = {
     "FUTURE": "Matières premières",
 }
 
-# ETF obligataires (voir ui_trading.BONDS) : yfinance les classe en quoteType
+# ETF obligataires (voir asset_universe.ASSETS_BY_CATEGORY) : yfinance les classe en quoteType
 # "ETF", indistinguable d'un ETF actions/indices classique par ce seul
 # champ — d'où cette liste explicite plutôt qu'une détection automatique.
 # Les tickers de rendement d'État bruts (^TNX, ^TYX, ^FVX, ^IRX...) sont
@@ -58,7 +58,7 @@ UNDEFINED_LABEL = "Non défini"
 _PROFILE_LOOKUP_CATEGORIES = {"Actions", "Indices/ETF", "Obligations"}
 
 # Mapping fixe ticker -> secteur pour les matières premières (voir
-# ui_trading.COMMODITIES pour la liste complète des tickers proposés) :
+# asset_universe.ASSETS_BY_CATEGORY pour la liste complète des tickers proposés) :
 # yfinance n'a structurellement aucun champ "sector" exploitable sur un
 # contrat future (GC=F, CL=F...), une liste posée à la main est donc la
 # seule option, comme pour Crypto -> FinTech ci-dessous. Deux sous-secteurs
