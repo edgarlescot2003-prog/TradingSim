@@ -50,7 +50,7 @@ def _home_app():
         # Le rafraîchissement (réseau) tourne en arrière-plan, hors du rendu :
         # ici on vérifie seulement qu'il est bien DÉCLENCHÉ par la page.
         patch.object(ds, "start_refresh_if_due",
-                     lambda category, now=None, rows=None: triggers.append(category) or "fresh").start()
+                     lambda category, now=None, rows=None, zone=None: triggers.append(category) or "fresh").start()
         if st.session_state.get("_test_fill"):
             from datetime import date, timedelta
             from sqlalchemy import text

@@ -347,18 +347,44 @@ def _fetch(ticker: str, category: str, pace) -> dict | None:
     return None
 
 
-def refresh_category(category: str, sleep=time.sleep, now_fn=time.time) -> tuple[int, int]:
-    """Met à jour les lignes dues d'une catégorie, une requête à la fois,
+def scope_of(category: str, zone: str | None = None) -> str:
+    """Portée d'un chargement = UNE liste affichée : pour les Actions, une
+    zone (30 actifs au plus) ; pour les autres catégories, la catégorie
+    entière (20 au plus, et ses sous-listes par devise/maturité/famille se
+    recouvrent). Même portée pour le cron et pour l'app, donc même bail :
+    jamais le même actif chargé deux fois en même temps."""
+    if category == asset_universe.ACTIONS and zone:
+        return f"{category}:{zone}"
+    return category
+
+
+def lease_name(scope: str) -> str:
+    return f"asset_daily:{scope}"
+
+
+def _scope_rows(scope: str) -> list[dict] | None:
+    category, _, zone = scope.partition(":")
+    return list_assets(category, zone=zone or None)
+
+
+def _sources_paused(category: str) -> bool:
+    """Vrai si TOUTES les sources utilisables pour cette catégorie sont en
+    pause (coupe-circuit) : inutile alors de lancer un chargement."""
+    from . import kraken_data, market_data as md
+
+    sources = [md.YAHOO] + ([kraken_data.KRAKEN] if category == asset_universe.CRYPTO else [])
+    return all(market_store.blocked_remaining(source) > 0 for source in sources)
+
+
+def refresh_rows(category: str, rows: list[dict], sleep=time.sleep, now_fn=time.time,
+                 scope: str | None = None) -> tuple[int, int]:
+    """Met à jour les lignes DUES parmi `rows`, une requête à la fois,
     espacées d'environ 1 s (plus un léger aléa). Retourne (mises à jour,
-    ignorées). À appeler seulement avec le bail en main (voir
-    start_refresh_if_due)."""
+    ignorées). À appeler seulement avec le bail de la portée en main."""
     import random
 
-    rows = list_assets(category)
-    if rows is None:
-        return 0, 0
     due = [r for r in rows if is_due(r, now_fn())]
-    market_store.log_event("daily_refresh_start", category=category, due=len(due), total=len(rows))
+    market_store.log_event("daily_refresh_start", scope=scope or category, due=len(due), total=len(rows))
     requests_made = [0]
 
     def pace():
@@ -373,7 +399,7 @@ def refresh_category(category: str, sleep=time.sleep, now_fn=time.time) -> tuple
         fetched = _fetch(ticker, category, pace)
         if requests_made[0] == requests_before:
             # Toutes les sources en pause : aucune requête, la liste garde ses
-            # valeurs actuelles, retentée à la prochaine visite après la pause.
+            # valeurs actuelles, reprise au prochain passage après la pause.
             skipped += len(due) - index
             break
         summary = summarize(fetched["candles"], fetched["today"]) if fetched else None
@@ -383,88 +409,127 @@ def refresh_category(category: str, sleep=time.sleep, now_fn=time.time) -> tuple
             continue
         _write_attempt(ticker, now_fn())  # échec : pas de nouvel essai avant RETRY_AFTER_SECONDS
         skipped += 1
-    market_store.log_event("daily_refresh_end", category=category, updated=updated, skipped=skipped,
+    market_store.log_event("daily_refresh_end", scope=scope or category, updated=updated, skipped=skipped,
                            requests=requests_made[0])
     return updated, skipped
 
 
-def lease_name(category: str) -> str:
-    return f"asset_daily:{category}"
+def refresh_category(category: str, sleep=time.sleep, now_fn=time.time) -> tuple[int, int]:
+    """Toutes les lignes dues d'une catégorie (outil de test et de secours)."""
+    rows = list_assets(category)
+    if rows is None:
+        return 0, 0
+    return refresh_rows(category, rows, sleep=sleep, now_fn=now_fn, scope=category)
 
+
+# -- Filet de secours dans l'app : UN seul chargement à la fois par serveur -------
 
 _running_lock = threading.Lock()
-_running: set[str] = set()
+_active_scope: str | None = None
 
 
-def is_refreshing(category: str) -> bool:
-    """Rafraîchissement en cours DANS CE PROCESSUS (information d'affichage)."""
+def is_refreshing(scope: str) -> bool:
+    """Chargement de cette portée en cours DANS CE PROCESSUS."""
     with _running_lock:
-        return category in _running
+        return _active_scope == scope
 
 
-def start_refresh_if_due(category: str, now: float | None = None, rows: list[dict] | None = None) -> str:
-    """Appelé à l'ouverture d'une page de liste : "fresh" (rien à faire),
-    "started" (bail obtenu, rafraîchissement lancé en arrière-plan), "busy"
-    (déjà en cours ici ou bail détenu par un autre processus),
-    "unavailable" (base indisponible). Ne bloque jamais l'affichage : au
-    plus deux requêtes SQL courtes ici, le travail réseau se fait dans un
-    thread séparé."""
+def active_scope() -> str | None:
+    with _running_lock:
+        return _active_scope
+
+
+def start_refresh_if_due(category: str, now: float | None = None, rows: list[dict] | None = None,
+                         zone: str | None = None) -> str:
+    """Appelé à l'ouverture d'une page de liste. Statuts :
+    - "fresh" : rien à faire ; "unavailable" : base indisponible ;
+    - "started" : bail obtenu, chargement de CETTE liste lancé en arrière-plan ;
+    - "busy" : cette liste est déjà en cours de chargement (ici ou ailleurs,
+      par exemple par le cron) ;
+    - "queued" : une AUTRE liste est en cours de chargement sur ce serveur
+      (un seul à la fois : jamais deux salves de requêtes en parallèle) ;
+    - "paused" : source(s) en pause (coupe-circuit), rien n'est lancé.
+    Ne bloque jamais l'affichage : au plus deux requêtes SQL courtes ici, le
+    travail réseau se fait dans un thread séparé, limité à la liste affichée."""
     import os
     import uuid
 
+    global _active_scope
     current = time.time() if now is None else now
-    rows = list_assets(category) if rows is None else rows  # `rows` : déjà lues par l'appelant
+    scope = scope_of(category, zone)
+    rows = _scope_rows(scope) if rows is None else rows  # `rows` : déjà lues par l'appelant
     if rows is None:
         return "unavailable"
     if not any(is_due(r, current) for r in rows):
         return "fresh"
+    if _sources_paused(category):
+        return "paused"
     with _running_lock:
-        if category in _running:
-            return "busy"
-        _running.add(category)
+        if _active_scope is not None:
+            return "busy" if _active_scope == scope else "queued"
+        _active_scope = scope
     holder = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
-    if not acquire_lease(lease_name(category), holder, now=current):
+    if not acquire_lease(lease_name(scope), holder, now=current):
         with _running_lock:
-            _running.discard(category)
+            _active_scope = None
         return "busy"
 
     def worker():
+        global _active_scope
         try:
-            refresh_category(category)
+            scope_rows = _scope_rows(scope)
+            if scope_rows:
+                refresh_rows(category, scope_rows, scope=scope)
         except Exception as error:  # un thread d'arrière-plan ne doit jamais mourir en silence
-            market_store.log_event("daily_refresh_error", category=category, error=repr(error))
+            market_store.log_event("daily_refresh_error", scope=scope, error=repr(error))
         finally:
-            release_lease(lease_name(category), holder)
+            release_lease(lease_name(scope), holder)
             with _running_lock:
-                _running.discard(category)
+                _active_scope = None
 
-    threading.Thread(target=worker, name=f"daily-refresh-{category}", daemon=True).start()
+    threading.Thread(target=worker, name=f"daily-refresh-{scope}", daemon=True).start()
     return "started"
 
 
-def refresh_all_due(categories=None, holder: str = "cron") -> dict[str, str]:
-    """Pré-chargement SYNCHRONE de toutes les listes dues (utilisé par le
-    cron GitHub Actions) : même bail que l'app, donc jamais de chargement en
-    double si quelqu'un ouvre une liste au même moment. Retourne
-    {catégorie: résultat lisible}."""
+def all_scopes() -> list[tuple[str, str]]:
+    """(catégorie, portée) de toutes les listes de l'univers (cron)."""
+    scopes = []
+    for category in asset_universe.CATEGORIES:
+        rows = list_assets(category) or []
+        zones = sorted({r["zone"] for r in rows if r.get("zone")}) if category == asset_universe.ACTIONS else []
+        if zones:
+            scopes += [(category, scope_of(category, z)) for z in zones]
+            if any(not r.get("zone") for r in rows):
+                scopes.append((category, category))  # actions sans zone (ne devrait pas arriver)
+        else:
+            scopes.append((category, category))
+    return scopes
+
+
+def refresh_all_due(holder: str = "cron", sleep=time.sleep) -> dict[str, str]:
+    """Pré-chargement SYNCHRONE de toutes les listes dues (cron GitHub
+    Actions), portée par portée, sous le même bail que l'app. Retourne
+    {portée: résultat lisible}."""
     import os
 
     results = {}
-    for category in categories or asset_universe.CATEGORIES:
-        rows = list_assets(category)
+    for category, scope in all_scopes():
+        rows = _scope_rows(scope)
+        if category == asset_universe.ACTIONS and scope == category:
+            rows = [r for r in rows or [] if not r.get("zone")]
         if rows is None:
-            results[category] = "base indisponible"
+            results[scope] = "base indisponible"
             continue
         if not any(is_due(r, time.time()) for r in rows):
-            results[category] = "déjà à jour"
+            results[scope] = "déjà à jour"
             continue
         owner = f"{holder}-{os.getpid()}"
-        if not acquire_lease(lease_name(category), owner):
-            results[category] = "déjà en cours ailleurs"
+        if not acquire_lease(lease_name(scope), owner):
+            results[scope] = "déjà en cours ailleurs"
             continue
         try:
-            updated, skipped = refresh_category(category)
-            results[category] = f"{updated} mis à jour, {skipped} ignoré(s)"
+            updated, skipped = refresh_rows(category, rows, sleep=sleep, scope=scope)
+            results[scope] = f"{updated} mis à jour, {skipped} ignoré(s)"
         finally:
-            release_lease(lease_name(category), owner)
+            release_lease(lease_name(scope), owner)
     return results

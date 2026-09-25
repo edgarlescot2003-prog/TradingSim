@@ -314,11 +314,11 @@ def test_refresh_all_due_for_cron():
         first = ds.refresh_all_due(holder="test")
         second = ds.refresh_all_due(holder="test")
     assert first[asset_universe.FOREX] == "déjà en cours ailleurs", first
-    assert first[asset_universe.ACTIONS] == "5 mis à jour, 0 ignoré(s)" and first[asset_universe.CRYPTO].startswith("4"), first
+    assert first["Actions:amerique"] == "5 mis à jour, 0 ignoré(s)" and first[asset_universe.CRYPTO].startswith("4"), first
     assert len(kraken.calls) == 4 and len(yahoo.calls) == 15, (len(kraken.calls), len(yahoo.calls))
-    assert second[asset_universe.ACTIONS] == "déjà à jour", "second passage de la journée : aucune requête"
+    assert second["Actions:amerique"] == "déjà à jour", "second passage de la journée : aucune requête"
     assert len(yahoo.calls) == 15
-    assert ds.acquire_lease(ds.lease_name(asset_universe.ACTIONS), "autre"), "bail relâché par le cron"
+    assert ds.acquire_lease(ds.lease_name("Actions:amerique"), "autre"), "bail relâché par le cron"
     print("OK: pré-chargement cron (toutes les listes dues, bail respecté, rien au 2e passage du jour)")
 
 
@@ -361,6 +361,38 @@ def test_background_trigger_single_run():
     print("OK: déclenchement en arrière-plan, un seul à la fois, bail relâché à la fin")
 
 
+def test_fallback_scoped_single_and_paused():
+    import threading as th
+    import time as tm
+
+    engine = _fresh_engine()
+    _reset_circuits()
+    ds._engine()
+    _set_row(engine, "MSFT", zone="europe")
+    _set_row(engine, "NVDA", zone="europe")
+    release = th.Event()
+
+    def slow(ticker):
+        release.wait(10)
+        return _good(ticker)
+
+    yahoo = _Counter(slow)
+    with patch.object(md, "get_daily_closes", yahoo), patch.object(ds, "REQUEST_SPACING_SECONDS", 0.0),             patch.object(ds, "REQUEST_JITTER_SECONDS", 0.0):
+        assert ds.start_refresh_if_due(asset_universe.ACTIONS, zone="europe") == "started"
+        assert ds.start_refresh_if_due(asset_universe.ACTIONS, zone="europe") == "busy"
+        assert ds.start_refresh_if_due(asset_universe.ACTIONS, zone="amerique") == "queued", "un seul à la fois"
+        assert ds.start_refresh_if_due(asset_universe.CRYPTO) == "queued"
+        release.set()
+        for _ in range(100):
+            if ds.active_scope() is None:
+                break
+            tm.sleep(0.05)
+    assert sorted(yahoo.calls) == ["MSFT", "NVDA"], "seule la liste affichée (zone Europe) est chargée"
+    ms.record_rate_limit(md.YAHOO, RuntimeError("Too Many Requests"))
+    assert ds.start_refresh_if_due(asset_universe.ACTIONS, zone="amerique") == "paused", "source en pause"
+    print("OK: secours limité à la liste affichée, un seul chargement à la fois (« en attente »), rien si source en pause")
+
+
 if __name__ == "__main__":
     test_seed_inserts_universe_without_indices_and_never_overwrites()
     test_lease_single_winner_and_expiry()
@@ -376,4 +408,5 @@ if __name__ == "__main__":
     test_refresh_all_due_for_cron()
     test_cron_script_never_imports_streamlit()
     test_background_trigger_single_run()
+    test_fallback_scoped_single_and_paused()
     print("Tous les tests des prix indicatifs quotidiens sont passés.")

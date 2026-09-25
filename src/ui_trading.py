@@ -166,19 +166,21 @@ def _sort_and_filter(rows: list[dict], query: str, sort: str) -> list[dict]:
     return known + [r for r in rows if r.get("change_30d_pct") is None]
 
 
-LIST_REFRESH_POLL_SECONDS = 3
+LIST_REFRESH_POLL_SECONDS = 4
 
 
 @st.fragment(run_every=LIST_REFRESH_POLL_SECONDS)
-def _watch_list_refresh(category: str) -> None:
-    """Pendant le chargement d'une liste en arrière-plan : vérifie toutes les
-    3 s, EN MÉMOIRE (aucune requête réseau ni base), si le chargement est
-    terminé, et réaffiche alors la page d'elle-même. Sans lui, le bandeau
-    « Liste en cours de mise à jour » restait affiché jusqu'au prochain clic,
-    alors que les prix étaient en base au bout de ~8 s (constaté le 25/09 sur
-    Matières premières). Rendu seulement pendant un chargement : son
-    minuteur disparaît au rechargement complet qui suit."""
-    if not daily_snapshot.is_refreshing(category):
+def _watch_list_refresh() -> None:
+    """Pendant le chargement (ou l'attente) d'une liste : réaffiche la page
+    toutes les 4 s, pour voir les prix arriver AU FUR ET À MESURE (chaque
+    ligne est écrite en base dès qu'elle est chargée). Aucune requête réseau :
+    le réaffichage relit seulement la base. Rendu uniquement pendant un
+    chargement ou une attente : son minuteur disparaît au rechargement complet
+    qui suit la fin (voir le mécanisme décrit dans _pause_if_inactive).
+    Ne relance QUE sur ses propres tics : pendant un rendu complet, le corps
+    du fragment s'exécute aussi, et un rerun à ce moment-là bouclerait avant
+    même d'afficher le tableau (constaté en navigateur avant le push)."""
+    if _is_fragment_rerun():
         st.rerun(scope="app")
 
 
@@ -216,8 +218,10 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
                          if ui_trading_nav.group_contains(category, group, t)]
         status = "unavailable"
     else:
-        status = daily_snapshot.start_refresh_if_due(category, rows=snapshot_rows)
-    refreshing = status in ("started", "busy") and daily_snapshot.is_refreshing(category)
+        # Chargement de secours limité à la liste affichée (zone pour les
+        # Actions, catégorie sinon), un seul à la fois par serveur.
+        status = daily_snapshot.start_refresh_if_due(category, rows=snapshot_rows, zone=zone)
+    refreshing = status in ("started", "busy")
 
     now = time.time()
     filled = [r for r in snapshot_rows if r.get("close_price") is not None]
@@ -231,11 +235,14 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
     if len(filled) < len(snapshot_rows) and status != "unavailable":
         st.caption("Certaines données sont en cours de chargement (—).")
     if refreshing:
-        ui_cards.state_banner("updating", "Les prix manquants apparaissent au fur et à mesure (quelques secondes).",
+        ui_cards.state_banner("updating", "Les prix manquants apparaissent au fur et à mesure.",
                               title="Liste en cours de mise à jour")
-        if st.button("Afficher les derniers prix", key="reload_category_list"):
-            st.rerun()
-        _watch_list_refresh(category)
+    elif status == "queued":
+        ui_cards.state_banner("updating", "Une autre liste est en cours de mise à jour ; celle-ci suivra "
+                                          "automatiquement dans quelques instants.", title="Mise à jour en attente")
+    elif status == "paused":
+        ui_cards.state_banner("paused", "Source de cotation en pause : les derniers prix connus restent affichés, "
+                                        "la mise à jour reprendra automatiquement.", title="Mise à jour reportée")
 
     table_key = f"compact_category_{theme._safe_key_part(category)}"
     col_filter, col_sort = st.columns([2, 1])
@@ -286,6 +293,8 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
             st.rerun()
     ui_cards.footnote("Prix indicatifs : clôture de la veille dans la devise de l'actif, mise à jour une fois par "
                       "jour. Le prix en direct et les ordres sont sur la fiche de chaque actif.")
+    if status in ("started", "busy", "queued"):
+        _watch_list_refresh()  # en dernier : ne retarde jamais l'affichage du tableau
 
 
 # -- Recherche -----------------------------------------------------------------

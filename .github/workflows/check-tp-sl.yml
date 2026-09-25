@@ -63,13 +63,3 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m scripts.record_admin_snapshots
-
-      # Pré-chargement des prix indicatifs des listes Trading : ne fait des
-      # requêtes qu'au premier passage de chaque jour UTC (~24 requêtes
-      # espacées), rien ensuite. Filet de sécurité conservé dans l'app (première
-      # visite d'une liste) si ce step ne tourne pas. Voir
-      # scripts/refresh_daily_lists.py.
-      - name: Pré-charger les listes Trading (une fois par jour)
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python -m scripts.refresh_daily_lists

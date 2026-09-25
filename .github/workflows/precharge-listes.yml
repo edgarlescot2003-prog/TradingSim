@@ -1,0 +1,48 @@
+name: Pre-chargement des listes Trading
+
+# Charge chaque nuit les prix indicatifs des listes de l'onglet Trading
+# (cloture de la veille + variation 30 j, table asset_daily_snapshot) pour
+# que tout soit pret avant les premieres connexions (echeance 8h30-9h a
+# Paris). Une requete par actif, espacees d'~1 s, depuis l'IP de GitHub
+# (coupe-circuit propre a cette IP) : quelques minutes pour tout l'univers.
+#
+# 3 declenchements (UTC, hors heures pleines ou GitHub retarde le plus) :
+# 00:17, 02:17, 04:17 = 2h17, 4h17, 6h17 a Paris l'ete (1h17, 3h17, 5h17
+# l'hiver). Chaque passage ne traite que ce qui reste a charger ce jour-la :
+# si GitHub en retarde ou en saute un, le suivant reprend ; les autres ne font
+# aucune requete. Filet de securite dans l'app si aucun ne passe (chargement
+# de la liste affichee a la premiere visite).
+#
+# Ne committe rien dans le depot : tout va directement dans Supabase.
+
+on:
+  schedule:
+    - cron: "17 0,2,4 * * *"
+  workflow_dispatch: {}  # bouton "Run workflow" manuel dans l'onglet Actions
+
+permissions:
+  contents: read
+
+jobs:
+  precharge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TS_DIAG_LOG: "1"
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Mêmes dépendances (et versions) que le cron TP/SL : pas de Streamlit.
+      - name: Installer les dépendances
+        run: pip install yfinance==0.2.66 sqlalchemy==2.0.43 "psycopg[binary]==3.3.4" python-dotenv==1.1.1
+
+      - name: Pré-charger les listes Trading
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m scripts.refresh_daily_lists
