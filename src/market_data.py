@@ -7,6 +7,7 @@ crypto plus fine est nécessaire.
 """
 
 import time
+from datetime import datetime, timezone
 
 import yfinance as yf
 
@@ -229,6 +230,38 @@ def _fetch_daily_summary(ticker: str) -> dict:
         "change_30d_pct": (price - first) / first * 100 if len(closes) >= 2 and first else None,
         "change_30d_at": now,
     }
+
+
+def get_daily_closes(ticker: str) -> dict:
+    """UNE requête Yahoo (chart, bougies quotidiennes sur ~2 mois) pour les
+    prix indicatifs des pages de liste (daily_snapshot.py). Retourne
+    {"candles": [(date, clôture), ...] triées, "currency", "today"} où
+    `today` est la date du jour dans le fuseau de la place (UTC à défaut) —
+    la devise vient des métadonnées de la MÊME réponse, sans requête
+    supplémentaire. Lève MarketDataError (coupe-circuit respecté)."""
+    _ensure_yahoo_available("history_2mo", ticker)
+    started = time.perf_counter()
+    try:
+        tkr = yf.Ticker(ticker)
+        hist = tkr.history(period="2mo", interval="1d")
+    except Exception as e:
+        diag_log.log("error", "Yahoo", "history_2mo", ticker, "daily_list", time.perf_counter() - started, repr(e), True)
+        _note_yahoo_error(e)
+        raise MarketDataError(f"Historique indisponible pour '{ticker}' ({e}).") from e
+    closes = hist["Close"].dropna() if hist is not None and "Close" in hist else None
+    meta = getattr(getattr(tkr, "_price_history", None), "_history_metadata", None) or {}
+    currency = meta.get("currency")
+    if closes is None or closes.empty or not currency:
+        diag_log.log("empty", "Yahoo", "history_2mo", ticker, "daily_list", time.perf_counter() - started,
+                     "no_data_or_currency", True)
+        raise MarketDataError(f"Aucun historique quotidien exploitable pour '{ticker}'.")
+    market_store.record_success(YAHOO)
+    diag_log.log("success", "Yahoo", "history_2mo", ticker, "daily_list", time.perf_counter() - started,
+                 real_request=True)
+    tz = getattr(closes.index, "tz", None)
+    today = datetime.now(tz).date() if tz is not None else datetime.now(timezone.utc).date()
+    candles = [(ts.date(), float(value)) for ts, value in closes.items()]
+    return {"candles": sorted(candles), "currency": currency, "today": today}
 
 
 def get_quote(ticker: str, allow_stale: bool = False) -> dict:

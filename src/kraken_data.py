@@ -124,6 +124,28 @@ def _fetch_interval(pair: str, minutes: int, since_ts: int) -> pd.DataFrame:
     return df.set_index("time")[["Open", "High", "Low", "Close"]]
 
 
+def quote_currency(yf_ticker: str) -> str:
+    """Devise de cotation d'une paire crypto au format Yahoo (BTC-USD -> USD)."""
+    return (yf_ticker.partition("-")[2] or "USD").upper()
+
+
+def get_daily_closes(yf_ticker: str, days: int = 70) -> dict:
+    """UNE requête Kraken OHLC en bougies quotidiennes (prix indicatifs des
+    pages de liste, daily_snapshot.py). Même format que
+    market_data.get_daily_closes : {"candles": [(date UTC, clôture)],
+    "currency", "today"}. La dernière bougie Kraken est celle du jour en
+    cours (non close) : c'est à l'appelant de ne garder que la veille."""
+    pair = _to_kraken_pair(yf_ticker)
+    candles, _ = _fetch_page(pair, 1440, int(time.time()) - days * 86400)
+    if not candles:
+        raise MarketDataError(f"Aucune bougie quotidienne Kraken pour '{pair}'.")
+    parsed = [
+        (datetime.fromtimestamp(int(c[0]), tz=timezone.utc).date(), float(c[4])) for c in candles
+    ]
+    return {"candles": sorted(parsed), "currency": quote_currency(yf_ticker),
+            "today": datetime.now(timezone.utc).date()}
+
+
 def get_history_with_fallback(yf_ticker: str, interval: str, start) -> tuple:
     """Équivalent Kraken de market_data.get_history_with_fallback : essaie
     l'intervalle demandé, et se rabat sur le suivant dans l'échelle tant que

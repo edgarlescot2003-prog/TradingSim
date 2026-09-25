@@ -188,3 +188,199 @@ def list_assets(category: str, zone: str | None = None, country: str | None = No
         market_store.db_failed(error)
         return None
     return [dict(zip(_COLUMNS, row)) for row in rows]
+
+
+# -- Rafraîchissement paresseux ------------------------------------------------------
+#
+# Déclenché par l'ouverture d'une page de liste (ui_trading), jamais à heure
+# fixe. Une catégorie est "due" si l'une de ses lignes n'a pas été mise à
+# jour depuis 24 h ; une ligne en échec n'est retentée qu'après
+# RETRY_AFTER_SECONDS (pas de boucle de tentatives sur un ticker en panne).
+
+REFRESH_AFTER_SECONDS = 24 * 3600
+RETRY_AFTER_SECONDS = 3 * 3600
+REQUEST_SPACING_SECONDS = 1.0
+REQUEST_JITTER_SECONDS = 0.5
+CHANGE_WINDOW_DAYS = 30
+
+
+def summarize(candles, today) -> dict | None:
+    """Règle "veille" et variation 30 j, sur des bougies quotidiennes
+    [(date, clôture)] :
+    - clôture de la veille = dernière bougie STRICTEMENT antérieure à
+      `today` (la bougie du jour, en cours, est ignorée) ;
+    - variation 30 j = clôture de la veille / clôture de la dernière bougie
+      datée au plus tard 30 jours avant elle - 1.
+    None si l'une des deux est introuvable ou invalide (donnée incomplète :
+    jamais écrite en base)."""
+    from datetime import timedelta
+    from math import isfinite
+
+    past = sorted((d, c) for d, c in candles if d < today and c is not None and isfinite(c) and c > 0)
+    if not past:
+        return None
+    as_of, close = past[-1]
+    limit = as_of - timedelta(days=CHANGE_WINDOW_DAYS)
+    reference = [c for d, c in past if d <= limit]
+    if not reference:
+        return None
+    change = (close / reference[-1] - 1) * 100
+    if not isfinite(change):
+        return None
+    return {"close_price": close, "as_of_date": as_of.isoformat(), "change_30d_pct": change}
+
+
+def is_due(row: dict, now: float) -> bool:
+    updated = from_iso(row.get("updated_at"))
+    if updated is not None and now - updated < REFRESH_AFTER_SECONDS:
+        return False
+    attempted = from_iso(row.get("last_attempt_at"))
+    return attempted is None or now - attempted >= RETRY_AFTER_SECONDS
+
+
+def _write_success(ticker: str, data: dict, now: float) -> bool:
+    engine = _engine()
+    if engine is None:
+        return False
+    try:
+        with engine.begin() as conn:  # une transaction par ligne
+            conn.execute(
+                text("UPDATE asset_daily_snapshot SET close_price = :close_price, currency = :currency, "
+                     "change_30d_pct = :change_30d_pct, as_of_date = :as_of_date, updated_at = :now, "
+                     "last_attempt_at = :now WHERE ticker = :ticker"),
+                {**data, "ticker": ticker, "now": iso(now)},
+            )
+        return True
+    except Exception as error:
+        market_store.db_failed(error)
+        return False
+
+
+def _write_attempt(ticker: str, now: float) -> None:
+    """Échec : seule l'heure de tentative change, les dernières bonnes
+    valeurs restent en place."""
+    engine = _engine()
+    if engine is None:
+        return
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE asset_daily_snapshot SET last_attempt_at = :now WHERE ticker = :ticker"),
+                         {"ticker": ticker, "now": iso(now)})
+    except Exception as error:
+        market_store.db_failed(error)
+
+
+def _fetch(ticker: str, category: str, pace) -> dict | None:
+    """Bougies quotidiennes : Kraken pour la crypto (Yahoo en secours si
+    Kraken échoue), Yahoo sinon. Respecte les deux coupe-circuits : une
+    source en pause n'est jamais appelée. `pace()` est appelé juste avant
+    chaque vraie requête (espacement). None si aucune source n'a répondu."""
+    from . import kraken_data, market_data as md
+
+    sources = [(kraken_data.KRAKEN, kraken_data.get_daily_closes)] if category == asset_universe.CRYPTO else []
+    sources.append((md.YAHOO, md.get_daily_closes))
+    for source, fetch in sources:
+        if market_store.blocked_remaining(source) > 0:
+            market_store.log_event("daily_refresh_circuit_open", source=source, ticker=ticker)
+            continue
+        pace()
+        try:
+            return fetch(ticker)
+        except md.MarketDataError:
+            continue
+    return None
+
+
+def refresh_category(category: str, sleep=time.sleep, now_fn=time.time) -> tuple[int, int]:
+    """Met à jour les lignes dues d'une catégorie, une requête à la fois,
+    espacées d'environ 1 s (plus un léger aléa). Retourne (mises à jour,
+    ignorées). À appeler seulement avec le bail en main (voir
+    start_refresh_if_due)."""
+    import random
+
+    rows = list_assets(category)
+    if rows is None:
+        return 0, 0
+    due = [r for r in rows if is_due(r, now_fn())]
+    market_store.log_event("daily_refresh_start", category=category, due=len(due), total=len(rows))
+    requests_made = [0]
+
+    def pace():
+        if requests_made[0]:
+            sleep(REQUEST_SPACING_SECONDS + random.uniform(0, REQUEST_JITTER_SECONDS))
+        requests_made[0] += 1
+
+    updated = skipped = 0
+    for index, row in enumerate(due):
+        ticker = row["ticker"]
+        requests_before = requests_made[0]
+        fetched = _fetch(ticker, category, pace)
+        if requests_made[0] == requests_before:
+            # Toutes les sources en pause : aucune requête, la liste garde ses
+            # valeurs actuelles, retentée à la prochaine visite après la pause.
+            skipped += len(due) - index
+            break
+        summary = summarize(fetched["candles"], fetched["today"]) if fetched else None
+        if summary is not None and fetched.get("currency") and \
+                _write_success(ticker, {**summary, "currency": fetched["currency"]}, now_fn()):
+            updated += 1
+            continue
+        _write_attempt(ticker, now_fn())  # échec : pas de nouvel essai avant RETRY_AFTER_SECONDS
+        skipped += 1
+    market_store.log_event("daily_refresh_end", category=category, updated=updated, skipped=skipped,
+                           requests=requests_made[0])
+    return updated, skipped
+
+
+def lease_name(category: str) -> str:
+    return f"asset_daily:{category}"
+
+
+_running_lock = threading.Lock()
+_running: set[str] = set()
+
+
+def is_refreshing(category: str) -> bool:
+    """Rafraîchissement en cours DANS CE PROCESSUS (information d'affichage)."""
+    with _running_lock:
+        return category in _running
+
+
+def start_refresh_if_due(category: str, now: float | None = None) -> str:
+    """Appelé à l'ouverture d'une page de liste : "fresh" (rien à faire),
+    "started" (bail obtenu, rafraîchissement lancé en arrière-plan), "busy"
+    (déjà en cours ici ou bail détenu par un autre processus),
+    "unavailable" (base indisponible). Ne bloque jamais l'affichage : au
+    plus deux requêtes SQL courtes ici, le travail réseau se fait dans un
+    thread séparé."""
+    import os
+    import uuid
+
+    current = time.time() if now is None else now
+    rows = list_assets(category)
+    if rows is None:
+        return "unavailable"
+    if not any(is_due(r, current) for r in rows):
+        return "fresh"
+    with _running_lock:
+        if category in _running:
+            return "busy"
+        _running.add(category)
+    holder = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    if not acquire_lease(lease_name(category), holder, now=current):
+        with _running_lock:
+            _running.discard(category)
+        return "busy"
+
+    def worker():
+        try:
+            refresh_category(category)
+        except Exception as error:  # un thread d'arrière-plan ne doit jamais mourir en silence
+            market_store.log_event("daily_refresh_error", category=category, error=repr(error))
+        finally:
+            release_lease(lease_name(category), holder)
+            with _running_lock:
+                _running.discard(category)
+
+    threading.Thread(target=worker, name=f"daily-refresh-{category}", daemon=True).start()
+    return "started"
