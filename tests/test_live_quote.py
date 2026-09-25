@@ -184,11 +184,11 @@ def test_unknown_kraken_pair_falls_back_to_yahoo_once_per_hour():
     _reset_kraken()
     api = _KrakenApi()
     with patch.object(kraken_data.requests, "get", api), patch.object(md.yf, "Ticker", _Ticker):
-        quote = live_quote.get_display_quote("PEPE24478-USD")
+        quote = live_quote.get_display_quote("ZZQX-USD")
         assert quote["source"] == "yahoo" and _Ticker.calls == 1, quote
         md._QUOTE_CACHE.clear()
-        live_quote.get_display_quote("PEPE24478-USD")
-    assert api.requests == ["PEPE24478USD"], "paire inconnue : Kraken n'est plus interrogé pendant 1 h"
+        live_quote.get_display_quote("ZZQX-USD")
+    assert api.requests == ["ZZQXUSD"], "paire inconnue : Kraken n'est plus interrogé pendant 1 h"
     assert _Ticker.calls == 2
     print("OK: paire absente de Kraken -> secours Yahoo, sans redemander à Kraken pendant 1 h")
 
