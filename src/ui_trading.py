@@ -2,9 +2,10 @@
 comme l'onglet Portefeuille) — page d'accueil SANS aucun prix (recherche,
 recherches récentes, cases de catégories), pages de liste par catégorie (prix
 indicatifs lus en base), recherche unifiée avec historique par
-utilisateur, fiche prix/graphique (mécanique inchangée : fragment 30s,
-sélecteur de période), formulaire d'ordre avec récapitulatif (coût/marge/
-liquidation/simulation P&L).
+utilisateur, fiche prix/graphique (seul endroit en direct : fragment
+actualisé selon la durée de cache de la classe d'actif, pause après
+inactivité — voir live_quote.py), formulaire d'ordre avec récapitulatif
+(coût/marge/liquidation/simulation P&L) exécuté au prix affiché.
 
 Layout de la fiche d'un actif sélectionné, façon Hyperliquid (voir
 ts_trading_layout_row dans render()) : 3 colonnes sur desktop large (>=1100px,
@@ -296,7 +297,7 @@ def _render_search() -> None:
             col_input, col_submit = st.columns([5, 1])
             col_input.text_input(
                 "Rechercher un actif", key="search_query", label_visibility="collapsed",
-                placeholder="Nom ou ticker : Apple, AAPL, Bitcoin, CAC 40...",
+                placeholder="Nom ou ticker : Apple, AAPL, Bitcoin, Or...",
             )
             col_submit.form_submit_button("Rechercher", use_container_width=True)
 

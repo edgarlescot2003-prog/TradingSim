@@ -18,7 +18,9 @@ complet installée et utilisée en local sur mon PC, avec plusieurs onglets.
 - Données de marché : yfinance (actions/indices/ETF, gratuit, sans clé) et
   API publique Kraken (crypto, gratuit, sans clé)
 - Déploiement : Streamlit Community Cloud
-- Dépôt GitHub privé : edgarlescot2003-prog/TradingSim, branche main
+- Dépôt GitHub **PUBLIC** (le professeur d'Edgar y accède, ne pas le repasser en
+  privé) : edgarlescot2003-prog/TradingSim, branche main. Ne jamais y committer
+  de données utilisateurs.
 
 ## Fonctionnalités actuelles
 
@@ -90,7 +92,7 @@ accentuée, ask atténuée, et inversement) ; `apply_noise` anime seulement
 les quantités par un random walk léger entre deux vrais ticks, sans jamais
 toucher aux prix. Rendu dans `ui_trading._render_order_book`, son propre
 `@st.fragment(run_every=1.5)` — **totalement découplé** du timer du
-fragment prix (30s, `_render_price_and_chart`) : son rafraîchissement ne
+fragment prix (90 s Yahoo / 30 s Kraken, `_render_price_and_chart`) : son rafraîchissement ne
 déclenche jamais le moindre appel réseau, quelle que soit sa fréquence,
 puisqu'il ne fait que LIRE `st.session_state.trading_price_eur` déjà
 déposé par ce dernier. **Règle impérative** : ce fragment ne doit JAMAIS
@@ -199,10 +201,11 @@ Graphiques avec sélecteur d'échelle temporelle progressif
 (1J/1S/1M/3M/6M/YTD/1A/5A/Tout), granularité maximale à chaque échelle.
 Tickers cliquables depuis le Portefeuille pour rejoindre directement la
 fiche Trading de l'actif.
-Le prix affiché et son graphique se rafraîchissent automatiquement toutes
-les 30 secondes via `@st.fragment(run_every=30)`, isolé du reste de la
-page. Le formulaire d'ordre (hors fragment) lit le prix via
-`st.session_state` sans dupliquer d'appel API. Zoom à la molette/pinch
+Le prix affiché et son graphique se rafraîchissent automatiquement selon la
+durée de cache de la classe d'actif (voir "Phase 1" ci-dessous : 90 s Yahoo,
+30 s Kraken), en pause après 10 min sans interaction. Le formulaire d'ordre
+(autre fragment) relit le prix AFFICHÉ via `st.session_state` au moment du
+clic, sans nouvelle cotation. Zoom à la molette/pinch
 désactivé sur le graphique (`scrollZoom: False`, jugé peu pratique) : le
 sélecteur de période reste le seul moyen de changer l'échelle affichée ;
 survol et double-clic (reset du zoom) restent actifs, gérés par Plotly
@@ -308,6 +311,46 @@ Sur la fiche d'une position à levier détenue (onglet Trading), une jauge
 (`ui_trading._render_maintenance_indicator`) affiche en direct le % de la
 marge déjà perdu par rapport à ce seuil de 80%, pour que l'utilisateur
 puisse réagir avant d'être liquidé.
+
+**Phase 1 (25/09/2026) — réduction du trafic Yahoo/Kraken (429 sur l'IP
+partagée de Streamlit Cloud)** :
+- **Accueil Trading sans aucune requête** : recherche, recherches récentes et
+  5 cases de catégories (Actions, Crypto, Obligations, Forex/Monnaies,
+  Matières premières — plus d'indices, non achetables). Univers d'actifs dans
+  `src/asset_universe.py` (sans Streamlit). Garde :
+  `tests/test_trading_home_no_network.py` (sockets/yfinance/requests piégés).
+  La recherche Yahoo est mise en cache 10 min (`_cached_search`).
+- **Pages de liste** (`ui_trading._render_category_list`) : prix INDICATIF =
+  clôture de la veille + devise réelle + variation 30 j, LUS EN BASE
+  (table `asset_daily_snapshot`, `src/daily_snapshot.py`), jamais de requête
+  depuis l'affichage. Rafraîchissement paresseux : à la visite d'une liste,
+  si des lignes ont plus de 24 h, un seul processus (bail atomique
+  `refresh_leases`, 10 min) les met à jour dans un thread d'arrière-plan, 1
+  requête par actif espacée de ~1 s (Yahoo `history(2mo, 1d)`, Kraken OHLC
+  quotidien pour la crypto, Yahoo en secours). Un échec n'est retenté
+  qu'après 3 h ; une donnée incomplète n'écrase jamais une bonne valeur ;
+  coupe-circuit ouvert = zéro appel. Colonnes `zone`/`country` réservées aux
+  phases suivantes. Migration de référence :
+  `docs/migrations/003_asset_daily_snapshot.sql`.
+- **Fiche actif = seul endroit en direct** (`src/live_quote.py`, constantes à
+  un seul endroit) : cache `PRICE_CACHE_SECONDS = {yahoo: 90, kraken: 30}`
+  (partagé entre sessions + verrou par ticker = une requête par actif et par
+  durée de cache), crypto via **Kraken Ticker** (plus de `fast_info` Yahoo ;
+  paire absente -> secours Yahoo, Kraken non redemandé pendant 1 h).
+  Actualisation automatique calée sur ce cache ; **pause après
+  `AUTO_REFRESH_PAUSE_INACTIVITE_S` (600 s) sans interaction** (un tic
+  recharge la page une fois sans `run_every` : Streamlit efface alors les
+  minuteurs du navigateur — vérifié en navigateur réel), bouton
+  « Actualiser ». Ordre au marché exécuté sur le prix AFFICHÉ
+  (`_displayed_price`) ; si ce prix a plus de `FACTEUR_AGE_MAX_PRIX_AFFICHE`
+  (2) x le cache (3 min Yahoo, 60 s Kraken), il est d'abord rafraîchi et
+  l'utilisateur doit revalider (`_refresh_price_before_order`) ; source
+  bloquée -> règles du mode « prix daté » inchangées.
+- `market_data.get_quotes_batch` n'est plus utilisé que par
+  `admin_snapshot.py` (cron). Positions/Classement : inchangés (phase 2).
+- Diagnostic manuel `diagnostic-quote-groupe.yml` (workflow_dispatch
+  uniquement) + `scripts/diagnostic_quote_groupe.py` : test en lecture seule
+  du `v7/finance/quote` groupé de Yahoo, rien d'intégré à l'app.
 
 ### Onglet Cours
 Ajout manuel de fiches de révision (pas d'automatisation via API pour
@@ -502,8 +545,8 @@ Edgar, faute d'outil de navigateur mobile disponible dans cette session.
 
 **Listes compactes mobile** (`theme.render_compact_list`) : Positions,
 Historique des trades, récap "Positions ouvertes" (Portefeuille), recherche
-d'actifs/récents/suggestions et encadrés d'accueil Trading (Indices
-majeurs, Top capitalisation...) basculent tous en 1 ligne HTML compacte
+d'actifs/récents/suggestions et pages de liste par catégorie (Trading)
+basculent tous en 1 ligne HTML compacte
 par élément sur mobile plutôt qu'en grosse carte empilée (rendu desktop
 `render_table_light` masqué en contrepartie, voir le media query dans
 `theme.py`). **Toujours passer `detail=` avec un `st.button` de navigation
