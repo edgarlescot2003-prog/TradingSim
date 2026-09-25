@@ -13,6 +13,7 @@ boucle de pagination ci-dessous reste utile pour rattraper le présent quand
 un premier appel ne l'atteint pas encore.
 """
 
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -122,6 +123,123 @@ def _fetch_interval(pair: str, minutes: int, since_ts: int) -> pd.DataFrame:
     for col in ("Open", "High", "Low", "Close"):
         df[col] = df[col].astype(float)
     return df.set_index("time")[["Open", "High", "Low", "Close"]]
+
+
+# -- Prix en direct (endpoint public Ticker) ----------------------------------------
+#
+# Fiche actif crypto : UNE requête Ticker (plusieurs paires possibles, séparées
+# par des virgules) au lieu d'un fast_info Yahoo (~3 requêtes internes).
+# Champs utilisés : c[0] = dernier prix échangé, o = prix d'ouverture du jour
+# (00:00 UTC, équivalent de la clôture de la veille utilisée par Yahoo pour
+# une crypto). Kraken ne renvoie pas d'heure de cotation : market_time=None.
+
+TICKER_URL = "https://api.kraken.com/0/public/Ticker"
+_TICKER_CACHE: dict[str, tuple[dict, float]] = {}
+_TICKER_ERROR_CACHE: dict[str, tuple[str, float]] = {}
+_UNKNOWN_PAIR_COOLDOWN_SECONDS = 3600  # paire absente de Kraken : pas la peine de redemander avant 1 h
+_TICKER_LOCK = threading.Lock()
+
+
+def _normalize_result_key(key: str) -> str:
+    """Kraken répond avec ses codes historiques pour les anciennes paires
+    (XXBTZUSD pour la paire demandée XBTUSD, XETHZUSD pour ETHUSD) : retire
+    les préfixes X/Z de ce format à 8 caractères pour retrouver la paire."""
+    if len(key) == 8 and key[0] in "XZ" and key[4] in "XZ":
+        return key[1:4] + key[5:]
+    return key
+
+
+def get_ticker_quotes(yf_tickers, max_age: float = 30) -> dict[str, dict]:
+    """Prix en direct de plusieurs cryptos (tickers au format Yahoo, ex.
+    BTC-USD) en UNE requête. Même format que market_data.get_quote
+    (source="kraken"). Prix de moins de `max_age` s réutilisés sans
+    requête. Tickers absents de Kraken : absents du résultat. Lève
+    MarketDataError si la source est en pause ou indisponible."""
+    tickers = list(dict.fromkeys(yf_tickers))
+    now = time.time()
+    result: dict[str, dict] = {}
+    with _TICKER_LOCK:  # rafraîchissement mutualisé entre sessions
+        to_fetch = []
+        for ticker in tickers:
+            cached = _TICKER_CACHE.get(ticker)
+            if cached and now - cached[1] < max_age:
+                diag_log.log("cache_hit", "Kraken", "Ticker", ticker, "individual", 0.0)
+                result[ticker] = cached[0]
+                continue
+            error = _TICKER_ERROR_CACHE.get(ticker)
+            if error and now < error[1]:
+                diag_log.log("cooldown", "Kraken", "Ticker", ticker, "individual", 0.0, error[0])
+                continue
+            to_fetch.append(ticker)
+        if not to_fetch:
+            return result
+        remaining = market_store.blocked_remaining(KRAKEN)
+        if remaining > 0:
+            diag_log.log("circuit_open", "Kraken", "Ticker", ",".join(to_fetch), "individual", 0.0)
+            raise MarketDataError(
+                f"API Kraken en pause (limite de requêtes atteinte) : reprise dans {max(1, round(remaining / 60))} min."
+            )
+        pairs = {_to_kraken_pair(t): t for t in to_fetch}
+        label = ",".join(pairs)
+        started = time.perf_counter()
+        try:
+            resp = requests.get(TICKER_URL, params={"pair": label}, timeout=10)
+            resp.raise_for_status()
+            payload = resp.json()
+        except Exception as e:
+            diag_log.log("error", "Kraken", "Ticker", label, "individual", time.perf_counter() - started, repr(e), True)
+            if market_store.is_rate_limit_error(e):
+                market_store.record_rate_limit(KRAKEN, e)
+            raise MarketDataError(f"API Kraken indisponible pour '{label}' : {e}") from e
+        errors = payload.get("error") or []
+        if errors:
+            diag_log.log("error", "Kraken", "Ticker", label, "individual", time.perf_counter() - started,
+                         repr(errors), True)
+            if market_store.is_rate_limit_error(errors):
+                market_store.record_rate_limit(KRAKEN, errors)
+            elif any("Unknown asset pair" in str(e) for e in errors) and len(to_fetch) == 1:
+                _TICKER_ERROR_CACHE[to_fetch[0]] = (str(errors), now + _UNKNOWN_PAIR_COOLDOWN_SECONDS)
+            raise MarketDataError(f"Kraken a refusé la requête pour '{label}' : {errors}")
+
+        data_by_key = payload.get("result") or {}
+        fetched_at = time.time()
+        fresh = []
+        for key, data in data_by_key.items():
+            ticker = pairs.get(key) or pairs.get(_normalize_result_key(key))
+            if ticker is None and len(pairs) == 1 and len(data_by_key) == 1:
+                ticker = next(iter(pairs.values()))  # une seule paire demandée, une seule reçue
+            try:
+                price = float(data["c"][0])
+                opening = float(data["o"])
+            except (KeyError, IndexError, TypeError, ValueError):
+                continue
+            if ticker is None or not price > 0:
+                continue
+            quote = {
+                "price": price, "currency": quote_currency(ticker),
+                "previous_close": opening if opening > 0 else None, "quote_type": "CRYPTOCURRENCY",
+                "fetched_at": fetched_at, "market_time": None, "market_open": True,
+                "stale": False, "source": "kraken",
+            }
+            _TICKER_CACHE[ticker] = (quote, fetched_at)
+            _TICKER_ERROR_CACHE.pop(ticker, None)
+            result[ticker] = quote
+            fresh.append({"ticker": ticker, **quote})
+        market_store.record_success(KRAKEN)
+        diag_log.log("success", "Kraken", "Ticker", label, "individual", time.perf_counter() - started,
+                     real_request=True)
+    market_store.remember_prices(fresh)
+    return result
+
+
+def get_ticker_quote(yf_ticker: str, max_age: float = 30) -> dict:
+    """Prix en direct d'une crypto (voir get_ticker_quotes) ; lève
+    MarketDataError si la paire est absente de Kraken ou la source
+    indisponible."""
+    quote = get_ticker_quotes([yf_ticker], max_age=max_age).get(yf_ticker)
+    if quote is None:
+        raise MarketDataError(f"Paire '{_to_kraken_pair(yf_ticker)}' absente de Kraken.")
+    return quote
 
 
 def quote_currency(yf_ticker: str) -> str:

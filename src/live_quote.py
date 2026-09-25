@@ -9,6 +9,7 @@ Toutes les règles de fraîcheur de la fiche vivent ici, à un seul endroit :
 - pause de l'actualisation automatique après inactivité.
 """
 
+from . import kraken_data
 from . import market_data as md
 from . import valuation
 
@@ -31,7 +32,15 @@ def price_cache_seconds(ticker: str, quote_type: str = "") -> int:
 
 def get_display_quote(ticker: str, quote_type: str = "") -> dict:
     """Prix affiché sur la fiche (même format que market_data.get_quote),
-    réutilisé tant qu'il a moins que la durée de cache de sa classe. Repli
-    sur le dernier prix connu (mode « prix daté ») si la source est
-    indisponible ; lève MarketDataError si rien n'est disponible."""
-    return md.get_quote(ticker, allow_stale=True, max_age=price_cache_seconds(ticker, quote_type))
+    réutilisé tant qu'il a moins que la durée de cache de sa classe.
+
+    Crypto : Kraken Ticker (1 requête) ; si Kraken ne connaît pas la paire
+    ou est indisponible, secours Yahoo (soumis à son propre coupe-circuit).
+    Dans tous les cas, repli sur le dernier prix connu (mode « prix daté »)
+    si aucune source ne répond ; lève MarketDataError si rien n'existe."""
+    if live_source(ticker, quote_type) == KRAKEN:
+        try:
+            return kraken_data.get_ticker_quote(ticker, max_age=PRICE_CACHE_SECONDS[KRAKEN])
+        except md.MarketDataError:
+            pass
+    return md.get_quote(ticker, allow_stale=True, max_age=PRICE_CACHE_SECONDS[YAHOO])
