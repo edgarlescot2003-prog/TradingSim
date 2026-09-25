@@ -1,0 +1,27 @@
+name: Diagnostic quote groupé Yahoo (manuel)
+
+# Test en LECTURE SEULE, lancé uniquement à la main (jamais planifié) :
+# 3 requêtes au total (cookie, crumb, 1 quote pour 6 symboles). Rien n'est
+# intégré à l'app. Voir scripts/diagnostic_quote_groupe.py.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer requests
+        run: pip install requests
+
+      - name: Tester le quote groupé une seule fois
+        run: python scripts/diagnostic_quote_groupe.py
