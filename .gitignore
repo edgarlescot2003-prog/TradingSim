@@ -20,3 +20,6 @@ data/courses.json
 .DS_Store
 Thumbs.db
 .idea/
+
+# Données Natural Earth (~3 Mo) : téléchargées par tools/generer_contours.py, jamais committées
+tools/ne_50m_admin_0_countries.geojson

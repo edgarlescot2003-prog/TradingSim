@@ -77,8 +77,25 @@ def test_cards_clickable_or_soon():
     print("OK: carte disponible = vrai bouton libellé ; carte Bientôt sans bouton ; fil d'Ariane cliquable")
 
 
+def test_geo_outlines_file():
+    from src.geo_outlines import GEO_OUTLINES
+
+    size = os.path.getsize(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                        "src", "geo_outlines.py"))
+    assert size < 40_000, f"fichier de contours trop lourd : {size} octets"
+    assert "hong-kong" not in GEO_OUTLINES, "contour de Hong Kong écarté (trop grossier)"
+    for key, outline in GEO_OUTLINES.items():
+        assert max(outline["w"], outline["h"]) == 400, key
+        assert outline["d"].startswith("M") and outline["d"].endswith("Z"), key
+    for size_name in ("large", "country", "wide", "category"):
+        for outline in GEO_OUTLINES.values():
+            assert 0 < ui_cards._outline_width_pct(outline, size_name) <= 95
+    print(f"OK: {len(GEO_OUTLINES)} contours statiques valides ({size / 1024:.1f} Ko), aucun téléchargement à l'exécution")
+
+
 if __name__ == "__main__":
     test_perf_pill_format()
     test_outline_css_is_data_uri()
+    test_geo_outlines_file()
     test_cards_clickable_or_soon()
     print("Tous les tests des composants visuels sont passés.")

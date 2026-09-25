@@ -34,7 +34,7 @@ CATEGORY_ICONS = {
 }
 
 _OUTLINE_STROKE = "#FFFFFF"
-_OUTLINE_OPACITY = 0.22
+_OUTLINE_OPACITY = 0.2
 
 _CSS = f"""
 <style>
@@ -56,6 +56,7 @@ _CSS = f"""
     border: 1px solid {theme.BORDER}; border-radius: 12px;
     padding: 1.25rem 1.25rem 1.1rem 1.25rem;
     transition: border-color 0.15s ease, transform 0.15s ease;
+    margin-bottom: 1rem;
 }}
 .st-key-ts_light [class*="st-key-tsnav_card_"]:hover {{ border-color: {theme.ACCENT}; transform: translateY(-2px); }}
 .st-key-ts_light [class*="st-key-tsnav_card_"]:focus-within {{ outline: 2px solid {theme.ACCENT}; outline-offset: 2px; }}
@@ -75,9 +76,16 @@ _CSS = f"""
 .st-key-ts_light [class*="st-key-tsnav_card_"] [class*="st-key-tsnav_hit_"] .stButton > button {{
     width: 100% !important; height: 100% !important;
 }}
-.st-key-ts_light [class*="st-key-tsnav_card_"] [class*="st-key-tsnav_hit_"] .stButton > button {{
+.st-key-ts_light [class*="st-key-tsnav_card_"] [class*="st-key-tsnav_hit_"] .stButton > button,
+.st-key-ts_light [class*="st-key-tsnav_card_"] [class*="st-key-tsnav_hit_"] .stButton > button:hover,
+.st-key-ts_light [class*="st-key-tsnav_card_"] [class*="st-key-tsnav_hit_"] .stButton > button:focus {{
     background: transparent !important; border: none !important; border-radius: 12px !important;
-    color: transparent !important; box-shadow: none !important; cursor: pointer;
+    color: transparent !important; box-shadow: none !important; outline: none !important; cursor: pointer;
+}}
+/* Libellé présent pour les lecteurs d'écran, jamais visible (Streamlit
+   l'enveloppe dans un <p> qui a sa propre couleur). */
+.st-key-ts_light [class*="st-key-tsnav_card_"] [class*="st-key-tsnav_hit_"] .stButton > button * {{
+    color: transparent !important;
 }}
 
 /* Contenu des cartes */
@@ -99,9 +107,14 @@ _CSS = f"""
 /* Pastilles */
 .tsnav-perf {{ display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.6rem; border-radius: 999px;
                font-family: {theme.FONT_MONO}; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }}
-.tsnav-perf-up {{ color: {theme.GREEN}; background: rgba(74, 222, 128, 0.14); border: 1px solid rgba(74, 222, 128, 0.35); }}
-.tsnav-perf-down {{ color: {theme.RED}; background: rgba(248, 113, 113, 0.14); border: 1px solid rgba(248, 113, 113, 0.35); }}
-.tsnav-perf-none {{ color: {theme.MUTED}; border: 1px solid {theme.BORDER}; }}
+/* !important : les règles génériques du texte de l'onglet (scope ts_light)
+   imposent sinon leur blanc à tout <span> de st.markdown. */
+.st-key-ts_light .tsnav-perf-up, .st-key-ts_light .tsnav-perf-up * {{ color: {theme.GREEN} !important; }}
+.st-key-ts_light .tsnav-perf-down, .st-key-ts_light .tsnav-perf-down * {{ color: {theme.RED} !important; }}
+.st-key-ts_light .tsnav-perf-none {{ color: {theme.MUTED} !important; }}
+.tsnav-perf-up {{ background: rgba(74, 222, 128, 0.14); border: 1px solid rgba(74, 222, 128, 0.35); }}
+.tsnav-perf-down {{ background: rgba(248, 113, 113, 0.14); border: 1px solid rgba(248, 113, 113, 0.35); }}
+.tsnav-perf-none {{ border: 1px solid {theme.BORDER}; }}
 .tsnav-soon {{ display: inline-block; padding: 0.15rem 0.65rem; border-radius: 999px; font-size: 0.75rem;
                font-weight: 700; letter-spacing: 0.04em; color: {theme.TEXT}; background: rgba(255, 255, 255, 0.10);
                border: 1px dashed rgba(255, 255, 255, 0.55); width: fit-content; }}
@@ -165,12 +178,34 @@ def outline_css(card_key: str, outline: dict | None, size: str) -> str:
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {outline["w"]} {outline["h"]}">'
            f'<path d="{outline["d"]}" fill="none" stroke="{_OUTLINE_STROKE}" stroke-opacity="{_OUTLINE_OPACITY}" '
            f'stroke-width="1.4" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>')
-    width = {"large": "92%", "country": "88%", "wide": "34%", "category": "70%"}.get(size, "80%")
-    position = "right 1.25rem center" if size == "wide" else "right -12% bottom -10%"
-    mobile_width = {"wide": "45%"}.get(size, "60%")
+    width = _outline_width_pct(outline, size)
+    position = "right 1.5rem center" if size == "wide" else "right -4% bottom -5%"
+    mobile_width = min(width, 45.0) if size == "wide" else min(width * 0.62, 58.0)
     return (f'.st-key-ts_light .st-key-{card_key} {{ background-image: url("data:image/svg+xml,{quote(svg)}"); '
-            f'background-size: {width} auto; background-position: {position}; }}'
-            f'@media (max-width: 640px) {{ .st-key-ts_light .st-key-{card_key} {{ background-size: {mobile_width} auto; }} }}')
+            f'background-size: {width:.0f}% auto; background-position: {position}; }}'
+            f'@media (max-width: 640px) {{ .st-key-ts_light .st-key-{card_key} {{ '
+            f'background-size: {mobile_width:.0f}% auto; }} }}')
+
+
+# Boîte réservée au contour, en fraction de la carte (largeur, hauteur) et
+# rapport largeur/hauteur approximatif de la carte (composition de la
+# maquette) : le contour tient dans la moitié basse, sous le texte, qu'il
+# soit haut (Amérique, Royaume-Uni) ou large (Asie, États-Unis).
+_OUTLINE_BOX = {
+    "large": (0.95, 0.52, 368 / 480),
+    "country": (0.95, 0.46, 214 / 320),
+    "category": (0.8, 0.4, 214 / 300),
+    "wide": (0.30, 0.9, 1180 / 190),
+}
+
+
+def _outline_width_pct(outline: dict, size: str) -> float:
+    """Largeur CSS (% de la carte) pour que le contour tienne dans sa boîte."""
+    box_w, box_h, card_ratio = _OUTLINE_BOX.get(size, (0.8, 0.5, 1.0))
+    aspect = outline["w"] / outline["h"]
+    # largeur imposée par la hauteur de la boîte, ramenée en % de la largeur de carte
+    width_from_height = box_h / card_ratio * aspect
+    return 100 * min(box_w, width_from_height)
 
 
 def nav_card(card_id: str, body_html: str, *, size: str = "large", available: bool = True,
