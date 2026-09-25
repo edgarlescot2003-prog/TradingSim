@@ -25,6 +25,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from . import asset_universe
+from . import daily_snapshot
 from . import db
 from . import kraken_data
 from . import market_data as md
@@ -146,15 +147,86 @@ def _open_category(category: str, zone: str | None = None, country: str | None =
     st.rerun()
 
 
-def _render_category_list(category: str) -> None:
+LIST_ROW_COLUMNS = [
+    {"key": "ticker", "label": "Symbole", "kind": "ticker_badge", "width": 0.9},
+    {"key": "name", "label": "Nom", "kind": "link", "width": 1.4},
+    {"key": "price", "label": "Prix indicatif", "kind": "mono_text", "width": 1.3},
+    {"key": "change_30d_pct", "label": "Var. 30j", "kind": "signed_pct", "width": 0.9},
+]
+
+
+def _format_list_price(price: float | None, currency: str | None) -> str | None:
+    if price is None:
+        return None
+    decimals = 4 if price < 10 else 2  # paires de devises (1,1234) comme actions
+    return f"{price:,.{decimals}f} {currency or ''}".strip()
+
+
+def _age_label(seconds: float) -> str:
+    if seconds < 3600:
+        return f"{max(1, round(seconds / 60))} min"
+    return f"{round(seconds / 3600)} h"
+
+
+def _render_category_list(category: str, zone: str | None = None, country: str | None = None) -> None:
+    """Page de liste d'une catégorie : prix INDICATIFS lus en base
+    (daily_snapshot, clôture de la veille + variation 30 j), JAMAIS de
+    requête Yahoo/Kraken depuis l'affichage. Les lignes de plus de 24 h
+    sont rafraîchies en arrière-plan (daily_snapshot.start_refresh_if_due),
+    la liste s'affiche immédiatement avec ce qui est en base.
+    `zone`/`country` : niveau prévu pour une phase ultérieure."""
     label = asset_universe.CATEGORY_LABELS.get(category, category)
     if st.button("← Retour à l'accueil", key="back_from_category"):
         st.session_state.pop("trading_category", None)
         st.rerun()
     st.markdown(f"### {label}")
-    rows = [{"ticker": t, "name": n, "category": category}
-            for t, n in asset_universe.ASSETS_BY_CATEGORY.get(category, [])]
-    _render_search_result_list(rows, f"compact_category_{theme._safe_key_part(category)}")
+
+    snapshot_rows = daily_snapshot.list_assets(category, zone=zone, country=country)
+    if snapshot_rows is None:
+        # Base indisponible : liste des actifs sans prix, fiche toujours accessible.
+        st.caption("Prix indicatifs momentanément indisponibles. Ouvre la fiche d'un actif pour son prix en direct.")
+        snapshot_rows = [{"ticker": t, "name": n, "category": category}
+                         for t, n in asset_universe.ASSETS_BY_CATEGORY.get(category, [])]
+        status = "unavailable"
+    else:
+        status = daily_snapshot.start_refresh_if_due(category, rows=snapshot_rows)
+
+    now = time.time()
+    filled = [r for r in snapshot_rows if r.get("close_price") is not None]
+    if filled:
+        dates = sorted({r["as_of_date"] for r in filled})
+        fmt = [datetime.fromisoformat(d).strftime("%d/%m") for d in (dates[0], dates[-1])]
+        closing = f"Clôture du {fmt[0]}" if fmt[0] == fmt[1] else f"Clôtures du {fmt[0]} au {fmt[-1]}"
+        oldest = min(daily_snapshot.from_iso(r["updated_at"]) or now for r in filled)
+        st.caption(f"Prix indicatifs · {closing} · mis à jour il y a {_age_label(now - oldest)} · "
+                   "prix en direct sur la fiche de chaque actif")
+    if len(filled) < len(snapshot_rows) and status != "unavailable":
+        st.caption("Certaines données sont en cours de chargement (—).")
+    if status in ("started", "busy") and daily_snapshot.is_refreshing(category):
+        if st.button("Mise à jour des prix en cours… Afficher les derniers prix", key="reload_category_list"):
+            st.rerun()
+
+    rows = [{
+        "ticker": r["ticker"],
+        "name": r["name"],
+        "category": category,
+        "price": _format_list_price(r.get("close_price"), r.get("currency")),
+        "change_30d_pct": r.get("change_30d_pct"),
+    } for r in snapshot_rows]
+    table_key = f"compact_category_{theme._safe_key_part(category)}"
+    with st.container(key=f"tslight_desktop_wrap_{table_key}"):
+        theme.render_table_light(rows, LIST_ROW_COLUMNS, row_key="ticker", table_key=table_key)
+    compact_rows = [{
+        **row,
+        "primary": row["price"] or "—",
+        "secondary": f"{row['change_30d_pct']:+.2f}% (30j)" if row["change_30d_pct"] is not None else "—",
+        "secondary_color": (
+            (theme.LIGHT_GREEN if row["change_30d_pct"] >= 0 else theme.LIGHT_RED)
+            if row["change_30d_pct"] is not None else theme.LIGHT_TEXT
+        ),
+    } for row in rows]
+    theme.render_compact_list(compact_rows, table_key=table_key,
+                              detail=lambda row: _render_search_result_detail(row, table_key))
 
 
 # -- Recherche -----------------------------------------------------------------
@@ -1524,7 +1596,8 @@ def render(portfolio) -> None:
         if not ticker:
             category_nav = st.session_state.get("trading_category")
             if category_nav:
-                _render_category_list(category_nav["category"])
+                _render_category_list(category_nav["category"], category_nav.get("zone"),
+                                      category_nav.get("country"))
             else:
                 _render_home_categories()
             return

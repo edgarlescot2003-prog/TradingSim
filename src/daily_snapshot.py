@@ -346,7 +346,7 @@ def is_refreshing(category: str) -> bool:
         return category in _running
 
 
-def start_refresh_if_due(category: str, now: float | None = None) -> str:
+def start_refresh_if_due(category: str, now: float | None = None, rows: list[dict] | None = None) -> str:
     """Appelé à l'ouverture d'une page de liste : "fresh" (rien à faire),
     "started" (bail obtenu, rafraîchissement lancé en arrière-plan), "busy"
     (déjà en cours ici ou bail détenu par un autre processus),
@@ -357,7 +357,7 @@ def start_refresh_if_due(category: str, now: float | None = None) -> str:
     import uuid
 
     current = time.time() if now is None else now
-    rows = list_assets(category)
+    rows = list_assets(category) if rows is None else rows  # `rows` : déjà lues par l'appelant
     if rows is None:
         return "unavailable"
     if not any(is_due(r, current) for r in rows):
