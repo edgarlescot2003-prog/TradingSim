@@ -166,6 +166,22 @@ def _sort_and_filter(rows: list[dict], query: str, sort: str) -> list[dict]:
     return known + [r for r in rows if r.get("change_30d_pct") is None]
 
 
+LIST_REFRESH_POLL_SECONDS = 3
+
+
+@st.fragment(run_every=LIST_REFRESH_POLL_SECONDS)
+def _watch_list_refresh(category: str) -> None:
+    """Pendant le chargement d'une liste en arrière-plan : vérifie toutes les
+    3 s, EN MÉMOIRE (aucune requête réseau ni base), si le chargement est
+    terminé, et réaffiche alors la page d'elle-même. Sans lui, le bandeau
+    « Liste en cours de mise à jour » restait affiché jusqu'au prochain clic,
+    alors que les prix étaient en base au bout de ~8 s (constaté le 25/09 sur
+    Matières premières). Rendu seulement pendant un chargement : son
+    minuteur disparaît au rechargement complet qui suit."""
+    if not daily_snapshot.is_refreshing(category):
+        st.rerun(scope="app")
+
+
 def _render_category_list(category: str, zone: str | None = None, country: str | None = None,
                           group: str | None = None) -> None:
     """Page de liste d'une catégorie : prix INDICATIFS lus en base
@@ -219,6 +235,7 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
                               title="Liste en cours de mise à jour")
         if st.button("Afficher les derniers prix", key="reload_category_list"):
             st.rerun()
+        _watch_list_refresh(category)
 
     table_key = f"compact_category_{theme._safe_key_part(category)}"
     col_filter, col_sort = st.columns([2, 1])

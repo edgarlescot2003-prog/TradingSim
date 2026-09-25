@@ -237,7 +237,7 @@ def get_daily_closes(ticker: str) -> dict:
     """UNE requête Yahoo (chart, bougies quotidiennes sur ~2 mois) pour les
     prix indicatifs des pages de liste (daily_snapshot.py). Retourne
     {"candles": [(date, clôture), ...] triées, "currency", "today"} où
-    `today` est la date du jour dans le fuseau de la place (UTC à défaut) —
+    `today` est la date du jour UTC —
     la devise vient des métadonnées de la MÊME réponse, sans requête
     supplémentaire. Lève MarketDataError (coupe-circuit respecté)."""
     _ensure_yahoo_available("history_2mo", ticker)
@@ -259,8 +259,12 @@ def get_daily_closes(ticker: str) -> dict:
     market_store.record_success(YAHOO)
     diag_log.log("success", "Yahoo", "history_2mo", ticker, "daily_list", time.perf_counter() - started,
                  real_request=True)
-    tz = getattr(closes.index, "tz", None)
-    today = datetime.now(tz).date() if tz is not None else datetime.now(timezone.utc).date()
+    # « Aujourd'hui » en UTC (et non dans le fuseau de la place) : les listes
+    # sont rechargées une fois par jour calendaire UTC, en pratique par le
+    # cron peu après minuit UTC. À 1 h UTC il est encore la veille à New York :
+    # avec le fuseau de la place, la clôture de Wall Street de la veille
+    # serait ignorée et la liste afficherait l'avant-veille toute la journée.
+    today = datetime.now(timezone.utc).date()
     candles = [(ts.date(), float(value)) for ts, value in closes.items()]
     return {"candles": sorted(candles), "currency": currency, "today": today}
 

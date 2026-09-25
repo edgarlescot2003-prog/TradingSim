@@ -323,11 +323,15 @@ partagée de Streamlit Cloud)** :
 - **Pages de liste** (`ui_trading._render_category_list`) : prix INDICATIF =
   clôture de la veille + devise réelle + variation 30 j, LUS EN BASE
   (table `asset_daily_snapshot`, `src/daily_snapshot.py`), jamais de requête
-  depuis l'affichage. Rafraîchissement paresseux : à la visite d'une liste,
-  si des lignes ont plus de 24 h, un seul processus (bail atomique
-  `refresh_leases`, 10 min) les met à jour dans un thread d'arrière-plan, 1
-  requête par actif espacée de ~1 s (Yahoo `history(2mo, 1d)`, Kraken OHLC
-  quotidien pour la crypto, Yahoo en secours). Un échec n'est retenté
+  depuis l'affichage. Rafraîchissement : une fois par jour calendaire UTC
+  (clôture de la veille, « aujourd'hui » = date UTC), 1 requête par actif
+  espacée de ~1 s (Yahoo `history(2mo, 1d)`, Kraken OHLC quotidien pour la
+  crypto, Yahoo en secours), sous bail atomique `refresh_leases` (10 min).
+  Deux déclencheurs : pré-chargement par le cron GitHub
+  (`scripts/refresh_daily_lists.py`, dernier step de `check-tp-sl.yml`, IP
+  GitHub) au premier passage après minuit UTC, et filet de sécurité à la
+  visite d'une liste (thread d'arrière-plan ; la page se réaffiche seule à la
+  fin via `_watch_list_refresh`, vérification en mémoire toutes les 3 s). Un échec n'est retenté
   qu'après 3 h ; une donnée incomplète n'écrase jamais une bonne valeur ;
   coupe-circuit ouvert = zéro appel. Colonnes `zone`/`country` réservées aux
   phases suivantes. Migration de référence :

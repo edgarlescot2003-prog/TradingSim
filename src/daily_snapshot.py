@@ -236,12 +236,15 @@ def available_places(category: str) -> set[tuple[str, str | None]] | None:
 
 # -- Rafraîchissement paresseux ------------------------------------------------------
 #
-# Déclenché par l'ouverture d'une page de liste (ui_trading), jamais à heure
-# fixe. Une catégorie est "due" si l'une de ses lignes n'a pas été mise à
-# jour depuis 24 h ; une ligne en échec n'est retentée qu'après
+# Deux déclencheurs, même code, même bail (jamais de double chargement) :
+# - le cron GitHub Actions (scripts/refresh_daily_lists.py), qui pré-charge
+#   toutes les listes au premier passage après minuit UTC ;
+# - l'ouverture d'une page de liste (ui_trading), filet de sécurité si le
+#   cron n'a pas tourné (bridage des crons GitHub).
+# Une ligne est "due" si elle n'a pas encore été mise à jour AUJOURD'HUI
+# (jour calendaire UTC) ; une ligne en échec n'est retentée qu'après
 # RETRY_AFTER_SECONDS (pas de boucle de tentatives sur un ticker en panne).
 
-REFRESH_AFTER_SECONDS = 24 * 3600
 RETRY_AFTER_SECONDS = 3 * 3600
 REQUEST_SPACING_SECONDS = 1.0
 REQUEST_JITTER_SECONDS = 0.5
@@ -252,7 +255,8 @@ def summarize(candles, today) -> dict | None:
     """Règle "veille" et variation 30 j, sur des bougies quotidiennes
     [(date, clôture)] :
     - clôture de la veille = dernière bougie STRICTEMENT antérieure à
-      `today` (la bougie du jour, en cours, est ignorée) ;
+      `today` (la bougie du jour, en cours, est ignorée) — `today` est la
+      date UTC (voir market_data.get_daily_closes) ;
     - variation 30 j = clôture de la veille / clôture de la dernière bougie
       datée au plus tard 30 jours avant elle - 1.
     None si l'une des deux est introuvable ou invalide (donnée incomplète :
@@ -274,9 +278,17 @@ def summarize(candles, today) -> dict | None:
     return {"close_price": close, "as_of_date": as_of.isoformat(), "change_30d_pct": change}
 
 
+def _start_of_utc_day(ts: float) -> float:
+    day = datetime.fromtimestamp(ts, tz=timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    return day.timestamp()
+
+
 def is_due(row: dict, now: float) -> bool:
+    """À recharger si pas encore mise à jour aujourd'hui (UTC), et pas de
+    tentative ratée depuis moins de RETRY_AFTER_SECONDS. Au plus une mise à
+    jour réussie par jour calendaire, quelle que soit l'heure de la veille."""
     updated = from_iso(row.get("updated_at"))
-    if updated is not None and now - updated < REFRESH_AFTER_SECONDS:
+    if updated is not None and updated >= _start_of_utc_day(now):
         return False
     attempted = from_iso(row.get("last_attempt_at"))
     return attempted is None or now - attempted >= RETRY_AFTER_SECONDS
@@ -428,3 +440,31 @@ def start_refresh_if_due(category: str, now: float | None = None, rows: list[dic
 
     threading.Thread(target=worker, name=f"daily-refresh-{category}", daemon=True).start()
     return "started"
+
+
+def refresh_all_due(categories=None, holder: str = "cron") -> dict[str, str]:
+    """Pré-chargement SYNCHRONE de toutes les listes dues (utilisé par le
+    cron GitHub Actions) : même bail que l'app, donc jamais de chargement en
+    double si quelqu'un ouvre une liste au même moment. Retourne
+    {catégorie: résultat lisible}."""
+    import os
+
+    results = {}
+    for category in categories or asset_universe.CATEGORIES:
+        rows = list_assets(category)
+        if rows is None:
+            results[category] = "base indisponible"
+            continue
+        if not any(is_due(r, time.time()) for r in rows):
+            results[category] = "déjà à jour"
+            continue
+        owner = f"{holder}-{os.getpid()}"
+        if not acquire_lease(lease_name(category), owner):
+            results[category] = "déjà en cours ailleurs"
+            continue
+        try:
+            updated, skipped = refresh_category(category)
+            results[category] = f"{updated} mis à jour, {skipped} ignoré(s)"
+        finally:
+            release_lease(lease_name(category), owner)
+    return results

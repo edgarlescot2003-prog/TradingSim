@@ -214,7 +214,7 @@ def test_successful_refresh_spacing_and_daily_guard():
     assert again == (0, 0) and len(yahoo.calls) == 5, "déjà à jour : aucune requête dans les 24 h"
     row = _row("TLT", asset_universe.BONDS)
     assert row["currency"] == "USD" and row["as_of_date"] == (date.today() - timedelta(days=1)).isoformat()
-    print("OK: 5 requêtes espacées de 1 à 1,5 s, puis plus rien pendant 24 h")
+    print("OK: 5 requêtes espacées de 1 à 1,5 s, puis plus rien de la journée")
 
 
 def test_crypto_uses_kraken_then_yahoo_fallback():
@@ -290,6 +290,48 @@ def test_fetchers_parse_source_payloads():
     print("OK: lecture des réponses Yahoo (devise dans les métadonnées) et Kraken, une requête chacune")
 
 
+def test_calendar_day_rule():
+    from datetime import datetime, timezone
+
+    def ts(text):
+        return datetime.fromisoformat(text).replace(tzinfo=timezone.utc).timestamp()
+
+    now = ts("2026-09-26T00:05:00")
+    assert ds.is_due({"updated_at": ds.iso(ts("2026-09-25T23:59:00"))}, now), "mis à jour hier -> à recharger"
+    assert not ds.is_due({"updated_at": ds.iso(ts("2026-09-26T00:01:00"))}, now), "déjà mis à jour aujourd'hui"
+    assert ds.is_due({"updated_at": None, "last_attempt_at": None}, now)
+    assert not ds.is_due({"updated_at": None, "last_attempt_at": ds.iso(now - 3600)}, now), "échec récent : attendre"
+    print("OK: règle « une fois par jour calendaire UTC » (passage de minuit compris)")
+
+
+def test_refresh_all_due_for_cron():
+    _fresh_engine()
+    _reset_circuits()
+    kraken, yahoo = _Counter(_good), _Counter(_good)
+    with patch.object(kraken_data, "get_daily_closes", kraken), patch.object(md, "get_daily_closes", yahoo), \
+            patch.object(ds, "REQUEST_SPACING_SECONDS", 0.0), patch.object(ds, "REQUEST_JITTER_SECONDS", 0.0):
+        assert ds.acquire_lease(ds.lease_name(asset_universe.FOREX), "app-visiteur")
+        first = ds.refresh_all_due(holder="test")
+        second = ds.refresh_all_due(holder="test")
+    assert first[asset_universe.FOREX] == "déjà en cours ailleurs", first
+    assert first[asset_universe.ACTIONS] == "5 mis à jour, 0 ignoré(s)" and first[asset_universe.CRYPTO].startswith("4"), first
+    assert len(kraken.calls) == 4 and len(yahoo.calls) == 15, (len(kraken.calls), len(yahoo.calls))
+    assert second[asset_universe.ACTIONS] == "déjà à jour", "second passage de la journée : aucune requête"
+    assert len(yahoo.calls) == 15
+    assert ds.acquire_lease(ds.lease_name(asset_universe.ACTIONS), "autre"), "bail relâché par le cron"
+    print("OK: pré-chargement cron (toutes les listes dues, bail respecté, rien au 2e passage du jour)")
+
+
+def test_cron_script_never_imports_streamlit():
+    import subprocess
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    code = ("import sys; sys.modules['streamlit'] = None; "
+            "import scripts.refresh_daily_lists, src.daily_snapshot, src.market_data, src.kraken_data; print('ok')")
+    result = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0 and "ok" in result.stdout, result.stderr[-800:]
+    print("OK: le script du cron s'importe sans Streamlit (comme l'environnement GitHub Actions)")
+
+
 def test_background_trigger_single_run():
     import threading as th
     import time as tm
@@ -330,5 +372,8 @@ if __name__ == "__main__":
     test_successful_refresh_spacing_and_daily_guard()
     test_crypto_uses_kraken_then_yahoo_fallback()
     test_fetchers_parse_source_payloads()
+    test_calendar_day_rule()
+    test_refresh_all_due_for_cron()
+    test_cron_script_never_imports_streamlit()
     test_background_trigger_single_run()
     print("Tous les tests des prix indicatifs quotidiens sont passés.")
