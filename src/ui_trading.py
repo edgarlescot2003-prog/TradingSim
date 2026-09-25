@@ -28,6 +28,7 @@ from . import asset_universe
 from . import daily_snapshot
 from . import db
 from . import kraken_data
+from . import live_quote
 from . import market_data as md
 from . import market_store
 from . import orderbook_sim
@@ -520,21 +521,33 @@ def _trade_markers_trace(trades: list, ticker: str, hist, fx_rate: float):
     )
 
 
-@st.fragment(run_every=30)
+_SOURCE_LABELS = {"yahoo": "Yahoo Finance", "kraken": "Kraken", "last_known": "dernier prix connu"}
+
+
 def _render_price_and_chart(ticker: str, quote_type: str, trades: list) -> None:
     """Prix + graphique de `ticker`, isolés dans leur propre fragment : se
-    rafraîchissent seuls toutes les 30 secondes (run_every), sans recharger
-    le reste de la page (portefeuille, autres onglets, formulaire d'ordre
-    ci-dessous). Comme un fragment ne peut pas faire vivre une valeur "live"
-    en dehors de lui, le prix converti est déposé dans st.session_state pour
-    que le formulaire d'ordre (hors fragment) puisse s'en servir.
-    """
+    rafraîchissent seuls (run_every), sans recharger le reste de la page
+    (formulaire d'ordre, carnet...). Fréquence = durée de cache du prix de
+    la classe d'actif (live_quote.PRICE_CACHE_SECONDS : 90 s Yahoo, 30 s
+    Kraken) — relancer plus vite ne ferait que relire le cache. Fragment
+    créé à l'appel (et non par décorateur) pour que cette fréquence dépende
+    de l'actif ; son identifiant Streamlit reste stable (nom de la fonction
+    + position dans la page)."""
+    run_every = live_quote.price_cache_seconds(ticker, quote_type)
+    st.fragment(_price_and_chart_body, run_every=run_every)(ticker, quote_type, trades)
+
+
+def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
+    """Corps du fragment prix + graphique (voir _render_price_and_chart).
+    Comme un fragment ne peut pas faire vivre une valeur "live" en dehors de
+    lui, le prix affiché est déposé dans st.session_state : le formulaire
+    d'ordre (autre fragment) et le carnet simulé le relisent de là."""
     try:
         with st.spinner(f"Chargement de {ticker}..."):
-            # allow_stale : si la source est en pause, dernier prix connu (avec
-            # sa vraie devise) plutôt qu'une page vide — ordres possibles sous
+            # Si la source est en pause : dernier prix connu (avec sa vraie
+            # devise) plutôt qu'une page vide — ordres possibles sous
             # conditions d'âge (voir _execution_price_error).
-            quote = md.get_quote(ticker, allow_stale=True)
+            quote = live_quote.get_display_quote(ticker, quote_type)
         fx_rate, _ = md.get_fx_rate_info(quote["currency"], allow_stale=True)
     except md.MarketDataError as e:
         st.error(str(e))
@@ -570,9 +583,11 @@ def _render_price_and_chart(ticker: str, quote_type: str, trades: list) -> None:
             market_store.log_event("stale_price_mode", ticker=ticker, age_s=round(age_min * 60))
     else:
         st.session_state.pop("_stale_mode_logged", None)
+        source_label = _SOURCE_LABELS.get(quote.get("source"), quote.get("source"))
+        fetched = datetime.fromtimestamp(quote["fetched_at"]).strftime("%H:%M:%S")
         st.caption(
-            "Prix légèrement différé (source : Yahoo Finance) · actualisation automatique toutes les 30 secondes "
-            f"· dernière actualisation : {datetime.now().strftime('%H:%M:%S')}"
+            f"Prix légèrement différé (source : {source_label}) · actualisation automatique toutes les "
+            f"{live_quote.price_cache_seconds(ticker, quote_type)} secondes · prix obtenu à {fetched}"
         )
 
     col_a, col_b = st.columns([3, 1])

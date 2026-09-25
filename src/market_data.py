@@ -6,6 +6,7 @@ Une source dédiée (Kraken/ccxt) pourra être ajoutée plus tard si une couvert
 crypto plus fine est nécessaire.
 """
 
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -264,7 +265,7 @@ def get_daily_closes(ticker: str) -> dict:
     return {"candles": sorted(candles), "currency": currency, "today": today}
 
 
-def get_quote(ticker: str, allow_stale: bool = False) -> dict:
+def get_quote(ticker: str, allow_stale: bool = False, max_age: float | None = None) -> dict:
     """Retourne {price, currency, previous_close, quote_type, fetched_at,
     market_time, market_open, stale, source} pour le ticker donné, ou lève
     MarketDataError.
@@ -281,9 +282,12 @@ def get_quote(ticker: str, allow_stale: bool = False) -> dict:
       produit QUE si l'appelant passe `allow_stale=True` (affichage, ordres
       manuels sous conditions). Par défaut, un échec lève MarketDataError :
       TP/SL, liquidation et snapshots n'utilisent jamais de prix daté.
+    - `max_age` : âge maximal (s) d'un prix déjà en cache pour être réutilisé
+      sans requête (défaut _QUOTE_CACHE_TTL_SECONDS) — la fiche actif passe
+      la durée de cache de sa classe (voir live_quote.PRICE_CACHE_SECONDS).
     """
     try:
-        return _get_live_quote(ticker)
+        return _get_live_quote(ticker, max_age=max_age)
     except MarketDataError:
         if allow_stale:
             stale = _stale_quote(ticker)
@@ -324,7 +328,35 @@ def _market_timing(tkr) -> tuple[float | None, bool | None]:
         return None, None
 
 
-def _get_live_quote(ticker: str) -> dict:
+_QUOTE_LOCKS: dict[str, threading.Lock] = {}
+_QUOTE_LOCKS_GUARD = threading.Lock()
+
+
+def _quote_lock(ticker: str) -> threading.Lock:
+    with _QUOTE_LOCKS_GUARD:
+        return _QUOTE_LOCKS.setdefault(ticker, threading.Lock())
+
+
+def _get_live_quote(ticker: str, max_age: float | None = None) -> dict:
+    """Voir _fetch_live_quote. Rafraîchissement MUTUALISÉ : le cache est
+    commun à toutes les sessions du processus, et un verrou par ticker fait
+    que plusieurs participants qui regardent le même actif au même moment
+    ne déclenchent qu'une seule requête (les autres attendent puis lisent
+    le cache tout juste rempli)."""
+    ttl = _QUOTE_CACHE_TTL_SECONDS if max_age is None else max_age
+    cached = _QUOTE_CACHE.get(ticker)
+    if cached and (time.time() - cached[1]) < ttl:
+        diag_log.log("cache_hit", "Yahoo", "fast_info", ticker, "individual", 0.0)
+        return cached[0]
+    with _quote_lock(ticker):
+        cached = _QUOTE_CACHE.get(ticker)
+        if cached and (time.time() - cached[1]) < ttl:
+            diag_log.log("cache_hit", "Yahoo", "fast_info", ticker, "individual", 0.0)
+            return cached[0]
+        return _fetch_live_quote(ticker)
+
+
+def _fetch_live_quote(ticker: str) -> dict:
     """Retourne {price, currency, previous_close, quote_type} pour le ticker
     donné, ou lève MarketDataError. `previous_close` (peut être None si
     indisponible) sert au calcul du gain du jour ; `quote_type` (EQUITY/ETF/
@@ -332,15 +364,10 @@ def _get_live_quote(ticker: str) -> dict:
     viennent du même appel fast_info que le prix, donc sans coût réseau
     supplémentaire.
 
-    Résultat mis en cache _QUOTE_CACHE_TTL_SECONDS secondes (voir plus haut) :
-    un échec n'est jamais mis en cache, pour ne pas rester bloqué sur une
-    erreur passagère plus longtemps que nécessaire.
+    Résultat mis en cache (voir _get_live_quote) : un échec n'est jamais mis
+    en cache, pour ne pas rester bloqué sur une erreur passagère plus
+    longtemps que nécessaire.
     """
-    cached = _QUOTE_CACHE.get(ticker)
-    if cached and (time.time() - cached[1]) < _QUOTE_CACHE_TTL_SECONDS:
-        diag_log.log("cache_hit", "Yahoo", "fast_info", ticker, "individual", 0.0)
-        return cached[0]
-
     error_cached = _QUOTE_ERROR_CACHE.get(ticker)
     if error_cached and (time.time() - error_cached[1]) < _QUOTE_ERROR_COOLDOWN_SECONDS:
         diag_log.log("cooldown", "Yahoo", "fast_info", ticker, "individual", 0.0, error_cached[0])
