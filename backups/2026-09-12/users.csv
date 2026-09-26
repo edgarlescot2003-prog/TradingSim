@@ -1,5 +1,0 @@
-id,username,password_hash,role,is_active,created_at,active_portfolio_id
-24df7147-f7de-4c89-b2c3-08e6b4ec3ea6,edgarv2,$2b$12$quljNWdwn1qcWRDJPd9FBusmCexUAuYTe7K0yqahG1I8f3YgYSB62,standard,True,2026-09-04T17:23:39.635734+00:00,a1e699d4-5f0b-47da-ab06-c63cdba8cc12
-a9876c71-fe94-4a5b-8730-693a9fb2d658,testutilisateur,$2b$12$2uOb1TjcMl2ACdefNnyaLe4EdKf9JJ5OxQGZ9syNVi2InFBc5FcLq,standard,True,2026-08-07T09:10:06.939881+00:00,7bf6fd72-b2fb-46f2-aa63-eb508ec49950
-55aaa055-741a-4f3f-b955-1e82ecd3f2a5,oscar,$2b$12$FriVpySNbJGrxdaCZa8N8ul2BRTq5gZT05NlRCTc3lJOGThNnF8ZO,standard,True,2026-08-08T15:13:21.284715+00:00,f9ffd368-f3a1-45a1-b4d6-67e6fb583e84
-e6fec837-7f85-4b15-9c91-79c36a8c6482,edgarlescot26,$2b$12$PO0QaSYsbMdMHr0QJo5XWuE953.0NrXoyFFtQNXkiz0oGbpva7BzK,admin,True,2026-08-06T21:03:51.579292+00:00,32475e82-116e-44ef-a5f8-54ccb5186651
