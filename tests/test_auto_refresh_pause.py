@@ -96,7 +96,10 @@ def test_pause_stops_timers_and_requests_then_resumes():
         at.session_state["_run_every"]
     assert at.session_state["_trading_last_interaction_at"] is not None
     text = _texts(at)
-    for expected in ("Variation du jour", "Clôture précédente", "Prix en euros", "exécuté au prix affiché",
+    # Gros prix en euros (200 USD x 0,9), petit prix en devise d'origine, taux de change.
+    assert 'tsnav-live-price">180.00 <span class="tsnav-live-ccy">€' in text, text[:1500]
+    assert 'tsnav-live-eur">200.00 USD' in text and "1 USD = 0,9000 €" in text
+    for expected in ("Variation du jour", "Clôture précédente", "Taux de change", "exécuté au prix affiché",
                      "toutes les 90 s", ">Actions<"):
         assert expected in text, (expected, text[:1500])
 

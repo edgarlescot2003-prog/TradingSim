@@ -332,12 +332,15 @@ def format_price(value: float) -> str:
 
 
 def live_price(price_native: float, currency: str, price_eur: float, meta: str) -> None:
-    """Prix en direct en gros chiffres monospace + équivalent en euros +
-    ligne d'information (âge, fréquence, source). `meta` : texte brut."""
-    eur = "" if currency == "EUR" else f'<div class="tsnav-live-eur">≈ {format_price(price_eur)} €</div>'
+    """Prix en direct : en GROS en euros (la devise des portefeuilles, dans
+    laquelle les ordres sont passés), en petit dans la devise de cotation
+    d'origine (masqué si l'actif est déjà coté en euros), puis la ligne
+    d'information (âge, fréquence, source). `meta` : texte brut."""
+    native = ("" if currency == "EUR" else
+              f'<div class="tsnav-live-eur">{format_price(price_native)} {html.escape(currency)}</div>')
     st.markdown(
-        f'<div class="tsnav-live"><div class="tsnav-live-price">{format_price(price_native)} '
-        f'<span class="tsnav-live-ccy">{html.escape(currency)}</span></div>{eur}'
+        f'<div class="tsnav-live"><div class="tsnav-live-price">{format_price(price_eur)} '
+        f'<span class="tsnav-live-ccy">€</span></div>{native}'
         f'<div class="tsnav-meta">{html.escape(meta)}</div></div>',
         unsafe_allow_html=True,
     )

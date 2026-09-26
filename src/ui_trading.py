@@ -911,7 +911,9 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
         ("Variation du jour", ui_cards.change_pill(day_change)),
         ("Clôture précédente", f"{ui_cards.format_price(previous_close)} {html_lib.escape(currency)}"
          if previous_close else "—"),
-        ("Prix en euros", f"{ui_cards.format_price(price_eur)} €"),
+        ("Taux de change", "cotation en euros" if currency == "EUR" else
+         f"1 {html_lib.escape(currency)} = {price_eur / price_native:,.4f} €".replace(".", ",")
+         if price_native else "—"),
     ])
 
 
