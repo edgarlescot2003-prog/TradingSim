@@ -7,13 +7,12 @@ actualisé selon la durée de cache de la classe d'actif, pause après
 inactivité — voir live_quote.py), formulaire d'ordre avec récapitulatif
 (coût/marge/liquidation/simulation P&L) exécuté au prix affiché.
 
-Layout de la fiche d'un actif sélectionné, façon Hyperliquid (voir
-ts_trading_layout_row dans render()) : 3 colonnes sur desktop large (>=1100px,
-graphique à gauche, carnet d'ordre simulé — prompt 20, purement décoratif,
-voir _render_order_book/src/orderbook_sim.py — au centre en colonne fine,
-panneau d'ordre + TP/SL à droite, non sticky), carnet masqué entre 641px et
-1099px (graphique + panneau restent côte à côte, sans compression), 1 colonne
-empilée en dessous de 640px (media query dans theme.py). Les explications
+Layout de la fiche d'un actif sélectionné (voir ts_trading_layout_row dans
+render()) : 2 colonnes sur ordinateur (graphique à gauche, panneau d'ordre +
+TP/SL à droite, non sticky), 1 colonne empilée en dessous de 640px (media
+query dans theme.py). Le carnet d'ordre simulé (prompt 20, purement
+décoratif) a été retiré le 26/09/2026 à la demande d'Edgar : sa place est
+répartie entre le graphique et le panneau d'ordre. Les explications
 pédagogiques (_render_explanations) vivent dans une zone séparée sous ce
 bloc, pas dans le panneau d'ordre lui-même.
 """
@@ -33,7 +32,6 @@ from . import kraken_data
 from . import live_quote
 from . import market_data as md
 from . import market_store
-from . import orderbook_sim
 from . import search_history
 from . import storage
 from . import theme
@@ -859,8 +857,7 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
     # ~811px de haut sur une position sans TP/SL existant, contre 450 pour
     # le graphique) — largeur inchangée, le graphique colle déjà au bord
     # gauche de la page, rien à gagner de ce côté sans rogner le carnet/le
-    # panneau d'ordre. Voir aussi .ts-ob-wrap dans theme.py (carnet aligné
-    # sur cette même valeur).
+    # panneau d'ordre.
     fig.update_layout(**theme.plotly_layout(height=600, margin=dict(l=10, r=10, t=20, b=10),
                                              xaxis_rangeslider_visible=False))
     if chart_type == "Courbe":
@@ -916,112 +913,6 @@ def _price_and_chart_body(ticker: str, quote_type: str, trades: list) -> None:
          if previous_close else "—"),
         ("Prix en euros", f"{ui_cards.format_price(price_eur)} €"),
     ])
-
-
-# -- Carnet d'ordre simulé (prompt 20) ----------------------------------------
-# PUREMENT DÉCORATIF (voir src/orderbook_sim.py pour la logique de
-# génération) : donne à la fiche Trading l'apparence d'un marché vivant,
-# SANS AUCUNE vraie donnée de marché. N'appelle et ne doit JAMAIS appeler
-# get_quote/_fetch_chart_history/kraken_data.* ni aucune fonction réseau —
-# lecture pure de st.session_state.trading_price_eur, déjà peuplé par
-# _render_price_and_chart ci-dessus. Voir tests/test_orderbook_no_network.py,
-# garde explicite contre une régression future qui reconnecterait ce carnet
-# à une vraie source par erreur.
-
-# Rafraîchissement visuel du carnet : totalement DÉCOUPLÉ du timer du
-# fragment prix (30s, run_every de _render_price_and_chart) — ce timer ne
-# déclenche jamais le moindre appel réseau, juste un nouveau tirage
-# aléatoire local (voir orderbook_sim), donc aucun impact sur le nombre
-# d'appels API réels quelle que soit sa fréquence.
-_ORDERBOOK_REFRESH_SECONDS = 1.5
-
-
-def _render_order_book(ticker: str) -> None:
-    """Crée le fragment du carnet simulé ; son animation s'arrête elle aussi
-    pendant la pause d'inactivité (aucun appel réseau dans tous les cas)."""
-    run_every = None if _auto_refresh_is_paused() else _ORDERBOOK_REFRESH_SECONDS
-    st.fragment(_order_book_body, run_every=run_every)(ticker)
-
-
-def _order_book_body(ticker: str) -> None:
-    """Carnet d'ordre simulé, isolé dans son propre fragment (comme
-    _render_price_and_chart et _render_order_panel) : son timer ne
-    redéclenche jamais le reste de la page, et une interaction ailleurs
-    (formulaire d'ordre, changement d'onglet) ne le redéclenche pas non
-    plus. Lit uniquement `st.session_state.trading_price_eur` (déjà déposé
-    par le fragment prix) — ne fait AUCUN appel réseau propre.
-    """
-    with st.container(key="ts_card_orderbook"):
-        reference_price = st.session_state.get("trading_price_eur")
-        if reference_price is None:
-            st.caption("Carnet indisponible.")
-            return
-
-        # État précédent gardé par ticker (session_state, pas un fichier/DB :
-        # purement visuel, aucune raison de persister au-delà de la session)
-        # pour savoir si le prix réel caché vient de bouger (nouveau tick ->
-        # on régénère les niveaux) ou non (on anime juste les quantités).
-        state_key = f"_orderbook_state_{ticker}"
-        previous_state = st.session_state.get(state_key)
-
-        if previous_state is None or previous_state["reference_price"] != reference_price:
-            previous_price = previous_state["reference_price"] if previous_state else None
-            snapshot = orderbook_sim.generate_snapshot(reference_price, previous_price=previous_price)
-        else:
-            snapshot = orderbook_sim.apply_noise(previous_state["snapshot"])
-
-        st.session_state[state_key] = {"reference_price": reference_price, "snapshot": snapshot}
-
-        _render_order_book_rows(snapshot, reference_price)
-
-
-def _render_order_book_rows(snapshot: dict, reference_price: float) -> None:
-    """Construit le HTML du carnet (asks empilés au-dessus du centre,
-    bids en dessous) à partir d'un snapshot déjà généré — aucun calcul de
-    simulation ici, seulement de la mise en forme (voir orderbook_sim pour
-    la génération des niveaux)."""
-    asks = orderbook_sim.with_cumulative(snapshot["asks"])
-    bids = orderbook_sim.with_cumulative(snapshot["bids"])
-    max_cumulative = max(asks[-1]["cumulative"], bids[-1]["cumulative"], 1e-9)
-
-    def _row(level: dict, side: str) -> str:
-        depth_pct = min(level["cumulative"] / max_cumulative * 100, 100)
-        return (
-            f'<div class="ts-ob-row ts-ob-{side}">'
-            f'<div class="ts-ob-depth" style="width:{depth_pct:.1f}%"></div>'
-            f'<span class="ts-ob-price">{level["price"]:,.2f}</span>'
-            f'<span class="ts-ob-qty">{level["quantity"]:.3f}</span>'
-            f'<span class="ts-ob-total">{level["cumulative"]:.3f}</span>'
-            f'</div>'
-        )
-
-    # Asks générés du plus proche du prix (index 0) au plus loin ; affichés
-    # dans l'ordre INVERSE (plus loin en haut, plus proche juste au-dessus
-    # du centre) — voir la disposition demandée dans le prompt d'origine.
-    asks_html = "".join(_row(lvl, "ask") for lvl in reversed(asks))
-    bids_html = "".join(_row(lvl, "bid") for lvl in bids)
-
-    best_ask, best_bid = asks[0]["price"], bids[0]["price"]
-    spread_bps = (best_ask - best_bid) / reference_price * 10_000 if reference_price else 0.0
-
-    # .ts-ob-wrap force la hauteur totale du carnet à coller à celle du
-    # graphique (450px, voir _render_price_and_chart ligne ~550) ; .ts-ob-side
-    # étire chaque groupe (asks/bids) en flex column avec justify-content
-    # pour répartir les paliers sur toute la hauteur dispo plutôt que de
-    # laisser un vide en bas de colonne (carnet visuellement trop petit avant
-    # ce correctif). Div propre (pas une enveloppe Streamlit), donc aucun
-    # risque du piège display:contents déjà rencontré ailleurs (prompt 19).
-    st.markdown(
-        f'<div class="ts-ob-wrap">'
-        f'<div class="ts-ob-side ts-ob-asks">{asks_html}</div>'
-        f'<div class="ts-ob-center">'
-        f'<span class="ts-ob-center-price">{reference_price:,.2f} €</span>'
-        f'<span class="ts-ob-center-spread">spread {spread_bps:.1f} bps</span>'
-        f'</div>'
-        f'<div class="ts-ob-side ts-ob-bids">{bids_html}</div>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
 
 
 # -- Récapitulatif d'ordre -----------------------------------------------------
@@ -1286,6 +1177,10 @@ def _order_panel_body(portfolio, ticker: str, name: str | None, price_eur: float
     confirmation_msg = st.session_state.pop("_order_confirmation_message", None)
     if confirmation_msg:
         theme.render_order_confirmation_popup(confirmation_msg, seconds=ORDER_CONFIRMATION_POPUP_SECONDS)
+        # Ramène la page jusqu'au message vert : sans ça, après avoir validé
+        # un ordre en bas du panneau (sous le TP/SL), le message s'affichait
+        # hors de l'écran, en haut du panneau.
+        theme.scroll_to_order_confirmation()
     refresh_notice = st.session_state.pop("_price_refresh_notice", None)
     if refresh_notice:
         ui_cards.state_banner("revalidate", refresh_notice, title="Ordre à revalider")
@@ -1926,23 +1821,15 @@ def render(portfolio) -> None:
             place = asset_universe.COUNTRY_NAMES[places[1]]
         ui_cards.asset_header(name or ticker, ticker, category, place)
 
-        # Layout façon Hyperliquid (desktop) : graphique à gauche (majorité de
-        # la largeur), carnet d'ordre simulé (prompt 20, colonne fine, PUREMENT
-        # décoratif — voir _render_order_book) au centre, panneau d'ordre à
-        # droite — repasse en 1 colonne empilée (graphique en haut, panneau en
-        # dessous, carnet masqué) sur mobile ET sur les largeurs intermédiaires
-        # <1100px (voir le media query dans theme.py : le carnet ne doit
-        # jamais compresser le graphique ou le formulaire, ce sont les 2
-        # éléments prioritaires de la page — il se masque avant eux si la
-        # place manque). Panneau volontairement PAS sticky : défile
-        # normalement avec le reste de la page au scroll.
+        # Graphique à gauche, panneau d'ordre à droite ; 1 colonne empilée sur
+        # téléphone (media query dans theme.py). Rapport 1,8 : 1 = la place de
+        # l'ancien carnet simulé (retiré le 26/09/2026) répartie entre les
+        # deux (graphique ~56 % -> 64 %, panneau ~28 % -> 36 %). Panneau
+        # volontairement PAS sticky : il défile avec le reste de la page.
         with st.container(key="ts_trading_layout_row"):
-            col_chart, col_book, col_order = st.columns([2.0, 0.55, 1])
+            col_chart, col_order = st.columns([1.8, 1])
             with col_chart:
                 _render_price_and_chart(ticker, quote_type, portfolio.history)
-
-            with col_book:
-                _render_order_book(ticker)
 
             # Déposé en session par le fragment ci-dessus (voir sa docstring) :
             # il a déjà tourné une fois de façon synchrone à ce stade du

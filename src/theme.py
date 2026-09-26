@@ -1235,105 +1235,6 @@ _LIGHT_CSS = f"""
     text-align: right;
 }}
 
-/* Carnet d'ordre simulé (prompt 20, voir src/orderbook_sim.py et
-   ui_trading._render_order_book) : PUREMENT DÉCORATIF, aucune vraie donnée
-   de marché — colonne fine entre le graphique et le formulaire d'ordre.
-   .ts-ob-row : une ligne de palier (prix/quantité/total cumulé), avec une
-   barre de profondeur en arrière-plan (.ts-ob-depth, largeur posée en
-   inline style par ligne, proportionnelle au cumulé) — position:relative/
-   absolute + z-index pour que le texte reste lisible par-dessus. opacity
-   (pas une couleur rgba dédiée) pour l'atténuer à ~50% : plus simple, la
-   barre n'a de toute façon aucun contenu texte propre à en pâtir. */
-.ts-ob-wrap {{
-    display: flex;
-    flex-direction: column;
-    /* Repère demandé par Edgar (avec une position ouverte affichée, qui fait
-       apparaître la section Take Profit/Stop Loss) : le carnet doit couvrir
-       verticalement, dans la colonne du formulaire d'ordre, du début de
-       "Mode d'exécution" jusqu'à la fin de la légende "Vend automatiquement
-       une partie de cette position...". Mesuré au pixel près via Playwright
-       sur le site déployé (1920px, position AAPL ouverte) : de y=635 à
-       y=1180, soit 545px — le margin-top ci-dessous (.st-key-ts_card_orderbook)
-       est calé sur ce même repère. Un compte sans position ouverte n'affiche
-       pas cette section (elle disparaît entièrement, voir
-       ui_trading._render_tp_sl_section) : la valeur reste fixe dans ce cas,
-       purement esthétique comme le reste du carnet. */
-    height: 545px;
-}}
-.ts-ob-side {{
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 0;
-    min-height: 0;
-}}
-.ts-ob-asks {{ justify-content: space-between; }}
-.ts-ob-bids {{ justify-content: space-between; }}
-.ts-ob-center {{ flex: 0 0 auto; }}
-.ts-ob-row {{
-    position: relative;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.1rem 0.3rem;
-    font-family: {FONT_MONO};
-    font-size: 0.66rem;
-    font-variant-numeric: tabular-nums;
-    overflow: hidden;
-    border-radius: 2px;
-    white-space: nowrap;
-}}
-.ts-ob-depth {{
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 0;
-    opacity: 0.5;
-}}
-.ts-ob-ask .ts-ob-depth {{ background: {LIGHT_RED}; }}
-.ts-ob-bid .ts-ob-depth {{ background: {LIGHT_GREEN}; }}
-.ts-ob-price, .ts-ob-qty, .ts-ob-total {{
-    position: relative;
-    z-index: 1;
-    flex: 1;
-}}
-.ts-ob-qty, .ts-ob-total {{ color: {LIGHT_MUTED}; text-align: right; }}
-.ts-ob-price {{ text-align: left; font-weight: 600; }}
-.ts-ob-ask .ts-ob-price {{ color: {LIGHT_RED}; }}
-.ts-ob-bid .ts-ob-price {{ color: {LIGHT_GREEN}; }}
-.ts-ob-center {{
-    text-align: center;
-    padding: 0.35rem 0;
-    margin: 0.15rem 0;
-    border-top: 1px solid {LIGHT_BORDER};
-    border-bottom: 1px solid {LIGHT_BORDER};
-}}
-.ts-ob-center-price {{
-    font-family: {FONT_MONO};
-    font-variant-numeric: tabular-nums;
-    font-weight: 700;
-    font-size: 0.85rem;
-    color: {LIGHT_TEXT};
-}}
-.ts-ob-center-spread {{
-    font-family: {FONT_MONO};
-    font-size: 0.65rem;
-    color: {LIGHT_MUTED};
-    margin-left: 0.4rem;
-}}
-/* Colonne étroite par construction (voir st.columns dans ui_trading.render)
-   — largeur maximale posée ici en filet de sécurité, jamais un large
-   tableau qui rivaliserait avec le graphique/formulaire d'ordre. */
-/* Décale le carnet vers le bas pour aligner son sommet sur le début de
-   "Mode d'exécution" dans le panneau d'ordre (repère demandé par Edgar,
-   voir le commentaire de .ts-ob-wrap ci-dessus) plutôt que sur le début du
-   graphique comme dans un essai précédent. Mesuré au pixel près sur le
-   site déployé (Playwright, 1920px) : la colonne carnet démarre nativement
-   à y≈507 (sans margin-top) et "Mode d'exécution" est à y≈635, d'où
-   635-507=128px. À revalider si le contenu au-dessus de "Mode d'exécution"
-   change un jour (nouvelle ligne dans "Passer un ordre", etc.). */
-.st-key-ts_card_orderbook {{ max-width: 230px; margin-top: 128px; }}
 .st-key-ts_light [class*="st-key-tslight_ticker_"] button {{
     border-radius: 999px !important;
     border: none !important;
@@ -1546,25 +1447,6 @@ _LIGHT_CSS = f"""
        ni effet de bord sur le double-clic. */
 }}
 
-/* Carnet d'ordre simulé (prompt 20) masqué en dessous de 1100px — PAS
-   seulement sur mobile (max-width:640px ci-dessus, où le graphique et le
-   formulaire d'ordre s'empilent déjà en 1 colonne) mais aussi sur les
-   largeurs intermédiaires (tablette, petit laptop) où graphique + formulaire
-   restent côte à côte mais où une 3e colonne les compresserait trop.
-   Consigne du prompt : "si l'espace est insuffisant, le masquer plutôt que
-   de compresser les deux autres éléments" — jamais l'inverse. `display:
-   none` (jamais `display: contents`, qui a un lourd historique de bugs sur
-   Safari/iOS — voir le prompt 19 et son annulation complète suite à un
-   écran bleu en production) : propriété CSS parmi les plus anciennes et les
-   mieux supportées, aucun risque de compatibilité connu. `:has()` cible la
-   colonne (stColumn) qui contient la carte du carnet, sans avoir besoin
-   d'une clé Streamlit dédiée sur la colonne elle-même (st.columns() n'en
-   permet pas) — même technique déjà utilisée pour stExpandSidebarButton. */
-@media (max-width: 1099px) {{
-    [data-testid="stColumn"]:has(.st-key-ts_card_orderbook) {{
-        display: none !important;
-    }}
-}}
 
 /* Pop-up de confirmation d'ordre (prompt 21, point 1) : remplace l'ancien
    st.toast (petite notification en coin, jugée pas assez visible par les
@@ -1706,6 +1588,34 @@ def render_order_confirmation_popup(message: str, seconds: int = 5) -> None:
         f'✓ {html_lib.escape(message)}</div>',
         unsafe_allow_html=True,
     )
+
+
+_SCROLL_TO_CONFIRMATION_JS = """
+(function () {
+  // Défile jusqu'au message vert de confirmation d'ordre (le plus récent),
+  // centré à l'écran. scrollIntoView fait défiler le bon conteneur, quel
+  // qu'il soit : la page Streamlit en local, ou la page extérieure quand
+  // l'app est affichée dans le cadre (iframe) de Streamlit Cloud.
+  function go(attempt) {
+    var popups = document.querySelectorAll('.ts-order-confirm-popup');
+    if (!popups.length) {
+      if (attempt < 20) { setTimeout(function () { go(attempt + 1); }, 100); }
+      return;
+    }
+    popups[popups.length - 1].scrollIntoView({behavior: 'smooth', block: 'center'});
+  }
+  setTimeout(function () { go(0); }, 150);
+})();
+"""
+
+
+def scroll_to_order_confirmation() -> None:
+    """Fait défiler la page jusqu'au message vert de confirmation d'ordre
+    (voir render_order_confirmation_popup) : il est affiché en haut du
+    panneau d'ordre, souvent hors de l'écran quand on vient de valider en bas
+    du formulaire. Même technique que render_fullscreen_zoom_gate (script via
+    st.html, Streamlit 1.61)."""
+    st.html(f"<script>{_SCROLL_TO_CONFIRMATION_JS}</script>", unsafe_allow_javascript=True)
 
 
 def render_stale_banner(message: str) -> None:

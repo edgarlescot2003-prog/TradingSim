@@ -92,7 +92,7 @@ def test_pause_stops_timers_and_requests_then_resumes():
     at.run()
     assert not at.exception, at.exception
     assert at.session_state["_yahoo_calls"] == 1
-    assert at.session_state["_run_every"] == {"_price_and_chart_body": 90, "_order_book_body": 1.5}, \
+    assert at.session_state["_run_every"] == {"_price_and_chart_body": 90}, \
         at.session_state["_run_every"]
     assert at.session_state["_trading_last_interaction_at"] is not None
     text = _texts(at)
@@ -108,7 +108,7 @@ def test_pause_stops_timers_and_requests_then_resumes():
     at.run()
     assert not at.exception, at.exception
     assert at.session_state["_yahoo_calls"] == 1, "pause : aucune requête de prix"
-    assert at.session_state["_run_every"] == {"_price_and_chart_body": None, "_order_book_body": None}, \
+    assert at.session_state["_run_every"] == {"_price_and_chart_body": None}, \
         at.session_state["_run_every"]
     assert at.session_state["_auto_refresh_paused"] is True
     assert "Actualisation en pause" in _texts(at), _texts(at)[:800]
@@ -118,7 +118,7 @@ def test_pause_stops_timers_and_requests_then_resumes():
     assert not at.exception, at.exception
     assert not at.session_state["_auto_refresh_paused"] if "_auto_refresh_paused" in at.session_state else True
     assert at.session_state["_yahoo_calls"] == 2, "reprise : le prix est de nouveau actualisé"
-    assert at.session_state["_run_every"] == {"_price_and_chart_body": 90, "_order_book_body": 1.5}
+    assert at.session_state["_run_every"] == {"_price_and_chart_body": 90}
     print("OK: pause -> minuteurs arrêtés, zéro requête, dernier prix affiché ; Actualiser -> reprise")
 
 
