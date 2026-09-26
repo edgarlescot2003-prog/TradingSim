@@ -371,7 +371,14 @@ partagée de Streamlit Cloud)** :
   pays affiché dans la liste) ; Crypto 20 ; Forex 18 paires, 8 devises
   (dont CAD, NZD) ; Matières premières 16 en 3 familles ; Obligations 16 ETF
   en 6 cartes. Les listes ne sont qu'une vitrine : la recherche reste
-  indépendante (tout ticker Yahoo/Kraken tradable).
+  indépendante (tout ticker Yahoo/Kraken tradable). Tri par défaut des
+  listes = importance (`asset_universe.rank_of` : capitalisation pour actions
+  et crypto, volume BIS 2025 pour le Forex, ordre de référence sinon).
+  Barre de recherche compacte (une ligne, aussi sur téléphone) ; recherches
+  récentes visibles SEULEMENT quand la barre a le focus (CSS `:focus-within`
+  sur `.st-key-ts_search_suggestions`, masquage retardé de 0,4 s : sans ce
+  délai, le clic sur une recherche récente était perdu — vérifié Chromium +
+  WebKit, ordinateur et 390 px).
 - **Pence et cents (critique)** : Yahoo cote Londres en `GBp` et les grains/
   softs américains en `USX`. `market_data.normalize_currency` ramène TOUT
   prix (direct, historique, clôtures, lot Admin) à l'unité principale (÷100)

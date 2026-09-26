@@ -999,12 +999,39 @@ _LIGHT_CSS = f"""
     background: {LIGHT_SURFACE};
     border: 1px solid {LIGHT_BORDER};
     border-radius: 12px;
-    padding: 1rem 1.1rem !important;
+    padding: 0.45rem 0.6rem !important;
+    gap: 0.4rem !important;
 }}
 .st-key-ts_card_search [data-testid="stTextInput"] input {{
-    font-size: 1.05rem !important;
-    padding-top: 0.7rem !important;
-    padding-bottom: 0.7rem !important;
+    font-size: 1rem !important;
+    padding-top: 0.45rem !important;
+    padding-bottom: 0.45rem !important;
+}}
+/* Mention native « Press Enter to submit form » (en anglais) : masquée. */
+.st-key-ts_card_search [data-testid="InputInstructions"] {{ display: none !important; }}
+/* Champ + bouton toujours sur UNE ligne, y compris sur téléphone (les
+   colonnes s'empilent sinon, ce qui doublait la hauteur de la barre). */
+.st-key-ts_card_search [data-testid="stForm"] [data-testid="stHorizontalBlock"] {{
+    flex-wrap: nowrap !important; flex-direction: row !important; gap: 0.5rem !important;
+}}
+.st-key-ts_card_search [data-testid="stForm"] [data-testid="stColumn"]:first-child {{
+    flex: 1 1 auto !important; width: auto !important; min-width: 0 !important;
+}}
+.st-key-ts_card_search [data-testid="stForm"] [data-testid="stColumn"]:last-child {{
+    flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
+}}
+/* Recherches récentes / suggestions : visibles seulement quand la barre de
+   recherche a le focus (clic ou tabulation) ou qu'on les survole. Masquées
+   avec un léger délai : un clic sur une recherche récente fait perdre le
+   focus au champ AVANT que le clic n'aboutisse — sans ce délai, la liste
+   disparaîtrait sous le pointeur et le clic serait perdu. */
+.st-key-ts_card_search .st-key-ts_search_suggestions {{
+    max-height: 0; overflow: hidden; visibility: hidden;
+    transition: max-height 0s linear 0.4s, visibility 0s linear 0.4s;
+}}
+.st-key-ts_card_search:focus-within .st-key-ts_search_suggestions,
+.st-key-ts_card_search .st-key-ts_search_suggestions:hover {{
+    max-height: 40rem; visibility: visible; transition-delay: 0s;
 }}
 .st-key-ts_card_search [data-testid="stTextInput"] > div {{
     border-width: 1.5px !important;

@@ -46,10 +46,10 @@ from . import valuation
 # -- Univers d'actifs de l'accueil (voir asset_universe.py) -----------------
 # Suggestions par défaut de la recherche quand l'utilisateur n'a pas encore
 # d'historique de recherche (ticker, nom, catégorie — pour le badge coloré).
-DEFAULT_SUGGESTIONS = (
-    [(t, n, asset_universe.ACTIONS) for t, n in asset_universe.ASSETS_BY_CATEGORY[asset_universe.ACTIONS][:4]]
-    + [(t, n, asset_universe.CRYPTO) for t, n in asset_universe.ASSETS_BY_CATEGORY[asset_universe.CRYPTO][:2]]
-)
+DEFAULT_SUGGESTIONS = [
+    (t, asset_universe.name_of(t), asset_universe.category_of(t))
+    for t in ("AAPL", "NVDA", "MC.PA", "ASML.AS", "BTC-USD", "ETH-USD")
+]
 
 SEARCH_RESULT_COLUMNS = [
     {"key": "ticker", "label": "Symbole", "kind": "ticker_badge"},
@@ -129,6 +129,17 @@ LIST_ROW_COLUMNS = [
 ]
 LIST_PAGE_SIZE = 30  # une liste de zone (30 actions) s'affiche en entier
 _LIST_SORTS = ["Nom (A → Z)", "Variation 30 j : meilleure d'abord", "Variation 30 j : moins bonne d'abord"]
+# Tri par défaut : les actifs les plus importants (liquides, populaires) d'abord.
+_IMPORTANCE_SORT_LABELS = {
+    asset_universe.ACTIONS: "Capitalisation (plus grandes d'abord)",
+    asset_universe.CRYPTO: "Capitalisation (plus grandes d'abord)",
+    asset_universe.FOREX: "Volume d'échange (plus échangées d'abord)",
+}
+_DEFAULT_IMPORTANCE_LABEL = "Ordre de référence"
+
+
+def _sort_options(category: str) -> list[str]:
+    return [_IMPORTANCE_SORT_LABELS.get(category, _DEFAULT_IMPORTANCE_LABEL)] + _LIST_SORTS
 
 
 def _format_list_price(price: float | None, currency: str | None) -> str | None:
@@ -158,7 +169,9 @@ def _sort_and_filter(rows: list[dict], query: str, sort: str) -> list[dict]:
     if query:
         rows = [r for r in rows if query in r["ticker"].lower() or query in r["name"].lower()]
     if sort == _LIST_SORTS[0]:
-        return sorted(rows, key=lambda r: r["name"].lower())
+        return sorted(rows, key=lambda r: (asset_universe.name_of(r["ticker"]) or r["name"]).lower())
+    if sort not in _LIST_SORTS:  # tri par défaut : importance (capitalisation, volume...)
+        return sorted(rows, key=lambda r: asset_universe.rank_of(r["ticker"]))
     best_first = sort == _LIST_SORTS[1]
     # Actifs sans variation connue toujours en fin de liste.
     known = sorted((r for r in rows if r.get("change_30d_pct") is not None),
@@ -246,7 +259,8 @@ def _render_category_list(category: str, zone: str | None = None, country: str |
     col_filter, col_sort = st.columns([2, 1])
     query = col_filter.text_input("Filtrer", key=f"list_filter_{table_key}", label_visibility="collapsed",
                                   placeholder="Filtrer par nom ou ticker")
-    sort = col_sort.selectbox("Trier", _LIST_SORTS, key=f"list_sort_{table_key}", label_visibility="collapsed")
+    sort = col_sort.selectbox("Trier", _sort_options(category), key=f"list_sort_{table_key}",
+                              label_visibility="collapsed")
     ordered = _sort_and_filter(snapshot_rows, query, sort)
     limit_key = f"list_limit_{table_key}"
     limit = st.session_state.get(limit_key, LIST_PAGE_SIZE)
@@ -343,7 +357,6 @@ def _render_search_result_list(rows: list[dict], table_key: str) -> None:
 
 def _render_search() -> None:
     with st.container(key="ts_card_search"):
-        st.markdown("##### Rechercher un actif")
         # Champ + résultats dans un st.form plutôt qu'un simple st.text_input
         # "live" : sans ça, CHAQUE frappe déclenche un rerun qui reconstruit
         # les boutons de résultat, et cliquer sur l'un d'eux juste après avoir
@@ -361,7 +374,7 @@ def _render_search() -> None:
             col_input, col_submit = st.columns([5, 1])
             col_input.text_input(
                 "Rechercher un actif", key="search_query", label_visibility="collapsed",
-                placeholder="Nom ou ticker : Apple, AAPL, Bitcoin, Or...",
+                placeholder="Rechercher un actif : Apple, AAPL, Bitcoin, Or...",
             )
             col_submit.form_submit_button("Rechercher", use_container_width=True)
 
@@ -391,31 +404,41 @@ def _render_search() -> None:
                     theme.go_to_trading(manual.strip().upper(), manual.strip().upper())
             return
 
-        user_id = st.session_state.user_id
-        # Limité aux 3 plus récentes (get_recent trie déjà du plus récent au
-        # plus ancien) : au-delà, la liste de suggestions perdait son intérêt
-        # de raccourci rapide.
-        recent = search_history.get_recent(user_id, limit=3)
-        if recent:
-            st.markdown(
-                '<div class="ts-light-col-label" style="margin-bottom:0.5rem;">Recherches récentes</div>',
-                unsafe_allow_html=True,
-            )
-            rows = [
-                {
-                    "ticker": r["ticker"], "name": r["name"],
-                    "category": valuation.category_for(r["quote_type"], r["ticker"]),
-                }
-                for r in recent
-            ]
-            _render_search_result_list(rows, "compact_recent_searches")
-        else:
-            st.markdown(
-                '<div class="ts-light-col-label" style="margin-bottom:0.5rem;">Suggestions</div>',
-                unsafe_allow_html=True,
-            )
-            rows = [{"ticker": t, "name": n, "category": c} for t, n, c in DEFAULT_SUGGESTIONS]
-            _render_search_result_list(rows, "compact_suggested_searches")
+        # Récents / suggestions : dans un conteneur affiché SEULEMENT quand la
+        # barre de recherche a le focus (clic ou tabulation), voir le CSS de
+        # .st-key-ts_search_suggestions dans theme.py.
+        with st.container(key="ts_search_suggestions"):
+            _render_recent_searches()
+
+
+def _render_recent_searches() -> None:
+    """Recherches récentes (3 dernières) ou, à défaut, suggestions."""
+    user_id = st.session_state.user_id
+    # Limité aux 3 plus récentes (get_recent trie déjà du plus récent au
+    # plus ancien) : au-delà, la liste de suggestions perdait son intérêt
+    # de raccourci rapide.
+    recent = search_history.get_recent(user_id, limit=3)
+    if recent:
+        st.markdown(
+            '<div class="ts-light-col-label" style="margin-bottom:0.5rem;">Recherches récentes</div>',
+            unsafe_allow_html=True,
+        )
+        rows = [
+            {
+                "ticker": r["ticker"], "name": asset_universe.name_of(r["ticker"]) or r["name"],
+                "category": (asset_universe.category_of(r["ticker"])
+                             or valuation.category_for(r["quote_type"], r["ticker"])),
+            }
+            for r in recent
+        ]
+        _render_search_result_list(rows, "compact_recent_searches")
+    else:
+        st.markdown(
+            '<div class="ts-light-col-label" style="margin-bottom:0.5rem;">Suggestions</div>',
+            unsafe_allow_html=True,
+        )
+        rows = [{"ticker": t, "name": n, "category": c} for t, n, c in DEFAULT_SUGGESTIONS]
+        _render_search_result_list(rows, "compact_suggested_searches")
 
 
 # -- Prix + graphique (mécanique inchangée) -----------------------------------

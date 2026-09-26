@@ -149,6 +149,9 @@ def test_category_list_shows_indicative_prices():
     tickers = [b.label for b in at.button if b.label.endswith("-USD")]
     assert tickers == ["SOL-USD"], tickers
     at.text_input(key="list_filter_compact_category_Crypto").input("").run()
+    order = [b.label for b in at.button if b.label.endswith("-USD")]
+    assert order[:3] == ["BTC-USD", "ETH-USD", "XRP-USD"], ("tri par défaut : capitalisation", order[:5])
+    at.text_input(key="list_filter_compact_category_Crypto").input("").run()
     at.selectbox(key="list_sort_compact_category_Crypto").select("Variation 30 j : moins bonne d'abord").run()
     assert [b.label for b in at.button if b.label.endswith("-USD")][0] == "BTC-USD", "variation connue d'abord"
     _assert_no_network(at)
@@ -181,6 +184,11 @@ def test_actions_zones_list_make_no_request():
         assert f"Explorer la zone {zone}" in labels, labels
     assert "Bientôt" not in text, "les 3 zones ont maintenant des actifs"
     _click(at, "Explorer la zone Asie")
+    from src import asset_universe as au
+    asia = [t for t, _, _ in au.STOCKS_BY_ZONE["asie"]]
+    shown = [b.label for b in at.button if b.label in asia]
+    assert shown[:3] == ["2330.TW", "005930.KS", "000660.KS"], "tri par défaut : capitalisation (TSMC d'abord)"
+    assert at.selectbox(key="list_sort_compact_category_Actions").value.startswith("Capitalisation")
     tickers = {b.label for b in at.button}
     assert {"2330.TW", "7203.T", "RELIANCE.NS", "005930.KS"} <= tickers, tickers
     assert not {"AAPL", "ASML.AS", "BTC-USD"} & tickers, "liste filtrée sur la zone Asie"

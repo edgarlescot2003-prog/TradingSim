@@ -96,20 +96,25 @@ STOCKS_BY_ZONE: dict[str, list[tuple[str, str, str]]] = {
 
 ASSETS_BY_CATEGORY: dict[str, list[tuple[str, str]]] = {
     ACTIONS: [(t, n) for zone in ZONES for t, n, _ in STOCKS_BY_ZONE[zone]],
+    # Classées par capitalisation décroissante (Yahoo, 25/09/2026).
     CRYPTO: [
-        ("BTC-USD", "Bitcoin"), ("ETH-USD", "Ethereum"), ("SOL-USD", "Solana"), ("XRP-USD", "XRP"),
-        ("ADA-USD", "Cardano"), ("DOGE-USD", "Dogecoin"), ("TRX-USD", "TRON"), ("AVAX-USD", "Avalanche"),
-        ("LINK-USD", "Chainlink"), ("DOT-USD", "Polkadot"), ("LTC-USD", "Litecoin"), ("BCH-USD", "Bitcoin Cash"),
-        ("XLM-USD", "Stellar"), ("UNI7083-USD", "Uniswap"), ("ATOM-USD", "Cosmos"), ("NEAR-USD", "NEAR Protocol"),
-        ("AAVE-USD", "Aave"), ("ETC-USD", "Ethereum Classic"), ("FIL-USD", "Filecoin"), ("ALGO-USD", "Algorand"),
+        ("BTC-USD", "Bitcoin"), ("ETH-USD", "Ethereum"), ("XRP-USD", "XRP"), ("SOL-USD", "Solana"),
+        ("TRX-USD", "TRON"), ("DOGE-USD", "Dogecoin"), ("LINK-USD", "Chainlink"), ("ADA-USD", "Cardano"),
+        ("XLM-USD", "Stellar"), ("BCH-USD", "Bitcoin Cash"), ("NEAR-USD", "NEAR Protocol"), ("LTC-USD", "Litecoin"),
+        ("AVAX-USD", "Avalanche"), ("AAVE-USD", "Aave"), ("DOT-USD", "Polkadot"), ("ETC-USD", "Ethereum Classic"),
+        ("ALGO-USD", "Algorand"), ("ATOM-USD", "Cosmos"), ("FIL-USD", "Filecoin"), ("UNI7083-USD", "Uniswap"),
     ],
     # Paires regroupées par devise dans l'onglet (trading_nav_config.FOREX_CURRENCIES).
+    # Classées par volume d'échange : paires contre le dollar d'abord (BIS,
+    # enquête triennale d'avril 2025 : EUR/USD 21,2 %, puis USD/JPY ~14 %,
+    # GBP/USD ~10 %, AUD/USD 6e, USD/CHF 4,9 % ; les 10 premières paires
+    # contiennent toutes le dollar), puis les croisées.
     FOREX: [
-        ("EURUSD=X", "EUR/USD"), ("GBPUSD=X", "GBP/USD"), ("USDJPY=X", "USD/JPY"), ("USDCHF=X", "USD/CHF"),
-        ("AUDUSD=X", "AUD/USD"), ("USDCAD=X", "USD/CAD"), ("NZDUSD=X", "NZD/USD"), ("EURGBP=X", "EUR/GBP"),
+        ("EURUSD=X", "EUR/USD"), ("USDJPY=X", "USD/JPY"), ("GBPUSD=X", "GBP/USD"), ("USDCAD=X", "USD/CAD"),
+        ("AUDUSD=X", "AUD/USD"), ("USDCHF=X", "USD/CHF"), ("NZDUSD=X", "NZD/USD"), ("EURGBP=X", "EUR/GBP"),
         ("EURJPY=X", "EUR/JPY"), ("EURCHF=X", "EUR/CHF"), ("GBPJPY=X", "GBP/JPY"), ("AUDJPY=X", "AUD/JPY"),
-        ("EURAUD=X", "EUR/AUD"), ("GBPCHF=X", "GBP/CHF"), ("CHFJPY=X", "CHF/JPY"), ("EURCAD=X", "EUR/CAD"),
-        ("CADJPY=X", "CAD/JPY"), ("AUDNZD=X", "AUD/NZD"),
+        ("EURAUD=X", "EUR/AUD"), ("EURCAD=X", "EUR/CAD"), ("GBPCHF=X", "GBP/CHF"), ("CADJPY=X", "CAD/JPY"),
+        ("CHFJPY=X", "CHF/JPY"), ("AUDNZD=X", "AUD/NZD"),
     ],
     # Contrats à terme ; regroupés en familles (COMMODITY_FAMILIES).
     COMMODITIES: [
@@ -151,6 +156,11 @@ ASSET_PLACES: dict[str, tuple[str, str]] = {
 }
 
 _NAMES = {t: n for assets in ASSETS_BY_CATEGORY.values() for t, n in assets}
+# Rang d'importance dans sa catégorie (0 = le plus important) : actions par
+# capitalisation au sein de leur zone, crypto par capitalisation, Forex par
+# volume d'échange ; obligations et matières premières dans l'ordre de
+# référence (maturité, famille). Sert au tri par défaut des listes.
+_RANK = {t: i for assets in ASSETS_BY_CATEGORY.values() for i, (t, _) in enumerate(assets)}
 _CATEGORY_BY_TICKER = {t: c for c, assets in ASSETS_BY_CATEGORY.items() for t, _ in assets}
 
 
@@ -167,6 +177,11 @@ def category_of(ticker: str) -> str | None:
 def name_of(ticker: str) -> str | None:
     """Nom affiché d'un ticker de l'univers (prime sur le nom stocké en base)."""
     return _NAMES.get(ticker)
+
+
+def rank_of(ticker: str) -> int:
+    """Rang d'importance dans la catégorie (voir _RANK) ; inconnu = en fin de liste."""
+    return _RANK.get(ticker, 10_000)
 
 
 def in_universe(ticker: str) -> bool:
