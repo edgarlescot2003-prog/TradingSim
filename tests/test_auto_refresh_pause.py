@@ -84,7 +84,8 @@ def _pause_app():
 
 
 def _texts(at):
-    return " ".join(str(m.value) for m in at.markdown if "<style>" not in str(m.value))
+    parts = [str(m.value) for m in at.markdown if "<style>" not in str(m.value)]
+    return " ".join(parts + [str(c.value) for c in at.caption])
 
 
 def test_pause_stops_timers_and_requests_then_resumes():

@@ -1407,8 +1407,9 @@ def _render_order_form(portfolio, ticker: str, name: str | None, price_eur: floa
             _render_tp_sl_section(portfolio, ticker)
 
         if order_mode == "Ordre au marché":
-            st.markdown('<div class="tsnav-order-note">L\'ordre est exécuté au prix affiché.</div>',
-                        unsafe_allow_html=True)
+            # st.caption (et non un <div> dans st.markdown) : espacement géré par
+            # Streamlit — le <div> chevauchait le bouton de 7-8 px (mesuré).
+            st.caption("L'ordre est exécuté au prix affiché.")
             if st.button("Valider l'ordre", type="primary", key="submit_market_order"):
                 if _refresh_price_before_order(ticker, quote_type):
                     return tp_sl_section_rendered

@@ -151,7 +151,6 @@ _CSS = f"""
 .tsnav-stat-label {{ font-size: 0.7rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
                      color: {theme.MUTED}; margin-bottom: 0.3rem; }}
 .tsnav-stat-value {{ font-family: {theme.FONT_MONO}; font-size: 1.05rem; font-weight: 600; color: {theme.TEXT}; }}
-.tsnav-order-note {{ font-family: {theme.FONT_SANS}; font-size: 0.8rem; color: {theme.MUTED}; margin-top: 0.3rem; }}
 @media (max-width: 640px) {{ .tsnav-live-price {{ font-size: 2rem; }} .tsnav-asset-name {{ font-size: 1.5rem; }} }}
 
 /* Bandeaux d'état (prix daté, pause, mise à jour, ordre à revalider) */
